@@ -1,0 +1,70 @@
+<svg width="1600" height="520" viewBox="0 0 1600 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="awe-agentcheck hero">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#040816"/>
+      <stop offset="45%" stop-color="#0b1b3a"/>
+      <stop offset="100%" stop-color="#0f2b35"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.0"/>
+      <stop offset="45%" stop-color="#60a5fa" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0.0"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="520" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1600" height="520" fill="url(#line)" opacity="0.35"/>
+
+  <g opacity="0.22" stroke="#67e8f9" stroke-width="1">
+    <path d="M0 110 H1600"/>
+    <path d="M0 190 H1600"/>
+    <path d="M0 270 H1600"/>
+    <path d="M0 350 H1600"/>
+    <path d="M0 430 H1600"/>
+    <path d="M130 0 V520"/>
+    <path d="M330 0 V520"/>
+    <path d="M530 0 V520"/>
+    <path d="M730 0 V520"/>
+    <path d="M930 0 V520"/>
+    <path d="M1130 0 V520"/>
+    <path d="M1330 0 V520"/>
+    <path d="M1530 0 V520"/>
+  </g>
+
+  <g opacity="0.95">
+    <circle cx="210" cy="130" r="8" fill="#22d3ee"/>
+    <circle cx="310" cy="130" r="8" fill="#22d3ee"/>
+    <circle cx="410" cy="130" r="8" fill="#22d3ee"/>
+    <path d="M210 130 H410" stroke="#22d3ee" stroke-width="3" stroke-linecap="round"/>
+
+    <circle cx="1190" cy="390" r="8" fill="#34d399"/>
+    <circle cx="1290" cy="390" r="8" fill="#34d399"/>
+    <circle cx="1390" cy="390" r="8" fill="#34d399"/>
+    <path d="M1190 390 H1390" stroke="#34d399" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#glow)">
+    <rect x="140" y="150" rx="16" ry="16" width="1320" height="220" fill="#071328" fill-opacity="0.78" stroke="#67e8f9" stroke-opacity="0.45"/>
+  </g>
+
+  <text x="170" y="240" fill="url(#accent)" font-family="Segoe UI, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="1.6">
+    AWE-AGENTCHECK
+  </text>
+  <text x="170" y="290" fill="#dbeafe" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="600">
+    Multi-CLI Orchestration for Author/Reviewer Agent Engineering
+  </text>
+  <text x="170" y="330" fill="#9fb3d8" font-family="Consolas, Menlo, monospace" font-size="22">
+    sandbox-first | author-approval gate | auto-fusion | observability
+  </text>
+</svg>
