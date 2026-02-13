@@ -57,8 +57,11 @@ py -m awe_agentcheck.cli run `
 Default policy:
 
 1. `sandbox_mode=1` uses `<workspace>-lab` as execution workspace.
-2. `self_loop_mode=0` enters `waiting_manual` after discussion/proposal review.
-3. Author must approve before implementation starts.
+2. If `sandbox_workspace_path` is omitted, system creates unique per-task sandbox under `<workspace>-lab/<timestamp>-<id>`.
+3. Generated sandbox is auto-cleaned after `passed + auto_merge_completed`.
+4. User-specified sandbox path is preserved by default.
+5. `self_loop_mode=0` enters `waiting_manual` after discussion/proposal review.
+6. Author must approve before implementation starts.
 
 ## 4) Inspect status and timeline
 
@@ -87,12 +90,13 @@ Open: `http://localhost:8000/`
 Capabilities:
 
 1. Left top: project structure tree (directory + file nodes) for selected project.
-2. Left bottom: role/session monitor grouped by participant id (`provider#alias`).
-3. Right: conversation stream (discussion/implementation/review/system events) with role filtering.
-4. Start/cancel/force-fail actions for selected task.
-5. Author controls for `waiting_manual`: `Approve + Queue`, `Approve + Start`, `Reject`.
-6. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`.
-7. Auto polling and extended stats with reason/provider breakdown.
+2. Tree controls: `Expand` and `Collapse` for all folder nodes in current view.
+3. Left bottom: role/session monitor grouped by participant id (`provider#alias`).
+4. Right: conversation stream in chat-bubble style with role avatars and role filtering.
+5. Start/cancel/force-fail actions for selected task.
+6. Author controls for `waiting_manual`: `Approve + Queue`, `Approve + Start`, `Reject`.
+7. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`.
+8. Auto polling and extended stats with reason/provider breakdown.
 
 ## 7) Artifacts
 

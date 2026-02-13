@@ -18,6 +18,13 @@
 5. Overnight scripts updated:
    - support `--sandbox-mode`, `--sandbox-workspace-path`, `--self-loop-mode`
    - launcher default uses `self_loop_mode=1` for unattended runs
+6. Sandbox lifecycle hardened:
+   - omitted sandbox path now allocates unique per-task sandbox (`<project>-lab/<timestamp>-<id>`)
+   - generated sandbox auto-cleanup on `passed + auto_merge_completed`
+7. Monitor UI improvements:
+   - fixed tree `Expand` / `Collapse` controls
+   - conversation rendered in chat-bubble style with avatars
+   - upgraded role/message pixel avatars for clearer identity cues
 
 ## Pause Window Notice (Operator Directive)
 

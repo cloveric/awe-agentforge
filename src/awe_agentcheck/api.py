@@ -23,6 +23,7 @@ class CreateTaskRequest(BaseModel):
     evolve_until: str | None = Field(default=None, max_length=64)
     sandbox_mode: bool = Field(default=True)
     sandbox_workspace_path: str | None = Field(default=None, max_length=400)
+    sandbox_cleanup_on_pass: bool = Field(default=True)
     self_loop_mode: int = Field(default=0, ge=0, le=1)
     auto_merge: bool = Field(default=True)
     merge_target_path: str | None = Field(default=None, max_length=400)
@@ -63,6 +64,8 @@ class TaskResponse(BaseModel):
     evolve_until: str | None
     sandbox_mode: bool
     sandbox_workspace_path: str | None
+    sandbox_generated: bool
+    sandbox_cleanup_on_pass: bool
     self_loop_mode: int
     project_path: str
     auto_merge: bool
@@ -133,6 +136,8 @@ def _to_task_response(task) -> TaskResponse:
         evolve_until=task.evolve_until,
         sandbox_mode=task.sandbox_mode,
         sandbox_workspace_path=task.sandbox_workspace_path,
+        sandbox_generated=task.sandbox_generated,
+        sandbox_cleanup_on_pass=task.sandbox_cleanup_on_pass,
         self_loop_mode=task.self_loop_mode,
         project_path=task.project_path,
         auto_merge=task.auto_merge,
@@ -199,6 +204,7 @@ def create_app(
                     evolve_until=payload.evolve_until,
                     sandbox_mode=payload.sandbox_mode,
                     sandbox_workspace_path=payload.sandbox_workspace_path,
+                    sandbox_cleanup_on_pass=payload.sandbox_cleanup_on_pass,
                     self_loop_mode=payload.self_loop_mode,
                     auto_merge=payload.auto_merge,
                     merge_target_path=payload.merge_target_path,

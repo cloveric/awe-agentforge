@@ -123,9 +123,93 @@ def test_service_create_task_defaults_to_sandbox_workspace(tmp_path: Path):
     assert task.sandbox_mode is True
     assert task.self_loop_mode == 0
     assert task.project_path == str(project)
-    assert task.workspace_path.endswith('proj-lab')
+    assert 'proj-lab' in Path(task.workspace_path).as_posix()
+    assert task.sandbox_generated is True
+    assert task.sandbox_cleanup_on_pass is True
     assert task.merge_target_path == str(project)
     assert (Path(task.workspace_path) / 'README.md').exists()
+
+
+def test_service_create_task_uses_unique_default_sandbox_per_task(tmp_path: Path):
+    project = tmp_path / 'proj-unique'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    svc = build_service(tmp_path)
+
+    t1 = svc.create_task(
+        CreateTaskInput(
+            title='T1',
+            description='sandbox one',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+        )
+    )
+    t2 = svc.create_task(
+        CreateTaskInput(
+            title='T2',
+            description='sandbox two',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+        )
+    )
+
+    assert t1.workspace_path != t2.workspace_path
+    assert Path(t1.workspace_path).exists()
+    assert Path(t2.workspace_path).exists()
+
+
+def test_service_start_task_default_sandbox_is_cleaned_after_passed_auto_merge(tmp_path: Path):
+    project = tmp_path / 'proj-cleanup'
+    project.mkdir()
+    (project / 'README.md').write_text('base\n', encoding='utf-8')
+    svc = build_service(tmp_path, workflow_engine=FakeWorkflowEngineWithFileChange())
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Cleanup task',
+            description='cleanup',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+            self_loop_mode=1,
+        )
+    )
+    sandbox_path = Path(task.workspace_path)
+    assert sandbox_path.exists()
+
+    result = svc.start_task(task.task_id)
+    assert result.status.value == 'passed'
+    assert (project / 'src' / 'hello.txt').exists()
+    assert not sandbox_path.exists()
+    events = svc.list_events(task.task_id)
+    assert any(e['type'] == 'sandbox_cleanup_completed' for e in events)
+
+
+def test_service_start_task_custom_sandbox_is_not_auto_cleaned(tmp_path: Path):
+    project = tmp_path / 'proj-custom-sandbox'
+    custom = tmp_path / 'my-custom-lab'
+    project.mkdir()
+    custom.mkdir()
+    (project / 'README.md').write_text('base\n', encoding='utf-8')
+    svc = build_service(tmp_path, workflow_engine=FakeWorkflowEngineWithFileChange())
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Custom sandbox task',
+            description='custom',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+            sandbox_workspace_path=str(custom),
+            self_loop_mode=1,
+        )
+    )
+
+    result = svc.start_task(task.task_id)
+    assert result.status.value == 'passed'
+    assert custom.exists()
+    events = svc.list_events(task.task_id)
+    assert not any(e['type'] == 'sandbox_cleanup_completed' for e in events)
 
 
 def test_service_start_task_waits_for_author_confirmation_when_self_loop_manual(tmp_path: Path):

@@ -23,6 +23,8 @@ class TaskRepository(Protocol):
         merge_target_path: str | None,
         sandbox_mode: bool,
         sandbox_workspace_path: str | None,
+        sandbox_generated: bool,
+        sandbox_cleanup_on_pass: bool,
         project_path: str,
         self_loop_mode: int,
         workspace_path: str,
@@ -86,6 +88,8 @@ class InMemoryTaskRepository:
         merge_target_path: str | None,
         sandbox_mode: bool,
         sandbox_workspace_path: str | None,
+        sandbox_generated: bool,
+        sandbox_cleanup_on_pass: bool,
         project_path: str,
         self_loop_mode: int,
         workspace_path: str,
@@ -106,6 +110,8 @@ class InMemoryTaskRepository:
             'merge_target_path': (str(merge_target_path).strip() if merge_target_path else None),
             'sandbox_mode': bool(sandbox_mode),
             'sandbox_workspace_path': (str(sandbox_workspace_path).strip() if sandbox_workspace_path else None),
+            'sandbox_generated': bool(sandbox_generated),
+            'sandbox_cleanup_on_pass': bool(sandbox_cleanup_on_pass),
             'project_path': str(project_path).strip() or workspace_path,
             'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
             'workspace_path': workspace_path,
@@ -202,6 +208,8 @@ def encode_reviewer_meta(
         merge_target_path=None,
         sandbox_mode=False,
         sandbox_workspace_path=None,
+        sandbox_generated=False,
+        sandbox_cleanup_on_pass=False,
         project_path='.',
         self_loop_mode=1,
     )
@@ -216,6 +224,8 @@ def encode_task_meta(
     merge_target_path: str | None,
     sandbox_mode: bool,
     sandbox_workspace_path: str | None,
+    sandbox_generated: bool,
+    sandbox_cleanup_on_pass: bool,
     project_path: str,
     self_loop_mode: int,
 ) -> str:
@@ -227,6 +237,8 @@ def encode_task_meta(
         'merge_target_path': (str(merge_target_path).strip() if merge_target_path else None),
         'sandbox_mode': bool(sandbox_mode),
         'sandbox_workspace_path': (str(sandbox_workspace_path).strip() if sandbox_workspace_path else None),
+        'sandbox_generated': bool(sandbox_generated),
+        'sandbox_cleanup_on_pass': bool(sandbox_cleanup_on_pass),
         'project_path': (str(project_path).strip() if project_path else '.'),
         'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
     }
@@ -251,6 +263,8 @@ def decode_task_meta(raw: str) -> dict:
         'merge_target_path': None,
         'sandbox_mode': False,
         'sandbox_workspace_path': None,
+        'sandbox_generated': False,
+        'sandbox_cleanup_on_pass': False,
         'project_path': '.',
         'self_loop_mode': 1,
     }
@@ -281,6 +295,8 @@ def decode_task_meta(raw: str) -> dict:
         sandbox_mode = bool(parsed.get('sandbox_mode', False))
         sandbox_workspace_path = parsed.get('sandbox_workspace_path')
         sandbox_workspace_text = (str(sandbox_workspace_path).strip() if sandbox_workspace_path else None)
+        sandbox_generated = bool(parsed.get('sandbox_generated', False))
+        sandbox_cleanup_on_pass = bool(parsed.get('sandbox_cleanup_on_pass', False))
         project_path = parsed.get('project_path')
         project_path_text = (str(project_path).strip() if project_path else '.')
         self_loop_mode = parsed.get('self_loop_mode', 1)
@@ -297,6 +313,8 @@ def decode_task_meta(raw: str) -> dict:
         out['merge_target_path'] = merge_target_text
         out['sandbox_mode'] = sandbox_mode
         out['sandbox_workspace_path'] = sandbox_workspace_text
+        out['sandbox_generated'] = sandbox_generated
+        out['sandbox_cleanup_on_pass'] = sandbox_cleanup_on_pass
         out['project_path'] = project_path_text
         out['self_loop_mode'] = self_loop_mode_int
         return out

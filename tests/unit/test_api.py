@@ -47,8 +47,10 @@ def test_api_create_start_and_get_task_roundtrip(tmp_path: Path):
     body = created.json()
     assert body['status'] == 'queued'
     assert body['sandbox_mode'] is True
+    assert body['sandbox_generated'] is True
+    assert body['sandbox_cleanup_on_pass'] is True
     assert body['self_loop_mode'] == 0
-    assert body['workspace_path'].endswith('-lab')
+    assert '-lab' in body['workspace_path']
     assert body['project_path']
     assert body['merge_target_path'] == body['project_path']
     assert body['evolution_level'] == 0
@@ -71,6 +73,7 @@ def test_api_create_start_and_get_task_roundtrip(tmp_path: Path):
     started_again = client.post(f"/api/tasks/{body['task_id']}/start", json={'background': False})
     assert started_again.status_code == 200
     assert started_again.json()['status'] == 'passed'
+    assert not Path(body['workspace_path']).exists()
 
     fetched = client.get(f"/api/tasks/{body['task_id']}")
     assert fetched.status_code == 200
@@ -213,6 +216,8 @@ def test_api_create_task_accepts_evolution_fields(tmp_path: Path):
     assert body['evolution_level'] == 2
     assert body['evolve_until'] == '2026-02-13T06:00:00'
     assert body['sandbox_mode'] is False
+    assert body['sandbox_generated'] is False
+    assert body['sandbox_cleanup_on_pass'] is True
     assert body['self_loop_mode'] == 1
     assert body['auto_merge'] is False
     assert body['merge_target_path'] == str(tmp_path)

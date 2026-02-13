@@ -47,6 +47,10 @@ Task-level strategy controls:
 - `sandbox_mode`:
   - `1` execute in sandbox workspace (default `<project>-lab`)
   - `0` execute directly in project workspace
+- default sandbox allocation:
+  - if sandbox path not provided, allocate unique per-task workspace:
+    - `<project>-lab/<timestamp>-<id>`
+  - after `passed + auto_merge_completed`, generated sandbox is auto-cleaned
 - `self_loop_mode`:
   - `0` discuss/review first, wait author confirmation before implementation (default)
   - `1` fully autonomous loop

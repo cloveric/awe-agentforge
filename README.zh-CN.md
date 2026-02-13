@@ -60,7 +60,7 @@
 | 全自动自循环 | `self_loop_mode=1`，适合无人值守 | `GA` |
 | 自动融合 | 通过后可自动合并、写 changelog、打快照 | `GA` |
 | 多角色模型 | `provider#alias`，支持跨模型/同模型多会话 | `GA` |
-| Web 运维控制台 | 项目树、角色区、对话流、任务控制 | `GA` |
+| Web 运维控制台 | 项目树（可展开/收起）、角色区、头像化对话流、任务控制 | `GA` |
 | 多主题风格 | Neon / Pixel / Executive | `GA` |
 | 可观测性链路 | OTel + Prom + Loki + Tempo + Grafana | `GA` |
 | 夜间监督脚本 | watchdog、fallback、cooldown | `GA` |
@@ -78,6 +78,12 @@
 1. `sandbox_mode=1`
 2. `self_loop_mode=0`
 3. `auto_merge=1`
+
+沙盒默认行为（已内置）：
+
+1. 如果不手动提供 `sandbox_workspace_path`，系统会在 `<project>-lab/<时间戳>-<id>` 下为每个任务创建独立沙盒。
+2. 当任务通过且自动融合完成后，会自动清理系统生成的沙盒，避免历史残留混入下一轮。
+3. 如果你手工指定了 `sandbox_workspace_path`，默认保留，不自动删除。
 
 ## 快速开始
 

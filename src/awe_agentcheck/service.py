@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
+from uuid import uuid4
 
 from awe_agentcheck.adapters import ParticipantRunner
 from awe_agentcheck.domain.gate import evaluate_medium_gate
@@ -27,6 +29,7 @@ class CreateTaskInput:
     evolve_until: str | None = None
     sandbox_mode: bool = True
     sandbox_workspace_path: str | None = None
+    sandbox_cleanup_on_pass: bool = True
     self_loop_mode: int = 0
     auto_merge: bool = True
     merge_target_path: str | None = None
@@ -54,6 +57,8 @@ class TaskView:
     evolve_until: str | None
     sandbox_mode: bool
     sandbox_workspace_path: str | None
+    sandbox_generated: bool
+    sandbox_cleanup_on_pass: bool
     self_loop_mode: int
     project_path: str
     auto_merge: bool
@@ -152,9 +157,13 @@ class OrchestratorService:
         evolve_until = self._normalize_evolve_until(payload.evolve_until)
         sandbox_mode = bool(payload.sandbox_mode)
         self_loop_mode = max(0, min(1, int(payload.self_loop_mode)))
+        sandbox_cleanup_on_pass = bool(payload.sandbox_cleanup_on_pass)
         sandbox_workspace_path = self._normalize_merge_target_path(payload.sandbox_workspace_path)
+        sandbox_generated = False
         if sandbox_mode:
-            sandbox_workspace_path = sandbox_workspace_path or self._default_sandbox_path(project_root)
+            if not sandbox_workspace_path:
+                sandbox_workspace_path = self._default_sandbox_path(project_root)
+                sandbox_generated = True
             sandbox_root = Path(sandbox_workspace_path)
             if sandbox_root.exists() and not sandbox_root.is_dir():
                 raise ValueError(f'sandbox_workspace_path must be a directory: {sandbox_workspace_path}')
@@ -163,6 +172,7 @@ class OrchestratorService:
             workspace_root = sandbox_root
         else:
             sandbox_workspace_path = None
+            sandbox_generated = False
             workspace_root = project_root
 
         auto_merge = bool(payload.auto_merge)
@@ -183,6 +193,8 @@ class OrchestratorService:
             evolve_until=evolve_until,
             sandbox_mode=sandbox_mode,
             sandbox_workspace_path=sandbox_workspace_path,
+            sandbox_generated=sandbox_generated,
+            sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
             project_path=str(project_root),
             self_loop_mode=self_loop_mode,
             auto_merge=auto_merge,
@@ -201,6 +213,8 @@ class OrchestratorService:
                 'cancel_requested': row.get('cancel_requested', False),
                 'sandbox_mode': bool(row.get('sandbox_mode', False)),
                 'sandbox_workspace_path': row.get('sandbox_workspace_path'),
+                'sandbox_generated': bool(row.get('sandbox_generated', False)),
+                'sandbox_cleanup_on_pass': bool(row.get('sandbox_cleanup_on_pass', False)),
                 'self_loop_mode': int(row.get('self_loop_mode', 1)),
                 'project_path': row.get('project_path'),
                 'auto_merge': bool(row.get('auto_merge', True)),
@@ -498,6 +512,18 @@ class OrchestratorService:
                 )
                 self.artifact_store.write_artifact_json(task_id, name='auto_merge_summary', payload=fusion_payload)
                 self.artifact_store.update_state(task_id, {'auto_merge_last': fusion_payload})
+
+                cleanup_payload = self._cleanup_sandbox_after_merge(row=row, workspace_root=workspace_root)
+                if cleanup_payload is not None:
+                    event_type = 'sandbox_cleanup_completed' if cleanup_payload.get('ok') else 'sandbox_cleanup_failed'
+                    self.repository.append_event(
+                        task_id,
+                        event_type=event_type,
+                        payload=cleanup_payload,
+                        round_number=None,
+                    )
+                    self.artifact_store.append_event(task_id, {'type': event_type, **cleanup_payload})
+                    self.artifact_store.update_state(task_id, {'sandbox_cleanup_last': cleanup_payload})
             except Exception as exc:
                 return self.mark_failed_system(task_id, reason=f'auto_merge_error: {exc}')
 
@@ -777,12 +803,52 @@ class OrchestratorService:
     @staticmethod
     def _default_sandbox_path(project_root: Path) -> str:
         parent = project_root.parent
-        name = f'{project_root.name}-lab'
-        return str(parent / name)
+        root = parent / f'{project_root.name}-lab'
+        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        suffix = uuid4().hex[:6]
+        return str(root / f'{stamp}-{suffix}')
+
+    @staticmethod
+    def _cleanup_sandbox_after_merge(*, row: dict, workspace_root: Path) -> dict | None:
+        if not bool(row.get('sandbox_mode', False)):
+            return None
+        if not bool(row.get('sandbox_generated', False)):
+            return None
+        if not bool(row.get('sandbox_cleanup_on_pass', False)):
+            return None
+
+        project_root = Path(str(row.get('project_path') or '')).resolve()
+        sandbox_root = workspace_root.resolve()
+        if sandbox_root == project_root:
+            return None
+
+        payload = {
+            'path': str(sandbox_root),
+            'project_path': str(project_root),
+            'ok': False,
+        }
+        try:
+            if sandbox_root.exists():
+                def _onerror(func, p, exc_info):
+                    try:
+                        os.chmod(p, stat.S_IWRITE)
+                        func(p)
+                    except Exception:
+                        pass
+                shutil.rmtree(sandbox_root, onerror=_onerror)
+            payload['ok'] = True
+            payload['removed'] = True
+        except Exception as exc:
+            payload['error'] = str(exc)
+        return payload
 
     @staticmethod
     def _is_sandbox_ignored(rel_path: str) -> bool:
-        normalized = rel_path.replace('\\', '/').strip('./')
+        normalized = rel_path.replace('\\', '/').strip()
+        while normalized.startswith('./'):
+            normalized = normalized[2:]
+        while normalized.startswith('/'):
+            normalized = normalized[1:]
         if not normalized:
             return False
         head = normalized.split('/', 1)[0]
@@ -868,6 +934,8 @@ class OrchestratorService:
             evolve_until=(str(row.get('evolve_until')).strip() if row.get('evolve_until') else None),
             sandbox_mode=bool(row.get('sandbox_mode', False)),
             sandbox_workspace_path=(str(row.get('sandbox_workspace_path')).strip() if row.get('sandbox_workspace_path') else None),
+            sandbox_generated=bool(row.get('sandbox_generated', False)),
+            sandbox_cleanup_on_pass=bool(row.get('sandbox_cleanup_on_pass', False)),
             self_loop_mode=max(0, min(1, int(row.get('self_loop_mode', 1)))),
             project_path=str(row.get('project_path') or row.get('workspace_path') or Path.cwd()),
             auto_merge=bool(row.get('auto_merge', True)),

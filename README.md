@@ -70,7 +70,7 @@ Designed for:
 | Autonomous self-loop | `self_loop_mode=1` for unattended operation | `GA` |
 | Auto fusion | On pass, optional merge + `CHANGELOG.auto.md` + snapshot | `GA` |
 | Multi-provider role model | `provider#alias` participants (cross-provider or same-provider multi-session) | `GA` |
-| Operator web console | Project tree, roles/sessions, dialogue stream, control panel | `GA` |
+| Operator web console | Project tree (expand/collapse), roles/sessions, avatar-based chat dialogue, control panel | `GA` |
 | Theme system | Neon, Terminal Pixel, Executive Glass | `GA` |
 | Observability stack | OTel, Prometheus, Loki, Tempo, Grafana | `GA` |
 | Overnight supervisor | Timeout watchdog, provider fallback, cooldown control | `GA` |
@@ -90,6 +90,12 @@ Manual policy flow (`self_loop_mode=0`):
 3. Move to `waiting_manual`
 4. Author approves or rejects
 5. Approve => queue/start implementation; Reject => canceled
+
+Sandbox default behavior:
+
+1. If `sandbox_workspace_path` is not provided, system creates a unique per-task sandbox under `<project>-lab/<timestamp>-<id>`.
+2. If task passes and auto-fusion completes, generated sandbox is auto-cleaned to prevent run-to-run contamination.
+3. If custom `sandbox_workspace_path` is provided, sandbox is retained by default.
 
 ## Quick Start
 
