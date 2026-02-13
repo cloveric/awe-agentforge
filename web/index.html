@@ -398,9 +398,9 @@
     }
 
     .role-avatar {
-      width: 30px;
-      height: 30px;
-      border-radius: 6px;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
       border: 1px solid rgba(31, 232, 137, 0.42);
       background: linear-gradient(160deg, rgba(8, 16, 24, 0.95), rgba(10, 22, 24, 0.95));
       display: inline-flex;
@@ -665,19 +665,19 @@
 
     .msg-shell {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       align-items: flex-start;
       width: 100%;
     }
 
     .msg-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 7px;
+      width: 52px;
+      height: 52px;
+      border-radius: 10px;
       border: 1px solid rgba(136, 229, 255, 0.42);
       background: rgba(8, 18, 28, 0.96);
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-      flex: 0 0 36px;
+      flex: 0 0 52px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -697,7 +697,7 @@
       flex: 1 1 auto;
       border: 1px solid rgba(136, 229, 255, 0.24);
       border-radius: 10px;
-      padding: 8px 10px;
+      padding: 10px 12px;
       background: rgba(7, 16, 25, 0.88);
     }
 
@@ -948,8 +948,8 @@
     }
 
     body[data-theme="pixel"] .role-avatar {
-      width: 30px;
-      height: 30px;
+      width: 36px;
+      height: 36px;
       border-radius: 1px;
       border-color: rgba(255, 255, 255, 0.42);
       background: #0b0b0b;
@@ -957,8 +957,8 @@
     }
 
     body[data-theme="pixel"] .msg-avatar {
-      width: 34px;
-      height: 34px;
+      width: 48px;
+      height: 48px;
       border-radius: 1px;
       border-color: rgba(255, 255, 255, 0.46);
       background: #0a0a0a;
@@ -1484,23 +1484,43 @@
 
     function avatarPalette(provider, rng) {
       const key = String(provider || '').toLowerCase();
-      const skinTones = ['#f6d2b7', '#deb38c', '#c98b66', '#9b6546'];
+      const skinPairs = [
+        ['#f6d2b7', '#d9a88b'],
+        ['#deb38c', '#bf8c68'],
+        ['#c98b66', '#a76c49'],
+        ['#9b6546', '#7f4f36'],
+      ];
       const hairByProvider = key === 'claude'
-        ? ['#f4f4f4', '#d7d7d7', '#9a9a9a', '#5f5f5f']
+        ? ['#f1f1f1', '#d7d7d7', '#aaaaaa', '#5f5f5f']
         : key === 'codex'
-          ? ['#cfe3ff', '#a8bbd6', '#7f8ca1', '#4d5969']
-          : ['#f4d59a', '#b8b8b8', '#8e8e8e', '#5a5a5a'];
+          ? ['#d8e7ff', '#b8c8df', '#8fa0bc', '#4f6076']
+          : ['#e6d8b5', '#bfbfbf', '#8a8a8a', '#5a5a5a'];
       const shirtByProvider = key === 'claude'
-        ? ['#2b5d3f', '#284a73', '#6d5a2e']
+        ? [['#2f6f49', '#24533a'], ['#315f8f', '#264970'], ['#6d5a2e', '#584821']]
         : key === 'codex'
-          ? ['#2f4b78', '#2a5d66', '#564a7a']
-          : ['#505050', '#3a4f3a', '#553f3f'];
+          ? [['#345587', '#263f67'], ['#2d6a71', '#235258'], ['#63558b', '#4d416d']]
+          : [['#5a5a5a', '#454545'], ['#3e5d3f', '#304932'], ['#6a4444', '#533434']];
+      const bgByProvider = key === 'claude'
+        ? [['#0f1a13', '#112319'], ['#11161f', '#15233a']]
+        : key === 'codex'
+          ? [['#0d1624', '#142032'], ['#11182a', '#182944']]
+          : [['#141414', '#1c1c1c'], ['#101317', '#181d22']];
+      const skinChoice = skinPairs[Math.floor(rng() * skinPairs.length)];
+      const shirtChoice = shirtByProvider[Math.floor(rng() * shirtByProvider.length)];
+      const bgChoice = bgByProvider[Math.floor(rng() * bgByProvider.length)];
       return {
-        skin: skinTones[Math.floor(rng() * skinTones.length)],
+        skin: skinChoice[0],
+        skinShade: skinChoice[1],
         hair: hairByProvider[Math.floor(rng() * hairByProvider.length)],
-        shirt: shirtByProvider[Math.floor(rng() * shirtByProvider.length)],
-        eye: '#111111',
-        bg: '#0b0b0b',
+        shirt: shirtChoice[0],
+        shirtShade: shirtChoice[1],
+        eyeWhite: '#f5f5f5',
+        pupil: '#121212',
+        lip: '#8a4b4b',
+        outline: '#050505',
+        bg: bgChoice[0],
+        bgShade: bgChoice[1],
+        accent: key === 'claude' ? '#9fffd0' : key === 'codex' ? '#9ec9ff' : '#f0d79a',
       };
     }
 
@@ -1508,7 +1528,7 @@
       const seed = `${provider}|${roleId}`;
       const rng = seededRandom(hashText(seed));
       const palette = avatarPalette(provider, rng);
-      const size = 16;
+      const size = 24;
       const grid = Array.from({ length: size }, () => Array(size).fill(null));
 
       function px(x, y, color) {
@@ -1524,70 +1544,116 @@
         }
       }
 
-      fillRect(3, 4, 12, 13, palette.skin);
-      fillRect(2, 6, 2, 10, palette.skin);
-      fillRect(13, 6, 13, 10, palette.skin);
-      fillRect(3, 14, 12, 15, palette.shirt);
-      fillRect(2, 14, 2, 15, palette.shirt);
-      fillRect(13, 14, 13, 15, palette.shirt);
+      function strokeRect(x1, y1, x2, y2, color) {
+        for (let x = x1; x <= x2; x += 1) {
+          px(x, y1, color);
+          px(x, y2, color);
+        }
+        for (let y = y1; y <= y2; y += 1) {
+          px(x1, y, color);
+          px(x2, y, color);
+        }
+      }
 
-      const hairStyle = Math.floor(rng() * 3);
+      fillRect(0, 0, 23, 23, palette.bg);
+      fillRect(0, 16, 23, 23, palette.bgShade);
+      for (let y = 0; y < size; y += 2) {
+        for (let x = 0; x < size; x += 2) {
+          if (((x + y) / 2 + Math.floor(rng() * 5)) % 5 === 0) {
+            px(x, y, palette.bgShade);
+          }
+        }
+      }
+
+      fillRect(3, 17, 20, 23, palette.shirt);
+      fillRect(5, 19, 18, 23, palette.shirtShade);
+      fillRect(10, 16, 13, 18, palette.skin);
+      fillRect(10, 18, 13, 18, palette.skinShade);
+      fillRect(8, 17, 9, 18, palette.shirtShade);
+      fillRect(14, 17, 15, 18, palette.shirtShade);
+
+      fillRect(6, 5, 17, 16, palette.skin);
+      fillRect(5, 7, 5, 12, palette.skin);
+      fillRect(18, 7, 18, 12, palette.skin);
+      fillRect(7, 14, 16, 16, palette.skinShade);
+      strokeRect(6, 5, 17, 16, palette.outline);
+      px(6, 16, palette.skinShade);
+      px(17, 16, palette.skinShade);
+      fillRect(5, 8, 5, 11, palette.skinShade);
+      fillRect(18, 8, 18, 11, palette.skinShade);
+
+      const hairStyle = Math.floor(rng() * 4);
       if (hairStyle === 0) {
-        fillRect(3, 1, 12, 3, palette.hair);
-        fillRect(3, 4, 4, 4, palette.hair);
-        fillRect(11, 4, 12, 4, palette.hair);
+        fillRect(5, 2, 18, 6, palette.hair);
+        fillRect(5, 7, 6, 9, palette.hair);
+        fillRect(17, 7, 18, 9, palette.hair);
       } else if (hairStyle === 1) {
-        fillRect(2, 1, 13, 3, palette.hair);
-        fillRect(2, 4, 2, 6, palette.hair);
-        fillRect(13, 4, 13, 6, palette.hair);
-        fillRect(6, 4, 9, 4, palette.hair);
+        fillRect(4, 2, 19, 5, palette.hair);
+        fillRect(4, 6, 4, 12, palette.hair);
+        fillRect(19, 6, 19, 9, palette.hair);
+        fillRect(8, 6, 14, 6, palette.hair);
+      } else if (hairStyle === 2) {
+        fillRect(5, 2, 18, 4, palette.hair);
+        fillRect(5, 5, 7, 9, palette.hair);
+        fillRect(16, 5, 18, 9, palette.hair);
+        fillRect(8, 5, 15, 5, palette.hair);
       } else {
-        fillRect(3, 1, 12, 2, palette.hair);
-        fillRect(3, 3, 3, 7, palette.hair);
-        fillRect(12, 3, 12, 7, palette.hair);
-        fillRect(4, 3, 11, 3, palette.hair);
+        fillRect(6, 2, 17, 4, palette.hair);
+        fillRect(6, 5, 6, 10, palette.hair);
+        fillRect(17, 5, 17, 10, palette.hair);
+        fillRect(8, 5, 15, 5, palette.hair);
+        fillRect(10, 1, 13, 1, palette.hair);
       }
 
-      const eyeStyle = Math.floor(rng() * 3);
-      const eyeY = 8;
-      if (eyeStyle === 0) {
-        px(6, eyeY, palette.eye);
-        px(9, eyeY, palette.eye);
-      } else if (eyeStyle === 1) {
-        px(5, eyeY, '#252525');
-        px(6, eyeY, '#252525');
-        px(9, eyeY, '#252525');
-        px(10, eyeY, '#252525');
-      } else {
-        px(5, eyeY, '#ffffff');
-        px(6, eyeY, palette.eye);
-        px(9, eyeY, palette.eye);
-        px(10, eyeY, '#ffffff');
+      fillRect(8, 8, 10, 8, palette.outline);
+      fillRect(13, 8, 15, 8, palette.outline);
+      fillRect(8, 9, 10, 10, palette.eyeWhite);
+      fillRect(13, 9, 15, 10, palette.eyeWhite);
+
+      const eyeShift = rng() > 0.5 ? 0 : 1;
+      px(9 + eyeShift, 9, palette.pupil);
+      px(14 + eyeShift, 9, palette.pupil);
+      if (rng() > 0.6) {
+        px(8, 10, palette.pupil);
+        px(15, 10, palette.pupil);
       }
 
-      px(8, 9, '#754f35');
-      const mouthStyle = Math.floor(rng() * 3);
+      fillRect(11, 10, 12, 12, palette.skinShade);
+      px(11, 13, palette.skinShade);
+      px(12, 13, palette.skinShade);
+
+      const mouthStyle = Math.floor(rng() * 4);
       if (mouthStyle === 0) {
-        px(7, 11, '#8a3f3f');
-        px(8, 11, '#8a3f3f');
-        px(9, 11, '#8a3f3f');
+        fillRect(9, 14, 14, 14, palette.lip);
       } else if (mouthStyle === 1) {
-        px(7, 11, '#6b2f2f');
-        px(8, 12, '#6b2f2f');
-        px(9, 11, '#6b2f2f');
+        fillRect(9, 14, 10, 14, palette.lip);
+        fillRect(11, 15, 12, 15, palette.lip);
+        fillRect(13, 14, 14, 14, palette.lip);
+      } else if (mouthStyle === 2) {
+        fillRect(9, 15, 14, 15, palette.lip);
       } else {
-        px(7, 12, '#5d2b2b');
-        px(8, 12, '#5d2b2b');
-        px(9, 12, '#5d2b2b');
+        fillRect(10, 14, 13, 14, palette.lip);
       }
 
-      if (rng() > 0.74) {
-        px(4, 8, '#1d1d1d');
-        px(11, 8, '#1d1d1d');
+      if (rng() > 0.62) {
+        fillRect(7, 9, 10, 10, palette.outline);
+        fillRect(13, 9, 16, 10, palette.outline);
+        fillRect(11, 9, 12, 9, palette.outline);
       }
-      if (rng() > 0.78) {
-        fillRect(6, 13, 9, 13, '#4f4f4f');
+      if (rng() > 0.76) {
+        fillRect(8, 15, 15, 16, palette.skinShade);
+        px(10, 16, palette.outline);
+        px(13, 16, palette.outline);
       }
+      if (rng() > 0.7) {
+        fillRect(2, 10, 4, 11, palette.accent);
+        fillRect(19, 10, 21, 11, palette.accent);
+        fillRect(3, 12, 3, 13, palette.outline);
+        fillRect(20, 12, 20, 13, palette.outline);
+      }
+
+      strokeRect(3, 17, 20, 23, palette.outline);
+      fillRect(9, 19, 14, 19, palette.outline);
 
       const rects = [`<rect width="${size}" height="${size}" fill="${palette.bg}"></rect>`];
       for (let y = 0; y < size; y += 1) {

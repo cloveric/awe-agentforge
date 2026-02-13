@@ -24,7 +24,7 @@
 7. Monitor UI improvements:
    - fixed tree `Expand` / `Collapse` controls
    - conversation rendered in chat-bubble style with avatars
-   - upgraded role/message pixel avatars for clearer identity cues
+   - upgraded role/message pixel avatars to 24x24 portraits with larger render size for readability
 
 ## Pause Window Notice (Operator Directive)
 
