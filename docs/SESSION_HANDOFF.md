@@ -25,6 +25,9 @@
    - fixed tree `Expand` / `Collapse` controls
    - conversation rendered in chat-bubble style with avatars
    - upgraded role/message pixel avatars to 24x24 portraits with larger render size for readability
+8. Documentation sync completed:
+   - clarified current default `auto_merge=1` across README/RUNBOOK/ARCH docs
+   - documented disable options: Web `Auto Merge=0`, CLI `--no-auto-merge`, API `auto_merge=false`
 
 ## Pause Window Notice (Operator Directive)
 

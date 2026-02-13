@@ -83,6 +83,12 @@ Designed for:
 | `self_loop_mode` | `0` / `1` | `0` | manual author approval or autonomous loop |
 | `auto_merge` | `0` / `1` | `1` | auto-fusion artifacts on passed tasks |
 
+Auto-fusion default and toggle:
+
+1. New tasks default to `auto_merge=1` (enabled).
+2. Disable per task with CLI `--no-auto-merge`, API payload `auto_merge=false`, or Web Create Task `Auto Merge=0`.
+3. When enabled and task is `passed`, system emits `auto_merge_completed` and writes `.agents/threads/<task_id>/artifacts/auto_merge_summary.json`.
+
 Manual policy flow (`self_loop_mode=0`):
 
 1. Start task
@@ -136,6 +142,18 @@ py -m awe_agentcheck.cli run `
   --sandbox-mode 1 `
   --self-loop-mode 0 `
   --workspace-path "C:/Users/hangw/awe-agentcheck" `
+  --auto-start
+```
+
+Disable auto-fusion for a single task:
+
+```powershell
+py -m awe_agentcheck.cli run `
+  --task "No auto-merge run" `
+  --author "claude#author-A" `
+  --reviewer "codex#review-B" `
+  --workspace-path "C:/Users/hangw/awe-agentcheck" `
+  --no-auto-merge `
   --auto-start
 ```
 

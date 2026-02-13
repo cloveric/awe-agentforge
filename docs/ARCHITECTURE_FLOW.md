@@ -47,6 +47,9 @@ Task-level strategy controls:
 - `sandbox_mode`:
   - `1` execute in sandbox workspace (default `<project>-lab`)
   - `0` execute directly in project workspace
+- `auto_merge`:
+  - `1` default, auto-fusion on `passed` (merge/changelog/snapshot)
+  - `0` disable fusion and keep task outputs in artifacts/sandbox only
 - default sandbox allocation:
   - if sandbox path not provided, allocate unique per-task workspace:
     - `<project>-lab/<timestamp>-<id>`

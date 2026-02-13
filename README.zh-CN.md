@@ -73,6 +73,12 @@
 | `self_loop_mode` | `0` / `1` | `0` | 作者确认模式或全自动模式 |
 | `auto_merge` | `0` / `1` | `1` | 通过后是否自动融合 |
 
+自动融合默认与开关：
+
+1. 新任务默认 `auto_merge=1`（开启）。
+2. 按任务关闭方式：CLI 用 `--no-auto-merge`，API 传 `auto_merge=false`，或 Web 创建任务时设 `Auto Merge=0`。
+3. 开启时任务 `passed` 会产生 `auto_merge_completed` 事件，并写入 `.agents/threads/<task_id>/artifacts/auto_merge_summary.json`。
+
 默认安全策略（推荐）：
 
 1. `sandbox_mode=1`
@@ -124,6 +130,18 @@ py -m awe_agentcheck.cli run `
   --sandbox-mode 1 `
   --self-loop-mode 0 `
   --workspace-path "C:/Users/hangw/awe-agentcheck" `
+  --auto-start
+```
+
+单任务关闭自动融合：
+
+```powershell
+py -m awe_agentcheck.cli run `
+  --task "关闭自动融合示例" `
+  --author "claude#author-A" `
+  --reviewer "codex#review-B" `
+  --workspace-path "C:/Users/hangw/awe-agentcheck" `
+  --no-auto-merge `
   --auto-start
 ```
 

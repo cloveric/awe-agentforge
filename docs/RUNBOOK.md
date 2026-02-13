@@ -62,6 +62,7 @@ Default policy:
 4. User-specified sandbox path is preserved by default.
 5. `self_loop_mode=0` enters `waiting_manual` after discussion/proposal review.
 6. Author must approve before implementation starts.
+7. `auto_merge=1` is enabled by default; disable per task with CLI `--no-auto-merge`, API `auto_merge=false`, or Web `Auto Merge=0`.
 
 ## 4) Inspect status and timeline
 
