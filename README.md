@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/awe-agentcheck-hero.svg" alt="awe-agentcheck" width="100%" />
+  <img src="docs/assets/awe-agentcheck-hero.svg" alt="AWE-AgentForge" width="100%" />
 </p>
 
 <p align="center">
@@ -25,6 +25,9 @@
   <b>Production-grade multi-agent collaboration engine for real software work.</b><br/>
   <sub>Coordinate Claude, Codex, and other CLI agents to diagnose bugs, implement fixes, review each other, and continuously evolve your codebase.</sub>
 </p>
+<p align="center">
+  <sub><b>Brand mode (low-risk rename):</b> display name = <code>AWE-AgentForge</code>, runtime/package IDs stay <code>awe-agentcheck</code> / <code>awe_agentcheck</code>.</sub>
+</p>
 
 <p align="center">
   <a href="README.zh-CN.md">&#127464;&#127475; 中文文档</a>&nbsp;&nbsp;·&nbsp;&nbsp;
@@ -41,7 +44,7 @@
 
 <br/>
 
-## Why awe-agentcheck?
+## Why AWE-AgentForge?
 
 <table>
 <tr>
@@ -769,6 +772,7 @@ When a task passes and `auto_merge=1`:
 | [`README.zh-CN.md`](README.zh-CN.md) | Chinese documentation |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Operations guide & commands |
 | [`docs/ARCHITECTURE_FLOW.md`](docs/ARCHITECTURE_FLOW.md) | System architecture deep dive |
+| [`docs/API_EXPOSURE_AUDIT.md`](docs/API_EXPOSURE_AUDIT.md) | Localhost/public API exposure audit and guardrails |
 | [`docs/TESTING_TARGET_POLICY.md`](docs/TESTING_TARGET_POLICY.md) | Testing approach & policy |
 | [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) | Session handoff notes |
 

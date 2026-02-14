@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/awe-agentcheck-hero.svg" alt="awe-agentcheck" width="100%" />
+  <img src="docs/assets/awe-agentcheck-hero.svg" alt="AWE-AgentForge" width="100%" />
 </p>
 
 <p align="center">
@@ -25,6 +25,9 @@
   <b>面向真实工程问题的多智能体协作引擎。</b><br/>
   <sub>协调 Claude、Codex 及其他 CLI 智能体，完成故障诊断、修复实现、交叉评审，并持续推动代码库自我进化。</sub>
 </p>
+<p align="center">
+  <sub><b>低风险改名模式：</b>展示名使用 <code>AWE-AgentForge</code>，运行/包标识仍保持 <code>awe-agentcheck</code> / <code>awe_agentcheck</code> 以兼容现有脚本。</sub>
+</p>
 
 <p align="center">
   <a href="README.md">&#127468;&#127463; English</a>&nbsp;&nbsp;·&nbsp;&nbsp;
@@ -41,7 +44,7 @@
 
 <br/>
 
-## 为什么选择 awe-agentcheck？
+## 为什么选择 AWE-AgentForge？
 
 <table>
 <tr>
@@ -769,6 +772,7 @@ POST /api/tasks
 | [`README.md`](README.md) | 英文文档 |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | 运维手册 & 命令参考 |
 | [`docs/ARCHITECTURE_FLOW.md`](docs/ARCHITECTURE_FLOW.md) | 系统架构深度解析 |
+| [`docs/API_EXPOSURE_AUDIT.md`](docs/API_EXPOSURE_AUDIT.md) | 本地/API 暴露审计与防护建议 |
 | [`docs/TESTING_TARGET_POLICY.md`](docs/TESTING_TARGET_POLICY.md) | 测试策略 & 方针 |
 | [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) | 会话交接记录 |
 

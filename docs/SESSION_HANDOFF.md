@@ -37,6 +37,10 @@
    - reduced sandbox-first emphasis in top README messaging
    - reframed product essence to multi-agent collaboration, bug-fix loops, and continuous self-evolution
    - synchronized hero tagline (`docs/assets/awe-agentcheck-hero.svg`) with new narrative
+11. Low-risk brand rename + API exposure audit:
+   - display-level brand updated to `AWE-AgentForge` in README/web/hero
+   - internal package/runtime IDs intentionally unchanged (`awe-agentcheck` / `awe_agentcheck`) for compatibility
+   - added `docs/API_EXPOSURE_AUDIT.md` with local listener/tunnel checks and exposure guardrails
 
 ## Pause Window Notice (Operator Directive)
 
