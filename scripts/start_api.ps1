@@ -12,6 +12,7 @@ $runtimeDir = Join-Path $repo '.agents/runtime'
 $stdoutLog = Join-Path $runtimeDir 'api-stdout.log'
 $stderrLog = Join-Path $runtimeDir 'api-stderr.log'
 $pidFile = Join-Path $runtimeDir 'api.pid'
+$dbPath = Join-Path $runtimeDir 'awe-agentcheck.sqlite3'
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
 function Resolve-PythonExe {
@@ -65,8 +66,9 @@ if (-not $pythonExe) {
 $env:PYTHONPATH = (Join-Path $repo 'src')
 $env:AWE_ARTIFACT_ROOT = (Join-Path $repo '.agents')
 if ([string]::IsNullOrWhiteSpace($env:AWE_DATABASE_URL)) {
-  # Default to in-memory fallback for reliable local startup when PostgreSQL is absent.
-  $env:AWE_DATABASE_URL = 'invalid+driver://fallback'
+  # Persist history across restarts when PostgreSQL is absent.
+  $sqlitePath = ($dbPath -replace '\\', '/')
+  $env:AWE_DATABASE_URL = "sqlite+pysqlite:///$sqlitePath"
 }
 
 Set-Location $repo

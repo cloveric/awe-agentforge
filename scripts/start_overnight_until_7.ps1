@@ -28,9 +28,11 @@ param(
 $repo = 'C:/Users/hangw/awe-agentcheck'
 $src = "$repo/src"
 $overnightDir = "$repo/.agents/overnight"
+$runtimeDir = "$repo/.agents/runtime"
 $sessionsDir = "$overnightDir/sessions"
 $lockFile = "$overnightDir/overnight.lock"
 New-Item -ItemType Directory -Path $sessionsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
 $now = Get-Date
 if ([string]::IsNullOrWhiteSpace($Until)) {
@@ -50,6 +52,9 @@ $dryValue = if ($DryRun) { 'true' } else { 'false' }
 $apiUri = [Uri]$ApiBase
 $apiHost = $apiUri.Host
 $apiPort = $apiUri.Port
+$defaultDbPath = "$runtimeDir/awe-agentcheck.sqlite3"
+$defaultDbUrl = "sqlite+pysqlite:///$($defaultDbPath -replace '\\','/')"
+$effectiveDbUrl = if ([string]::IsNullOrWhiteSpace($env:AWE_DATABASE_URL)) { $defaultDbUrl } else { $env:AWE_DATABASE_URL }
 
 $apiStdout = "$overnightDir/api-stdout.log"
 $apiStderr = "$overnightDir/api-stderr.log"
@@ -153,7 +158,7 @@ $apiCmd = @"
 `$env:PYTHONPATH='$src';
 `$env:PYTHONUNBUFFERED='1';
 `$env:AWE_DRY_RUN='$dryValue';
-`$env:AWE_DATABASE_URL='invalid+driver://fallback';
+`$env:AWE_DATABASE_URL='$effectiveDbUrl';
 `$env:AWE_ARTIFACT_ROOT='$repo/.agents';
 `$env:AWE_CLAUDE_COMMAND='$resolvedClaudeCommand';
 `$env:AWE_CODEX_COMMAND='$resolvedCodexCommand';
@@ -226,6 +231,7 @@ $session = [ordered]@{
   api_base = $ApiBase
   api_host = $apiHost
   api_port = $apiPort
+  database_url = $effectiveDbUrl
   dry_run = $dryValue
   lock_file = $lockFile
   api_pid = $apiPid

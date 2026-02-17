@@ -1,5 +1,22 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-18, history traceability + persistence)
+
+1. Root cause of empty `Project` dropdown clarified:
+   - dashboard project list was derived from live `/api/tasks` only.
+   - when API booted with in-memory fallback, restart cleared task rows, so project list could become empty.
+2. Added persistent local fallback for startup scripts:
+   - `scripts/start_api.ps1` now defaults `AWE_DATABASE_URL` to local SQLite when env is unset.
+   - `scripts/start_overnight_until_7.ps1` uses same persistent default (and records URL in session metadata).
+3. Added project history API:
+   - `GET /api/project-history?project_path=...&limit=...`
+   - returns per-task `core_findings`, `revisions`, `disputes`, `next_steps` for traceability.
+4. Added dashboard history panel:
+   - new `Project History` card renders historical records for selected project.
+   - project selector now merges live tasks + history index, so old projects remain visible even without active tasks.
+5. Included workflow progress quality-of-life:
+   - stage start events (`discussion_started`, `implementation_started`, `review_started`, `verification_started`) improve perceived responsiveness during long runs.
+
 ## Update (2026-02-18, deadline priority + UI policy coupling)
 
 1. Added round/deadline precedence rule:

@@ -18,7 +18,7 @@ $env:PYTHONPATH="C:/Users/hangw/awe-agentcheck/src"
 pwsh -NoProfile -ExecutionPolicy Bypass -File "C:/Users/hangw/awe-agentcheck/scripts/start_api.ps1" -ForceRestart
 ```
 
-If PostgreSQL is unavailable, service falls back to in-memory repo automatically.
+If PostgreSQL is unavailable, `start_api.ps1` defaults to local persistent SQLite (`.agents/runtime/awe-agentcheck.sqlite3`) so task history survives restarts.
 
 Health check:
 
@@ -132,6 +132,7 @@ Capabilities:
 6. Author controls for `waiting_manual`: `Approve + Queue`, `Approve + Start`, `Reject`.
 7. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`, `conversation_language`, `provider_models`, `provider_model_params`, and `claude_team_agents`.
 8. Auto polling and extended stats with reason/provider breakdown.
+9. Project history card shows cross-task records for selected project: core findings, revisions, disputes, next steps.
 
 ## 7) Artifacts
 
@@ -264,6 +265,13 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "C:/Users/hangw/awe-agentcheck/scr
 3. `provider_error_counts`: provider-attributed failures extracted from reason strings (`claude`, `codex`, `gemini`)
 4. `pass_rate_50` / `failed_gate_rate_50` / `failed_system_rate_50`: terminal outcome ratios over recent 50 tasks
 5. `mean_task_duration_seconds_50`: average terminal duration over recent 50 tasks
+
+Project-level history endpoint:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/api/project-history?limit=50"
+Invoke-RestMethod ("http://127.0.0.1:8000/api/project-history?project_path=" + [uri]::EscapeDataString("C:/Users/hangw/awe-agentcheck"))
+```
 
 ## 11) Self-test (program tests itself)
 

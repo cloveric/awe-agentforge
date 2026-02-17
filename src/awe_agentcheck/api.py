@@ -132,6 +132,43 @@ class ProviderModelsResponse(BaseModel):
     providers: dict[str, list[str]]
 
 
+class ProjectHistoryDisputeResponse(BaseModel):
+    participant: str
+    verdict: str
+    note: str
+
+
+class ProjectHistoryRevisionResponse(BaseModel):
+    auto_merge: bool
+    mode: str | None = None
+    changed_files: int = 0
+    copied_files: int = 0
+    deleted_files: int = 0
+    snapshot_path: str | None = None
+    changelog_path: str | None = None
+    merged_at: str | None = None
+
+
+class ProjectHistoryItemResponse(BaseModel):
+    task_id: str
+    title: str
+    project_path: str
+    status: str
+    last_gate_reason: str | None
+    created_at: str | None
+    updated_at: str | None
+    core_findings: list[str]
+    revisions: ProjectHistoryRevisionResponse
+    disputes: list[ProjectHistoryDisputeResponse]
+    next_steps: list[str]
+
+
+class ProjectHistoryResponse(BaseModel):
+    project_path: str | None
+    total: int
+    items: list[ProjectHistoryItemResponse]
+
+
 class AppState:
     def __init__(self, service: OrchestratorService):
         self.service = service
@@ -269,6 +306,19 @@ def create_app(
     @app.get('/api/provider-models', response_model=ProviderModelsResponse)
     def get_provider_models(service: OrchestratorService = Depends(get_service)) -> ProviderModelsResponse:
         return ProviderModelsResponse(providers=service.get_provider_models_catalog())
+
+    @app.get('/api/project-history', response_model=ProjectHistoryResponse)
+    def get_project_history(
+        service: OrchestratorService = Depends(get_service),
+        project_path: str | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> ProjectHistoryResponse:
+        items = service.list_project_history(project_path=project_path, limit=limit)
+        return ProjectHistoryResponse(
+            project_path=(str(project_path).strip() if project_path else None),
+            total=len(items),
+            items=[ProjectHistoryItemResponse(**item) for item in items],
+        )
 
     @app.get('/api/workspace-tree', response_model=WorkspaceTreeResponse)
     def get_workspace_tree(

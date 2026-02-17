@@ -725,6 +725,62 @@
       background: rgba(27, 11, 14, 0.9);
     }
 
+    .history-list {
+      display: grid;
+      gap: 8px;
+      max-height: 36vh;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .history-item {
+      border: 1px solid rgba(31, 232, 137, 0.28);
+      border-radius: 10px;
+      background: rgba(7, 16, 22, 0.88);
+      padding: 8px 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .history-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #d2fff0;
+    }
+
+    .history-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #89b8a3;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .history-meta strong {
+      color: #9df6cb;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 11px;
+    }
+
+    .history-link {
+      border: 1px solid rgba(16, 197, 201, 0.35);
+      background: rgba(10, 20, 30, 0.85);
+      color: #bff5ff;
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+      width: fit-content;
+    }
+
     .empty {
       border: 1px dashed rgba(31, 232, 137, 0.33);
       border-radius: 12px;
@@ -1188,6 +1244,12 @@
         </section>
 
         <section class="card">
+          <h2 class="card-title">Project History</h2>
+          <div id="historySummary" class="mini-status"></div>
+          <div id="projectHistory" class="history-list"></div>
+        </section>
+
+        <section class="card">
           <h2 class="card-title">Create Task</h2>
           <div class="controls-row">
             <div style="flex:1; min-width:220px;">
@@ -1324,6 +1386,7 @@
   <script>
     const state = {
       tasks: [],
+      historyItems: [],
       stats: null,
       providerModelCatalog: { claude: [], codex: [], gemini: [] },
       selectedProject: null,
@@ -1350,6 +1413,8 @@
       dialogue: document.getElementById('dialogue'),
       actionStatus: document.getElementById('actionStatus'),
       taskSnapshot: document.getElementById('taskSnapshot'),
+      projectHistory: document.getElementById('projectHistory'),
+      historySummary: document.getElementById('historySummary'),
       createStatus: document.getElementById('createStatus'),
       pollBtn: document.getElementById('pollBtn'),
       startBtn: document.getElementById('startBtn'),
@@ -1849,16 +1914,30 @@
         const key = normalizeProjectPath(task.project_path || task.workspace_path);
         let g = map.get(key);
         if (!g) {
-          g = { key, name: projectName(key), tasks: [], active: 0, passed: 0, failed: 0 };
+          g = { key, name: projectName(key), tasks: [], active: 0, passed: 0, failed: 0, history: 0 };
           map.set(key, g);
         }
         g.tasks.push(task);
+        g.history += 1;
         if (isActiveStatus(task.status)) g.active += 1;
         if (task.status === 'passed') g.passed += 1;
         if (['failed_gate', 'failed_system'].includes(task.status)) g.failed += 1;
       }
+      for (const item of state.historyItems || []) {
+        const key = normalizeProjectPath(item.project_path || '');
+        if (!key) continue;
+        let g = map.get(key);
+        if (!g) {
+          g = { key, name: projectName(key), tasks: [], active: 0, passed: 0, failed: 0, history: 0 };
+          map.set(key, g);
+        }
+        g.history += 1;
+        if (item.status === 'passed') g.passed += 1;
+        if (['failed_gate', 'failed_system'].includes(item.status)) g.failed += 1;
+      }
       return Array.from(map.values()).sort((a, b) => {
         if (b.active !== a.active) return b.active - a.active;
+        if (b.history !== a.history) return b.history - a.history;
         if (b.tasks.length !== a.tasks.length) return b.tasks.length - a.tasks.length;
         return a.name.localeCompare(b.name);
       });
@@ -1979,7 +2058,7 @@
       for (const project of projects) {
         const option = document.createElement('option');
         option.value = project.key;
-        option.textContent = `${project.name} | tasks=${project.tasks.length} active=${project.active}`;
+        option.textContent = `${project.name} | tasks=${project.tasks.length} history=${project.history} active=${project.active}`;
         if (project.key === state.selectedProject) {
           option.selected = true;
         }
@@ -2274,6 +2353,85 @@
       if (el.rejectBtn) el.rejectBtn.disabled = !waitingManual;
     }
 
+    function historyItemsInSelectedProject() {
+      const key = normalizeProjectPath(state.selectedProject || '');
+      const all = Array.isArray(state.historyItems) ? state.historyItems : [];
+      if (!key) return all;
+      return all.filter((item) => normalizeProjectPath(item.project_path || '') === key);
+    }
+
+    function formatHistoryTime(value) {
+      const text = String(value || '').trim();
+      if (!text) return 'n/a';
+      const dt = new Date(text);
+      if (Number.isNaN(dt.getTime())) return text;
+      return dt.toLocaleString();
+    }
+
+    function formatRevisionSummary(revisions) {
+      const rev = revisions && typeof revisions === 'object' ? revisions : {};
+      if (!rev.auto_merge) return 'auto-merge: off or not reached';
+      const changed = Number(rev.changed_files || 0);
+      const copied = Number(rev.copied_files || 0);
+      const deleted = Number(rev.deleted_files || 0);
+      const mode = String(rev.mode || 'n/a');
+      return `mode=${mode} | changed=${changed} copied=${copied} deleted=${deleted}`;
+    }
+
+    function renderProjectHistory() {
+      const scoped = historyItemsInSelectedProject();
+      const selected = normalizeProjectPath(state.selectedProject || '');
+      const projectLabel = selected || 'all projects';
+      if (el.historySummary) {
+        el.historySummary.textContent = `${projectLabel} | history records=${scoped.length}`;
+      }
+      if (!el.projectHistory) return;
+      el.projectHistory.innerHTML = '';
+      if (!scoped.length) {
+        el.projectHistory.innerHTML = '<div class="empty">No history records for current scope yet.</div>';
+        return;
+      }
+
+      for (const item of scoped) {
+        const card = document.createElement('article');
+        card.className = 'history-item';
+        const findings = Array.isArray(item.core_findings) ? item.core_findings : [];
+        const disputes = Array.isArray(item.disputes) ? item.disputes : [];
+        const nextSteps = Array.isArray(item.next_steps) ? item.next_steps : [];
+        const findingsText = findings.length ? findings.map((v) => `- ${v}`).join('\n') : '- n/a';
+        const disputesText = disputes.length
+          ? disputes.map((d) => `- ${d.participant || 'reviewer'} [${d.verdict || 'unknown'}]: ${d.note || ''}`).join('\n')
+          : '- none';
+        const nextText = nextSteps.length ? nextSteps.map((v) => `- ${v}`).join('\n') : '- n/a';
+
+        card.innerHTML = `
+          <div class="history-head">
+            <span>${escapeHtml(String(item.task_id || 'task'))} | ${statusPill(String(item.status || 'unknown'))}</span>
+            <span>${escapeHtml(formatHistoryTime(item.updated_at || item.created_at))}</span>
+          </div>
+          <div class="history-meta"><strong>Core Findings</strong>\n${escapeHtml(findingsText)}</div>
+          <div class="history-meta"><strong>Revisions</strong>\n${escapeHtml(formatRevisionSummary(item.revisions))}</div>
+          <div class="history-meta"><strong>Disputes</strong>\n${escapeHtml(disputesText)}</div>
+          <div class="history-meta"><strong>Next Steps</strong>\n${escapeHtml(nextText)}</div>
+        `;
+
+        if (state.tasks.some((task) => task.task_id === item.task_id)) {
+          const jump = document.createElement('button');
+          jump.className = 'history-link';
+          jump.textContent = 'Open task in Dialogue';
+          jump.addEventListener('click', async () => {
+            state.selectedTaskId = item.task_id;
+            renderTaskSelect();
+            renderTaskSnapshot();
+            await refreshConversation({ force: true });
+          });
+          card.appendChild(jump);
+        }
+
+        el.projectHistory.appendChild(card);
+      }
+    }
+
     function eventActor(event, task) {
       const payload = event.payload || {};
       const type = String(event.type || '');
@@ -2467,10 +2625,11 @@
     }
 
     async function loadData({ forceEvents = false } = {}) {
-      const [tasksResult, statsResult, modelsResult] = await Promise.allSettled([
+      const [tasksResult, statsResult, modelsResult, historyResult] = await Promise.allSettled([
         api('/api/tasks?limit=200'),
         api('/api/stats'),
         api('/api/provider-models'),
+        api('/api/project-history?limit=400'),
       ]);
 
       let updated = false;
@@ -2491,10 +2650,21 @@
         };
         updated = true;
       }
+      if (historyResult.status === 'fulfilled') {
+        const items = historyResult.value && Array.isArray(historyResult.value.items)
+          ? historyResult.value.items
+          : [];
+        state.historyItems = items;
+        updated = true;
+      }
       if (!updated) {
         const reason = tasksResult.status === 'rejected'
           ? String(tasksResult.reason || '')
-          : (statsResult.status === 'rejected' ? String(statsResult.reason || '') : String(modelsResult.reason || ''));
+          : (statsResult.status === 'rejected'
+            ? String(statsResult.reason || '')
+            : (modelsResult.status === 'rejected'
+              ? String(modelsResult.reason || '')
+              : String(historyResult.reason || '')));
         throw new Error(`all data requests failed: ${reason}`);
       }
 
@@ -2505,6 +2675,7 @@
       renderRoles();
       renderTaskSelect();
       renderTaskSnapshot();
+      renderProjectHistory();
       try {
         const tree = await loadProjectTree(state.selectedProject, { force: forceEvents });
         renderProjectTree(tree);
@@ -2750,6 +2921,7 @@
     el.taskSelect.addEventListener('change', async () => {
       state.selectedTaskId = el.taskSelect.value || null;
       renderTaskSnapshot();
+      renderProjectHistory();
       await refreshConversation({ force: true });
     });
 
@@ -2761,6 +2933,7 @@
       renderProjectSelector();
       renderTaskSelect();
       renderTaskSnapshot();
+      renderProjectHistory();
       try {
         const tree = await loadProjectTree(state.selectedProject, { force: true });
         renderProjectTree(tree);

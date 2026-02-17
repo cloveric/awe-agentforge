@@ -368,6 +368,41 @@ def test_api_workspace_tree_lists_children(tmp_path: Path):
     assert 'src/main.py' in paths
 
 
+def test_api_project_history_returns_records_for_project_scope(tmp_path: Path):
+    client = build_client(tmp_path)
+    created = client.post(
+        '/api/tasks',
+        json={
+            'title': 'History task',
+            'description': 'history smoke',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'workspace_path': str(tmp_path),
+            'sandbox_mode': False,
+            'self_loop_mode': 1,
+            'auto_merge': False,
+            'auto_start': False,
+        },
+    )
+    assert created.status_code == 201
+    project_path = created.json()['project_path']
+
+    resp = client.get('/api/project-history', params={'project_path': project_path, 'limit': 20})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body['project_path'] == project_path
+    assert body['total'] >= 1
+    assert isinstance(body['items'], list)
+    item = body['items'][0]
+    assert item['task_id']
+    assert item['project_path'] == project_path
+    assert isinstance(item['core_findings'], list)
+    assert isinstance(item['disputes'], list)
+    assert isinstance(item['next_steps'], list)
+    assert isinstance(item['revisions'], dict)
+    assert 'auto_merge' in item['revisions']
+
+
 def test_api_create_task_rejects_invalid_evolve_until(tmp_path: Path):
     client = build_client(tmp_path)
     resp = client.post(

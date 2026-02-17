@@ -44,7 +44,7 @@
 
 <br/>
 
-## 最新更新（2026-02-17）
+## 最新更新（2026-02-18）
 
 1. 默认模型策略升级并显式化：
    - Claude 默认命令固定 `claude-opus-4-6`
@@ -61,6 +61,13 @@
    - `scripts/stop_api.ps1`（按 PID + 端口双重清理）
 7. 启动可靠性增强：
    - 默认 PostgreSQL 连接增加 `connect_timeout=2`，数据库不可用时更快降级内存模式。
+8. 新增项目级历史接口与面板：
+   - `GET /api/project-history`
+   - 返回核心发现、修订结果、争议点、下一步建议。
+9. Web 可追溯性增强：
+   - 即使当前无活跃任务，项目下拉也会包含历史项目。
+10. 启动默认改为本地持久化：
+   - 当未设置 `AWE_DATABASE_URL` 时，`scripts/start_api.ps1` 与夜跑脚本默认使用本地 SQLite 持久库。
 
 <br/>
 
@@ -727,6 +734,7 @@ POST /api/tasks
 | `GET` | `/api/tasks/{id}/events` | 获取完整事件时间线 |
 | `POST` | `/api/tasks/{id}/gate` | 提交手动门禁结果 |
 | `GET` | `/api/provider-models` | 获取提供者模型目录（供 UI 下拉使用） |
+| `GET` | `/api/project-history` | 项目级历史记录（`core_findings` / `revisions` / `disputes` / `next_steps`） |
 | `GET` | `/api/workspace-tree` | 文件树（`?workspace_path=.&max_depth=4`） |
 | `GET` | `/api/stats` | 聚合统计（通过率、耗时、失败分桶） |
 | `GET` | `/healthz` | 健康检查 |
@@ -745,6 +753,7 @@ POST /api/tasks
 | **Claude Team Agents 模式** | 每任务开关 Claude `--agents` 行为 | `GA` |
 | **多角色模型** | `provider#alias` 参与者（跨模型或同模型多会话） | `GA` |
 | **Web 监控控制台** | 项目树、角色区、头像化对话、任务控制、拖放 | `GA` |
+| **项目历史账本** | 按项目沉淀跨任务时间线（发现/修订/争议/下一步） | `GA` |
 | **多主题 UI** | Neon Grid、Terminal Pixel、Executive Glass | `GA` |
 | **可观测性链路** | OpenTelemetry、Prometheus、Loki、Tempo、Grafana | `GA` |
 | **夜间监督脚本** | 看门狗超时、提供者降级、冷却控制、单实例锁 | `GA` |

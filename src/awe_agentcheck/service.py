@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import os
 from pathlib import Path
 import re
@@ -393,8 +394,380 @@ class OrchestratorService:
             out[provider] = [str(v) for v in catalog.get(provider, []) if str(v).strip()]
         return out
 
+    def list_project_history(self, *, project_path: str | None = None, limit: int = 200) -> list[dict]:
+        limit_int = max(1, min(1000, int(limit)))
+        requested_project = self._normalize_project_path_key(project_path) if str(project_path or '').strip() else None
+
+        rows = self.repository.list_tasks(limit=10_000)
+        row_by_id: dict[str, dict] = {}
+        for row in rows:
+            task_id = str(row.get('task_id', '')).strip()
+            if task_id:
+                row_by_id[task_id] = row
+
+        items: list[dict] = []
+        seen: set[str] = set()
+        threads_root = self.artifact_store.root / 'threads'
+        thread_dirs: list[tuple[float, Path]] = []
+        if threads_root.exists() and threads_root.is_dir():
+            for child in threads_root.iterdir():
+                if not child.is_dir():
+                    continue
+                try:
+                    stamp = float(child.stat().st_mtime)
+                except OSError:
+                    stamp = 0.0
+                thread_dirs.append((stamp, child))
+            thread_dirs.sort(key=lambda pair: pair[0], reverse=True)
+
+        for _, task_dir in thread_dirs:
+            task_id = str(task_dir.name or '').strip()
+            if not task_id:
+                continue
+            item = self._build_project_history_item(task_id=task_id, row=row_by_id.get(task_id), task_dir=task_dir)
+            if item is None:
+                continue
+            project_key = self._normalize_project_path_key(item.get('project_path'))
+            if requested_project and project_key != requested_project:
+                continue
+            items.append(item)
+            seen.add(task_id)
+            if len(items) >= limit_int:
+                return items
+
+        for row in rows:
+            task_id = str(row.get('task_id', '')).strip()
+            if not task_id or task_id in seen:
+                continue
+            item = self._build_project_history_item(task_id=task_id, row=row, task_dir=None)
+            if item is None:
+                continue
+            project_key = self._normalize_project_path_key(item.get('project_path'))
+            if requested_project and project_key != requested_project:
+                continue
+            items.append(item)
+            if len(items) >= limit_int:
+                break
+
+        return items
+
     def list_events(self, task_id: str) -> list[dict]:
         return self.repository.list_events(task_id)
+
+    def _build_project_history_item(self, *, task_id: str, row: dict | None, task_dir: Path | None) -> dict | None:
+        state = self._read_json_file(task_dir / 'state.json') if task_dir is not None else {}
+        row_data = row or {}
+        project_path = str(
+            row_data.get('project_path')
+            or state.get('project_path')
+            or row_data.get('workspace_path')
+            or state.get('workspace_path')
+            or ''
+        ).strip()
+        if not project_path:
+            return None
+
+        status = str(row_data.get('status') or state.get('status') or 'unknown').strip().lower() or 'unknown'
+        last_reason = str(row_data.get('last_gate_reason') or state.get('last_gate_reason') or '').strip() or None
+        created_at = str(row_data.get('created_at') or '').strip() or self._guess_task_created_at(task_dir, state)
+        updated_at = (
+            str(row_data.get('updated_at') or '').strip()
+            or str(state.get('updated_at') or '').strip()
+            or self._guess_task_updated_at(task_dir)
+        )
+
+        events = self._load_history_events(task_id=task_id, row=row_data, task_dir=task_dir)
+        findings = self._extract_core_findings(task_dir=task_dir, events=events, fallback_reason=last_reason)
+        disputes = self._extract_disputes(events)
+        revisions = self._extract_revisions(task_dir=task_dir, events=events)
+        next_steps = self._derive_next_steps(status=status, reason=last_reason, disputes=disputes)
+
+        title = str(row_data.get('title') or '').strip() or f'Task {task_id}'
+        return {
+            'task_id': task_id,
+            'title': title,
+            'project_path': project_path,
+            'status': status,
+            'last_gate_reason': last_reason,
+            'created_at': created_at or None,
+            'updated_at': updated_at or None,
+            'core_findings': findings,
+            'revisions': revisions,
+            'disputes': disputes,
+            'next_steps': next_steps,
+        }
+
+    def _load_history_events(self, *, task_id: str, row: dict, task_dir: Path | None) -> list[dict]:
+        if row:
+            try:
+                events = self.repository.list_events(task_id)
+                if events:
+                    return events
+            except Exception:
+                pass
+
+        if task_dir is None:
+            return []
+        path = task_dir / 'events.jsonl'
+        if not path.exists():
+            return []
+        out: list[dict] = []
+        try:
+            for raw in path.read_text(encoding='utf-8', errors='replace').splitlines():
+                text = str(raw or '').strip()
+                if not text:
+                    continue
+                try:
+                    obj = json.loads(text)
+                except Exception:
+                    continue
+                if isinstance(obj, dict):
+                    out.append(obj)
+        except OSError:
+            return []
+        return out
+
+    def _extract_core_findings(self, *, task_dir: Path | None, events: list[dict], fallback_reason: str | None) -> list[str]:
+        findings: list[str] = []
+        for line in self._read_markdown_highlights(task_dir / 'summary.md' if task_dir else None):
+            if line not in findings:
+                findings.append(line)
+            if len(findings) >= 3:
+                return findings
+
+        for line in self._read_markdown_highlights(task_dir / 'final_report.md' if task_dir else None):
+            if line not in findings:
+                findings.append(line)
+            if len(findings) >= 3:
+                return findings
+
+        interesting = {'gate_failed', 'gate_passed', 'manual_gate', 'review', 'proposal_review', 'discussion'}
+        for event in events:
+            etype = str(event.get('type') or '').strip().lower()
+            if etype not in interesting:
+                continue
+            payload = self._merged_event_payload(event)
+            snippet = (
+                self._clip_snippet(payload.get('output'))
+                or self._clip_snippet(payload.get('reason'))
+                or self._clip_snippet(event.get('type'))
+            )
+            if not snippet:
+                continue
+            if snippet not in findings:
+                findings.append(snippet)
+            if len(findings) >= 3:
+                return findings
+
+        if fallback_reason and not findings:
+            findings.append(f'Final reason: {fallback_reason}')
+
+        return findings
+
+    @staticmethod
+    def _read_markdown_highlights(path: Path | None) -> list[str]:
+        if path is None or not path.exists():
+            return []
+        try:
+            raw = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return []
+        lines: list[str] = []
+        for item in raw.splitlines():
+            text = str(item or '').strip()
+            if not text:
+                continue
+            if text.startswith('#'):
+                continue
+            lines.append(text)
+            if len(lines) >= 5:
+                break
+        return [OrchestratorService._clip_snippet(v) for v in lines if OrchestratorService._clip_snippet(v)]
+
+    def _extract_revisions(self, *, task_dir: Path | None, events: list[dict]) -> dict:
+        summary_path = (task_dir / 'artifacts' / 'auto_merge_summary.json') if task_dir is not None else None
+        summary = self._read_json_file(summary_path) if summary_path else {}
+        if not summary:
+            for event in reversed(events):
+                if str(event.get('type') or '').strip().lower() != 'auto_merge_completed':
+                    continue
+                payload = self._merged_event_payload(event)
+                if isinstance(payload, dict):
+                    summary = payload
+                    break
+
+        if not summary:
+            return {'auto_merge': False}
+
+        return {
+            'auto_merge': True,
+            'mode': str(summary.get('mode') or '').strip() or None,
+            'changed_files': int(summary.get('changed_files') or 0),
+            'copied_files': int(summary.get('copied_files') or 0),
+            'deleted_files': int(summary.get('deleted_files') or 0),
+            'snapshot_path': str(summary.get('snapshot_path') or '').strip() or None,
+            'changelog_path': str(summary.get('changelog_path') or '').strip() or None,
+            'merged_at': str(summary.get('merged_at') or '').strip() or None,
+        }
+
+    def _extract_disputes(self, events: list[dict]) -> list[dict]:
+        disputes: list[dict] = []
+        for event in events:
+            etype = str(event.get('type') or '').strip().lower()
+            payload = self._merged_event_payload(event)
+
+            if etype in {'review', 'proposal_review'}:
+                verdict = str(payload.get('verdict') or '').strip().lower()
+                if verdict not in {ReviewVerdict.BLOCKER.value, ReviewVerdict.UNKNOWN.value}:
+                    continue
+                disputes.append(
+                    {
+                        'participant': str(payload.get('participant') or 'reviewer'),
+                        'verdict': verdict,
+                        'note': self._clip_snippet(payload.get('output')) or 'review raised concerns',
+                    }
+                )
+            elif etype == 'gate_failed':
+                reason = str(payload.get('reason') or '').strip()
+                if not reason:
+                    continue
+                disputes.append(
+                    {
+                        'participant': 'system',
+                        'verdict': 'gate_failed',
+                        'note': self._clip_snippet(reason) or reason,
+                    }
+                )
+
+            if len(disputes) >= 5:
+                break
+
+        return disputes
+
+    @staticmethod
+    def _merged_event_payload(event: dict) -> dict:
+        payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
+        out = dict(payload) if isinstance(payload, dict) else {}
+        for key in (
+            'output',
+            'reason',
+            'verdict',
+            'participant',
+            'provider',
+            'mode',
+            'changed_files',
+            'copied_files',
+            'deleted_files',
+            'snapshot_path',
+            'changelog_path',
+            'merged_at',
+        ):
+            if key not in out and key in event:
+                out[key] = event.get(key)
+        return out
+
+    @staticmethod
+    def _derive_next_steps(*, status: str, reason: str | None, disputes: list[dict]) -> list[str]:
+        s = str(status or '').strip().lower()
+        r = str(reason or '').strip()
+        if s == TaskStatus.WAITING_MANUAL.value:
+            return ['Approve + Start to continue, or Reject to cancel this proposal.']
+        if s == TaskStatus.RUNNING.value:
+            return ['Task is still executing. Watch latest stage events or worker logs for progress.']
+        if s == TaskStatus.QUEUED.value:
+            return ['Start the task when ready, or keep it queued for scheduling.']
+        if s == TaskStatus.PASSED.value:
+            return ['Task passed. Optionally launch a follow-up evolution task for additional improvements.']
+        if s == TaskStatus.FAILED_GATE.value:
+            if disputes:
+                return ['Address blocker/unknown review points, then rerun the task.']
+            return [f'Address gate failure reason: {r}' if r else 'Address gate failures, then rerun.']
+        if s == TaskStatus.FAILED_SYSTEM.value:
+            return [f'Fix system issue: {r}' if r else 'Fix system/runtime issue, then rerun.']
+        if s == TaskStatus.CANCELED.value:
+            return ['Task was canceled. Recreate or restart only if requirements still apply.']
+        return ['Inspect events and logs, then decide whether to rerun or revise scope.']
+
+    @staticmethod
+    def _clip_snippet(value, *, max_chars: int = 220) -> str:
+        text = str(value or '').strip()
+        if not text:
+            return ''
+        one_line = text.replace('\r', ' ').replace('\n', ' ')
+        if len(one_line) <= max_chars:
+            return one_line
+        return one_line[:max_chars].rstrip() + '...'
+
+    @staticmethod
+    def _normalize_project_path_key(value) -> str:
+        text = str(value or '').strip()
+        if not text:
+            return ''
+        return text.replace('\\', '/').rstrip('/').lower()
+
+    @staticmethod
+    def _read_json_file(path: Path | None) -> dict:
+        if path is None or not path.exists():
+            return {}
+        try:
+            raw = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return {}
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _guess_task_created_at(task_dir: Path | None, state: dict) -> str:
+        if task_dir is None:
+            return ''
+        events_path = task_dir / 'events.jsonl'
+        if events_path.exists():
+            try:
+                for raw in events_path.read_text(encoding='utf-8', errors='replace').splitlines():
+                    text = str(raw or '').strip()
+                    if not text:
+                        continue
+                    try:
+                        obj = json.loads(text)
+                    except Exception:
+                        continue
+                    if isinstance(obj, dict):
+                        created_at = str(obj.get('created_at') or '').strip()
+                        if created_at:
+                            return created_at
+            except OSError:
+                pass
+        updated = str(state.get('updated_at') or '').strip()
+        if updated:
+            return updated
+        return ''
+
+    @staticmethod
+    def _guess_task_updated_at(task_dir: Path | None) -> str:
+        if task_dir is None:
+            return ''
+        events_path = task_dir / 'events.jsonl'
+        if events_path.exists():
+            try:
+                lines = [line.strip() for line in events_path.read_text(encoding='utf-8', errors='replace').splitlines() if line.strip()]
+            except OSError:
+                lines = []
+            for raw in reversed(lines):
+                try:
+                    obj = json.loads(raw)
+                except Exception:
+                    continue
+                if isinstance(obj, dict):
+                    created_at = str(obj.get('created_at') or '').strip()
+                    if created_at:
+                        return created_at
+        try:
+            return datetime.fromtimestamp(task_dir.stat().st_mtime).isoformat()
+        except OSError:
+            return ''
 
     def request_cancel(self, task_id: str) -> TaskView:
         row = self.repository.set_cancel_requested(task_id, requested=True)

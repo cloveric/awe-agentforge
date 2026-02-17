@@ -44,7 +44,7 @@
 
 <br/>
 
-## Latest Update (2026-02-17)
+## Latest Update (2026-02-18)
 
 1. Default model profiles are now stronger and explicit:
    - Claude default command pins `claude-opus-4-6`
@@ -61,6 +61,13 @@
    - `scripts/stop_api.ps1` (PID + port cleanup)
 7. Startup reliability improved:
    - default PostgreSQL URL now includes `connect_timeout=2` for faster fallback when DB is unavailable.
+8. Added project-level history endpoint and dashboard history card:
+   - `GET /api/project-history`
+   - includes core findings, revisions, disputes, and recommended next steps.
+9. Improved Web traceability:
+   - project selector now includes historical projects even when no active tasks are loaded.
+10. Startup defaults now preserve local history:
+   - `scripts/start_api.ps1` and overnight launcher default to persistent local SQLite when `AWE_DATABASE_URL` is unset.
 
 <br/>
 
@@ -727,6 +734,7 @@ POST /api/tasks
 | `GET` | `/api/tasks/{id}/events` | Get full event timeline |
 | `POST` | `/api/tasks/{id}/gate` | Submit manual gate result |
 | `GET` | `/api/provider-models` | Get provider model catalog for UI dropdowns |
+| `GET` | `/api/project-history` | Project-level history records (`core_findings`, `revisions`, `disputes`, `next_steps`) |
 | `GET` | `/api/workspace-tree` | File tree (`?workspace_path=.&max_depth=4`) |
 | `GET` | `/api/stats` | Aggregated statistics (pass rates, durations, failure buckets) |
 | `GET` | `/healthz` | Health check |
@@ -745,6 +753,7 @@ POST /api/tasks
 | **Claude team-agents mode** | Per-task toggle to enable Claude `--agents` behavior | `GA` |
 | **Multi-provider role model** | `provider#alias` participants (cross-provider or same-provider multi-session) | `GA` |
 | **Web monitor console** | Project tree, roles/sessions, avatar-based chat, task controls, drag-and-drop | `GA` |
+| **Project history ledger** | Cross-task timeline with findings/revisions/disputes/next-steps by project | `GA` |
 | **Multi-theme UI** | Neon Grid, Terminal Pixel, Executive Glass | `GA` |
 | **Observability stack** | OpenTelemetry, Prometheus, Loki, Tempo, Grafana | `GA` |
 | **Overnight supervisor** | Timeout watchdog, provider fallback, cooldown, single-instance lock | `GA` |
