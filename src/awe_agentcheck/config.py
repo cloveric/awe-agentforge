@@ -14,6 +14,7 @@ class Settings:
     dry_run: bool
     claude_command: str
     codex_command: str
+    gemini_command: str
     participant_timeout_seconds: int
     command_timeout_seconds: int
     participant_timeout_retries: int
@@ -45,6 +46,7 @@ def load_settings() -> Settings:
         'AWE_CODEX_COMMAND',
         'codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort=low',
     )
+    gemini_command = os.getenv('AWE_GEMINI_COMMAND', 'gemini -p --yolo')
     participant_timeout_seconds = _env_int('AWE_PARTICIPANT_TIMEOUT_SECONDS', 240, minimum=10)
     command_timeout_seconds = _env_int('AWE_COMMAND_TIMEOUT_SECONDS', 300, minimum=10)
     participant_timeout_retries = _env_int('AWE_PARTICIPANT_TIMEOUT_RETRIES', 1, minimum=0)
@@ -57,6 +59,7 @@ def load_settings() -> Settings:
         dry_run=dry_run,
         claude_command=claude_command,
         codex_command=codex_command,
+        gemini_command=gemini_command,
         participant_timeout_seconds=participant_timeout_seconds,
         command_timeout_seconds=command_timeout_seconds,
         participant_timeout_retries=participant_timeout_retries,

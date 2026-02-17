@@ -56,6 +56,23 @@ class TaskRepository(Protocol):
     def is_cancel_requested(self, task_id: str) -> bool:
         ...
 
+    def update_task_status_if(
+        self,
+        task_id: str,
+        *,
+        expected_status: str,
+        status: str,
+        reason: str | None,
+        rounds_completed: int | None = None,
+        set_cancel_requested: bool | None = None,
+    ) -> dict | None:
+        """Atomically update status only if current status matches *expected_status*.
+
+        Returns the updated row on success, or ``None`` if the current status
+        did not match (i.e. a concurrent transition already happened).
+        """
+        ...
+
     def append_event(
         self,
         task_id: str,
@@ -159,6 +176,29 @@ class InMemoryTaskRepository:
         if task_id not in self.items:
             raise KeyError(task_id)
         self.items[task_id]['cancel_requested'] = bool(requested)
+        self.items[task_id]['updated_at'] = _utc_now_iso()
+        return dict(self.items[task_id])
+
+    def update_task_status_if(
+        self,
+        task_id: str,
+        *,
+        expected_status: str,
+        status: str,
+        reason: str | None,
+        rounds_completed: int | None = None,
+        set_cancel_requested: bool | None = None,
+    ) -> dict | None:
+        if task_id not in self.items:
+            raise KeyError(task_id)
+        if self.items[task_id]['status'] != expected_status:
+            return None
+        self.items[task_id]['status'] = status
+        self.items[task_id]['last_gate_reason'] = reason
+        if rounds_completed is not None:
+            self.items[task_id]['rounds_completed'] = int(rounds_completed)
+        if set_cancel_requested is not None:
+            self.items[task_id]['cancel_requested'] = bool(set_cancel_requested)
         self.items[task_id]['updated_at'] = _utc_now_iso()
         return dict(self.items[task_id])
 

@@ -166,6 +166,33 @@ class SqlTaskRepository:
             session.flush()
             return self._task_to_dict(row)
 
+    def update_task_status_if(
+        self,
+        task_id: str,
+        *,
+        expected_status: str,
+        status: str,
+        reason: str | None,
+        rounds_completed: int | None = None,
+        set_cancel_requested: bool | None = None,
+    ) -> dict | None:
+        with self.db.session() as session:
+            row = session.get(TaskEntity, task_id)
+            if row is None:
+                raise KeyError(task_id)
+            if row.status != expected_status:
+                return None
+            row.status = status
+            row.last_gate_reason = reason
+            if rounds_completed is not None:
+                row.rounds_completed = int(rounds_completed)
+            if set_cancel_requested is not None:
+                row.cancel_requested = bool(set_cancel_requested)
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+            session.flush()
+            return self._task_to_dict(row)
+
     def set_cancel_requested(self, task_id: str, *, requested: bool) -> dict:
         with self.db.session() as session:
             row = session.get(TaskEntity, task_id)

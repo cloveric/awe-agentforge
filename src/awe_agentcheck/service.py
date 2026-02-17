@@ -13,10 +13,13 @@ from awe_agentcheck.adapters import ParticipantRunner
 from awe_agentcheck.domain.gate import evaluate_medium_gate
 from awe_agentcheck.domain.models import ReviewVerdict, TaskStatus
 from awe_agentcheck.fusion import AutoFusionManager
+from awe_agentcheck.observability import get_logger, set_task_context
 from awe_agentcheck.participants import parse_participant_id
 from awe_agentcheck.repository import TaskRepository
 from awe_agentcheck.storage.artifacts import ArtifactStore
 from awe_agentcheck.workflow import RunConfig, ShellCommandExecutor, WorkflowEngine
+
+_log = get_logger('awe_agentcheck.service')
 
 
 @dataclass(frozen=True)
@@ -150,6 +153,18 @@ class OrchestratorService:
         )
 
     def create_task(self, payload: CreateTaskInput) -> TaskView:
+        # Validate participant IDs early so callers get a clear 400 error
+        # instead of a delayed workflow_error at start time.
+        try:
+            parse_participant_id(payload.author_participant)
+        except ValueError as exc:
+            raise ValueError(f'invalid author_participant: {exc}') from exc
+        for i, rp in enumerate(payload.reviewer_participants):
+            try:
+                parse_participant_id(rp)
+            except ValueError as exc:
+                raise ValueError(f'invalid reviewer_participants[{i}]: {exc}') from exc
+
         project_root = Path(payload.workspace_path).resolve()
         if not project_root.exists() or not project_root.is_dir():
             raise ValueError(f'workspace_path must be an existing directory: {payload.workspace_path}')
@@ -215,12 +230,13 @@ class OrchestratorService:
                 'sandbox_workspace_path': row.get('sandbox_workspace_path'),
                 'sandbox_generated': bool(row.get('sandbox_generated', False)),
                 'sandbox_cleanup_on_pass': bool(row.get('sandbox_cleanup_on_pass', False)),
-                'self_loop_mode': int(row.get('self_loop_mode', 1)),
+                'self_loop_mode': int(row.get('self_loop_mode', 0)),
                 'project_path': row.get('project_path'),
                 'auto_merge': bool(row.get('auto_merge', True)),
                 'merge_target_path': row.get('merge_target_path'),
             },
         )
+        _log.info('task_created task_id=%s title=%s', row['task_id'], payload.title)
         return self._to_view(row)
 
     def list_tasks(self, *, limit: int = 100) -> list[TaskView]:
@@ -304,12 +320,42 @@ class OrchestratorService:
         return self._to_view(row)
 
     def mark_failed_system(self, task_id: str, *, reason: str) -> TaskView:
-        row = self.repository.update_task_status(
-            task_id,
-            status=TaskStatus.FAILED_SYSTEM.value,
-            reason=reason,
-            rounds_completed=None,
-        )
+        _log.warning('mark_failed_system task_id=%s reason=%s', task_id, reason)
+        # Use atomic CAS: only transition if the task is still RUNNING.
+        # If an external force_fail already moved the task to a terminal
+        # state, honour that state instead of blindly overwriting it.
+        row = self.repository.get_task(task_id)
+        if row is None:
+            raise KeyError(task_id)
+        current_status = row['status']
+
+        if current_status == TaskStatus.RUNNING.value:
+            updated = self.repository.update_task_status_if(
+                task_id,
+                expected_status=TaskStatus.RUNNING.value,
+                status=TaskStatus.FAILED_SYSTEM.value,
+                reason=reason,
+                rounds_completed=row.get('rounds_completed'),
+            )
+            if updated is None:
+                # Lost the CAS race – another transition happened first.
+                return self._to_view(self.repository.get_task(task_id))
+            row = updated
+        elif current_status in (TaskStatus.PASSED.value, TaskStatus.CANCELED.value,
+                                TaskStatus.FAILED_SYSTEM.value):
+            # Already terminal – nothing to do.
+            return self._to_view(row)
+        else:
+            # Non-RUNNING, non-terminal (e.g. QUEUED, WAITING_MANUAL,
+            # FAILED_GATE) – unconditional update is safe here because
+            # these states are not contested by the workflow loop.
+            row = self.repository.update_task_status(
+                task_id,
+                status=TaskStatus.FAILED_SYSTEM.value,
+                reason=reason,
+                rounds_completed=None,
+            )
+
         self.repository.append_event(
             task_id,
             event_type='system_failure',
@@ -327,16 +373,28 @@ class OrchestratorService:
         row = self.repository.get_task(task_id)
         if row is None:
             raise KeyError(task_id)
-        if row['status'] in {TaskStatus.PASSED.value, TaskStatus.CANCELED.value}:
+        current_status = row['status']
+        if current_status in {TaskStatus.PASSED.value, TaskStatus.CANCELED.value}:
             return self._to_view(row)
 
-        row = self.repository.set_cancel_requested(task_id, requested=True)
-        row = self.repository.update_task_status(
+        # Attempt atomic conditional update: only transition if the status
+        # hasn't changed since we read it (prevents TOCTOU race with a
+        # concurrent workflow completion).
+        updated = self.repository.update_task_status_if(
             task_id,
+            expected_status=current_status,
             status=TaskStatus.FAILED_SYSTEM.value,
             reason=reason,
             rounds_completed=row.get('rounds_completed', 0),
+            set_cancel_requested=True,
         )
+        if updated is None:
+            # Status changed concurrently — re-read and return current state.
+            row = self.repository.get_task(task_id)
+            if row is None:
+                raise KeyError(task_id)
+            return self._to_view(row)
+        row = updated
         self.repository.append_event(
             task_id,
             event_type='force_failed',
@@ -369,7 +427,7 @@ class OrchestratorService:
         if row['status'] == TaskStatus.WAITING_MANUAL.value:
             return self._to_view(row)
 
-        if int(row.get('self_loop_mode', 1)) == 0 and str(row.get('last_gate_reason') or '') != 'author_approved':
+        if int(row.get('self_loop_mode', 0)) == 0 and str(row.get('last_gate_reason') or '') != 'author_approved':
             return self._prepare_author_confirmation(task_id, row)
 
         if self.max_concurrent_running_tasks > 0:
@@ -403,6 +461,8 @@ class OrchestratorService:
         row = self.repository.update_task_status(task_id, status=TaskStatus.RUNNING.value, reason=None, rounds_completed=row.get('rounds_completed', 0))
         self.repository.append_event(task_id, event_type='task_running', payload={'status': 'running'}, round_number=None)
         self.artifact_store.update_state(task_id, {'status': 'running'})
+        set_task_context(task_id=task_id)
+        _log.info('task_started task_id=%s', task_id)
 
         def on_event(event: dict) -> None:
             self.repository.append_event(
@@ -453,22 +513,29 @@ class OrchestratorService:
                 should_cancel=should_cancel,
             )
         except Exception as exc:
+            _log.error('workflow_error task_id=%s', task_id, exc_info=True)
             return self.mark_failed_system(task_id, reason=f'workflow_error: {exc}')
 
         final_status = self._map_run_status(result.status)
-        latest = self.repository.get_task(task_id)
-        if latest is None:
-            raise KeyError(task_id)
-        if str(latest.get('status')) != TaskStatus.RUNNING.value:
-            return self._to_view(latest)
+        _log.info('task_finished task_id=%s status=%s rounds=%d reason=%s',
+                  task_id, final_status.value, result.rounds, result.gate_reason)
 
-        self.repository.update_task_status(
+        # Atomic conditional update: only write the final status if the task
+        # is still RUNNING.  If an external force_fail already transitioned it,
+        # the update returns None and we honour the external state.
+        updated = self.repository.update_task_status_if(
             task_id,
+            expected_status=TaskStatus.RUNNING.value,
             status=final_status.value,
             reason=result.gate_reason,
             rounds_completed=result.rounds,
+            set_cancel_requested=False,
         )
-        updated = self.repository.set_cancel_requested(task_id, requested=False)
+        if updated is None:
+            latest = self.repository.get_task(task_id)
+            if latest is None:
+                raise KeyError(task_id)
+            return self._to_view(latest)
 
         self.artifact_store.update_state(
             task_id,
@@ -936,7 +1003,7 @@ class OrchestratorService:
             sandbox_workspace_path=(str(row.get('sandbox_workspace_path')).strip() if row.get('sandbox_workspace_path') else None),
             sandbox_generated=bool(row.get('sandbox_generated', False)),
             sandbox_cleanup_on_pass=bool(row.get('sandbox_cleanup_on_pass', False)),
-            self_loop_mode=max(0, min(1, int(row.get('self_loop_mode', 1)))),
+            self_loop_mode=max(0, min(1, int(row.get('self_loop_mode', 0)))),
             project_path=str(row.get('project_path') or row.get('workspace_path') or Path.cwd()),
             auto_merge=bool(row.get('auto_merge', True)),
             merge_target_path=(str(row.get('merge_target_path')).strip() if row.get('merge_target_path') else None),

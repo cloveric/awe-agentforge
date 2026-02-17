@@ -11,7 +11,10 @@ from contextlib import nullcontext
 from awe_agentcheck.adapters import ParticipantRunner
 from awe_agentcheck.domain.gate import evaluate_medium_gate
 from awe_agentcheck.domain.models import ReviewVerdict
+from awe_agentcheck.observability import get_logger, set_task_context
 from awe_agentcheck.participants import Participant
+
+_log = get_logger('awe_agentcheck.workflow')
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,9 @@ class ShellCommandExecutor:
             errors='replace',
             timeout=timeout_seconds,
         )
-        _ = time.monotonic() - started
+        elapsed = time.monotonic() - started
+        _log.debug('shell_command command=%s ok=%s duration=%.2fs',
+                   command, completed.returncode == 0, elapsed)
         return CommandResult(
             ok=completed.returncode == 0,
             command=command,
@@ -93,6 +98,8 @@ class WorkflowEngine:
         check_cancel = should_cancel or (lambda: False)
 
         emit({'type': 'task_started', 'task_id': config.task_id})
+        set_task_context(task_id=config.task_id)
+        _log.info('workflow_started task_id=%s max_rounds=%d', config.task_id, config.max_rounds)
         tracer = self._get_tracer()
         previous_gate_reason: str | None = None
         deadline = self._parse_deadline(config.evolve_until)
@@ -105,6 +112,8 @@ class WorkflowEngine:
                 emit({'type': 'deadline_reached', 'round': round_no, 'deadline': deadline.isoformat()})
                 return RunResult(status='canceled', rounds=round_no - 1, gate_reason='deadline_reached')
 
+            set_task_context(task_id=config.task_id, round_no=round_no)
+            _log.info('round_started round=%d', round_no)
             emit({'type': 'round_started', 'round': round_no})
 
             with self._span(tracer, 'workflow.discussion', {'task.id': config.task_id, 'round': round_no}):
@@ -114,7 +123,11 @@ class WorkflowEngine:
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
                 )
-            emit({'type': 'discussion', 'round': round_no, 'provider': config.author.provider, 'output': discussion.output})
+            emit({'type': 'discussion', 'round': round_no, 'provider': config.author.provider, 'output': discussion.output, 'duration_seconds': discussion.duration_seconds})
+
+            if check_cancel():
+                emit({'type': 'canceled', 'round': round_no})
+                return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
 
             with self._span(tracer, 'workflow.implementation', {'task.id': config.task_id, 'round': round_no}):
                 implementation = self.runner.run(
@@ -123,7 +136,11 @@ class WorkflowEngine:
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
                 )
-            emit({'type': 'implementation', 'round': round_no, 'provider': config.author.provider, 'output': implementation.output})
+            emit({'type': 'implementation', 'round': round_no, 'provider': config.author.provider, 'output': implementation.output, 'duration_seconds': implementation.duration_seconds})
+
+            if check_cancel():
+                emit({'type': 'canceled', 'round': round_no})
+                return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
 
             verdicts: list[ReviewVerdict] = []
             for reviewer in config.reviewers:
@@ -143,8 +160,13 @@ class WorkflowEngine:
                         'participant': reviewer.participant_id,
                         'verdict': verdict.value,
                         'output': review.output,
+                        'duration_seconds': review.duration_seconds,
                     }
                 )
+
+            if check_cancel():
+                emit({'type': 'canceled', 'round': round_no})
+                return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
 
             with self._span(tracer, 'workflow.verify', {'task.id': config.task_id, 'round': round_no}):
                 test_result = self.command_executor.run(
@@ -163,8 +185,14 @@ class WorkflowEngine:
                     'round': round_no,
                     'tests_ok': test_result.ok,
                     'lint_ok': lint_result.ok,
+                    'test_stdout': self._clip_text(test_result.stdout, max_chars=500),
+                    'lint_stdout': self._clip_text(lint_result.stdout, max_chars=500),
                 }
             )
+
+            if check_cancel():
+                emit({'type': 'canceled', 'round': round_no})
+                return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
 
             gate = evaluate_medium_gate(
                 tests_ok=test_result.ok,
@@ -172,9 +200,11 @@ class WorkflowEngine:
                 reviewer_verdicts=verdicts,
             )
             if gate.passed:
+                _log.info('gate_passed round=%d reason=%s', round_no, gate.reason)
                 emit({'type': 'gate_passed', 'round': round_no, 'reason': gate.reason})
                 return RunResult(status='passed', rounds=round_no, gate_reason=gate.reason)
 
+            _log.warning('gate_failed round=%d reason=%s', round_no, gate.reason)
             emit({'type': 'gate_failed', 'round': round_no, 'reason': gate.reason})
             previous_gate_reason = gate.reason
             if round_no >= config.max_rounds:
@@ -188,6 +218,7 @@ class WorkflowEngine:
             from opentelemetry import trace
             return trace.get_tracer('awe_agentcheck.workflow')
         except Exception:
+            _log.debug('OpenTelemetry tracer unavailable', exc_info=True)
             return None
 
     @staticmethod

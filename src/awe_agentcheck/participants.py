@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+SUPPORTED_PROVIDERS = {'claude', 'codex', 'gemini'}
+
 
 @dataclass(frozen=True)
 class Participant:
@@ -17,7 +19,7 @@ def parse_participant_id(value: str) -> Participant:
     provider, alias = raw.split('#', 1)
     provider = provider.strip().lower()
     alias = alias.strip()
-    if provider not in {'claude', 'codex'}:
+    if provider not in SUPPORTED_PROVIDERS:
         raise ValueError(f'unsupported provider: {provider}')
     if not alias:
         raise ValueError('participant alias cannot be empty')

@@ -32,6 +32,7 @@ class AdapterResult:
 DEFAULT_COMMANDS = {
     'claude': 'claude -p --dangerously-skip-permissions --effort low',
     'codex': 'codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort=low',
+    'gemini': 'gemini -p --yolo',
 }
 
 

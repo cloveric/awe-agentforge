@@ -7,6 +7,12 @@ def test_parse_participant_id_with_role_suffix():
     assert p.alias == 'author-A'
 
 
+def test_parse_participant_id_supports_gemini_provider():
+    p = parse_participant_id('gemini#review-X')
+    assert p.provider == 'gemini'
+    assert p.alias == 'review-X'
+
+
 def test_parse_participant_id_requires_hash_separator():
     try:
         parse_participant_id('claude-author')

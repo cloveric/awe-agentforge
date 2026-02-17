@@ -2,7 +2,7 @@ from pathlib import Path
 import pytest
 import subprocess
 
-from awe_agentcheck.adapters import ParticipantRunner, parse_verdict, parse_next_action
+from awe_agentcheck.adapters import DEFAULT_COMMANDS, ParticipantRunner, parse_verdict, parse_next_action
 from awe_agentcheck.participants import parse_participant_id
 
 
@@ -19,6 +19,11 @@ def test_parse_verdict_defaults_unknown():
 def test_parse_next_action_from_control_line():
     output = "NEXT_ACTION: retry\n"
     assert parse_next_action(output) == 'retry'
+
+
+def test_default_commands_include_gemini_provider():
+    assert 'gemini' in DEFAULT_COMMANDS
+    assert 'gemini -p' in DEFAULT_COMMANDS['gemini']
 
 
 def test_participant_runner_dry_run_returns_simulated_output(tmp_path: Path):

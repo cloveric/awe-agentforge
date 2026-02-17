@@ -1205,7 +1205,7 @@
               <input id="author" value="claude#author-A" />
             </div>
             <div style="flex:1; min-width:220px;">
-              <label for="reviewers">Reviewers (comma-separated)</label>
+              <label for="reviewers">Reviewers (comma-separated: claude/codex/gemini)</label>
               <input id="reviewers" value="codex#review-B,claude#review-C" />
             </div>
           </div>
@@ -1494,16 +1494,22 @@
         ? ['#f1f1f1', '#d7d7d7', '#aaaaaa', '#5f5f5f']
         : key === 'codex'
           ? ['#d8e7ff', '#b8c8df', '#8fa0bc', '#4f6076']
+          : key === 'gemini'
+            ? ['#ffe59a', '#ffd166', '#e6b63f', '#8f6a1e']
           : ['#e6d8b5', '#bfbfbf', '#8a8a8a', '#5a5a5a'];
       const shirtByProvider = key === 'claude'
         ? [['#2f6f49', '#24533a'], ['#315f8f', '#264970'], ['#6d5a2e', '#584821']]
         : key === 'codex'
           ? [['#345587', '#263f67'], ['#2d6a71', '#235258'], ['#63558b', '#4d416d']]
+          : key === 'gemini'
+            ? [['#8a5a20', '#684214'], ['#2d5d68', '#23474f'], ['#57456f', '#423455']]
           : [['#5a5a5a', '#454545'], ['#3e5d3f', '#304932'], ['#6a4444', '#533434']];
       const bgByProvider = key === 'claude'
         ? [['#0f1a13', '#112319'], ['#11161f', '#15233a']]
         : key === 'codex'
           ? [['#0d1624', '#142032'], ['#11182a', '#182944']]
+          : key === 'gemini'
+            ? [['#1f160a', '#2a1d0e'], ['#1a1410', '#262018']]
           : [['#141414', '#1c1c1c'], ['#101317', '#181d22']];
       const skinChoice = skinPairs[Math.floor(rng() * skinPairs.length)];
       const shirtChoice = shirtByProvider[Math.floor(rng() * shirtByProvider.length)];
@@ -1520,7 +1526,7 @@
         outline: '#050505',
         bg: bgChoice[0],
         bgShade: bgChoice[1],
-        accent: key === 'claude' ? '#9fffd0' : key === 'codex' ? '#9ec9ff' : '#f0d79a',
+        accent: key === 'claude' ? '#9fffd0' : key === 'codex' ? '#9ec9ff' : key === 'gemini' ? '#ffd166' : '#f0d79a',
       };
     }
 
@@ -2159,7 +2165,8 @@
         const meta = document.createElement('div');
         meta.className = 'msg-kind';
         const roundText = event.round ? `round ${event.round}` : 'task';
-        meta.textContent = `${event.type} | ${roundText}`;
+        const timeStr = event.created_at ? new Date(event.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+        meta.textContent = `${event.type} | ${roundText}${timeStr ? ` | ${timeStr}` : ''}`;
 
         const body = document.createElement('pre');
         body.className = 'msg-text';
@@ -2176,6 +2183,7 @@
         item.appendChild(shell);
         el.dialogue.appendChild(item);
       }
+      requestAnimationFrame(() => { el.dialogue.scrollTop = el.dialogue.scrollHeight; });
     }
 
     function renderKpiStrip(stats) {

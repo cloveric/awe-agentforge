@@ -65,7 +65,7 @@ Task-level strategy controls:
 - Examples:
   - `claude#author-A`
   - `codex#review-B`
-  - `codex#review-C` (same provider, different session role)
+  - `gemini#review-C` (cross-provider review role)
 - Supports cross-provider and same-provider multi-session review topologies.
 
 ## 4) Overnight Loop (auto-evolve)

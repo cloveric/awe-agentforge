@@ -1,5 +1,25 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-17)
+
+1. Added first-class Gemini CLI participant support across runtime:
+   - `provider#alias` parser now accepts `gemini` in addition to `claude` and `codex`.
+   - participant adapter default command includes `gemini -p --yolo`.
+2. Added Gemini command wiring in app settings:
+   - new env var `AWE_GEMINI_COMMAND` (default `gemini -p --yolo`).
+   - `main.build_app()` now injects Gemini command overrides into `ParticipantRunner`.
+3. Updated launcher automation for reliability with Gemini:
+   - `scripts/start_overnight_until_7.ps1` resolves Gemini binary path.
+   - launcher exports `AWE_GEMINI_COMMAND` and records it in session metadata.
+4. Updated docs/UI examples:
+   - README (EN/CN), RUNBOOK, and architecture flow include Gemini examples and env reference.
+   - monitor create-task form now explicitly indicates reviewer providers support `claude/codex/gemini`.
+   - pixel avatar palette now has a dedicated Gemini visual variant.
+5. Verification:
+   - targeted tests: `tests/unit/test_participants.py`, `tests/unit/test_adapters.py`, `tests/unit/test_config.py` passed.
+   - integration coverage added in `tests/unit/test_main.py` for Gemini command wiring.
+   - full checks passed: `py -m ruff check .` and `py -m pytest -q`.
+
 ## Update (2026-02-13)
 
 1. Added task strategy controls:

@@ -154,9 +154,9 @@
 |:---|:---|
 | `claude#author-A` | Claude CLI 担任作者角色，别名 "author-A" |
 | `codex#review-B` | Codex CLI 担任审阅者角色，别名 "review-B" |
-| `claude#review-C` | Claude CLI 担任第二审阅者，别名 "review-C" |
+| `gemini#review-C` | Gemini CLI 担任第二审阅者，别名 "review-C" |
 
-`provider` 决定调用哪个 CLI 工具（`claude` 或 `codex`）。`alias` 是在 Web 控制台和日志中显示的人类可读标签。
+`provider` 决定调用哪个 CLI 工具（`claude`、`codex` 或 `gemini`）。`alias` 是在 Web 控制台和日志中显示的人类可读标签。
 
 ### 任务生命周期
 
@@ -193,6 +193,7 @@ queued → running → waiting_manual → (approve) → queued → running → p
 - **Python 3.10+**
 - **Claude CLI** 已安装并认证（用于 Claude 参与者）
 - **Codex CLI** 已安装并认证（用于 Codex 参与者）
+- **Gemini CLI** 已安装并认证（用于 Gemini 参与者）
 - **PostgreSQL**（可选 — 不可用时自动降级为内存数据库）
 
 ### 第 1 步：安装
@@ -228,7 +229,8 @@ $env:AWE_ARTIFACT_ROOT=".agents"
 | `AWE_ARTIFACT_ROOT` | `.agents` | 任务工件目录（线程、事件、报告） |
 | `AWE_CLAUDE_COMMAND` | `claude -p --dangerously-skip-permissions --effort low` | Claude CLI 调用命令模板 |
 | `AWE_CODEX_COMMAND` | `codex exec --skip-git-repo-check ...` | Codex CLI 调用命令模板 |
-| `AWE_PARTICIPANT_TIMEOUT_SECONDS` | `240` | 单个参与者（Claude/Codex）每步最大运行秒数 |
+| `AWE_GEMINI_COMMAND` | `gemini -p --yolo` | Gemini CLI 调用命令模板 |
+| `AWE_PARTICIPANT_TIMEOUT_SECONDS` | `240` | 单个参与者（Claude/Codex/Gemini）每步最大运行秒数 |
 | `AWE_COMMAND_TIMEOUT_SECONDS` | `300` | 测试/lint 命令最大运行秒数 |
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | 参与者超时后的重试次数 |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | 可同时运行的任务数量 |
@@ -328,7 +330,7 @@ http://localhost:8000/
 |:---|:---|:---|
 | `Title` | 任务名（UI/日志都会显示） | 简短且可辨识 |
 | `Workspace path` | 仓库根目录路径 | 你的真实项目路径 |
-| `Author` | 负责实现的角色 | `claude#author-A` 或 `codex#author-A` |
+| `Author` | 负责实现的角色 | `claude#author-A` / `codex#author-A` / `gemini#author-A` |
 | `Reviewers` | 审阅者（逗号分隔） | 至少 1 个 |
 | `Evolution Level` | `0`仅修复，`1`引导进化，`2`主动进化 | 先用 `0` |
 | `Evolve Until` | 可选截止时间（`YYYY-MM-DD HH:MM`） | 非夜跑可留空 |
@@ -756,7 +758,7 @@ POST /api/tasks
 
 - [ ] GitHub / PR 深度联动（任务工件回链）
 - [ ] 按仓库体量和风险级别的策略模板
-- [ ] 扩展更多参与者适配器
+- [ ] 扩展 Claude/Codex/Gemini 之外的更多参与者适配器
 
 ### 2026 Q3 &nbsp; <img src="https://img.shields.io/badge/状态-计划中-3b82f6?style=flat-square" alt="计划中"/>
 

@@ -19,6 +19,7 @@ param(
   [int]$CommandTimeoutSeconds = 300,
   [int]$TaskTimeoutSeconds = 1800,
   [int]$PrimaryDisableSeconds = 3600,
+  [string]$GeminiCommand = '',
   [string]$TestCommand = 'py -m pytest -q',
   [string]$LintCommand = 'py -m ruff check .',
   [string]$ApiBase = 'http://127.0.0.1:8000'
@@ -137,6 +138,21 @@ if ($codexPath) {
   $resolvedCodexCommand = 'codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort=low'
 }
 
+if (-not [string]::IsNullOrWhiteSpace($GeminiCommand)) {
+  $resolvedGeminiCommand = $GeminiCommand
+} else {
+  $geminiPath = Resolve-CommandPath 'gemini'
+  if ($geminiPath) {
+    if ([System.IO.Path]::GetExtension($geminiPath).ToLowerInvariant() -eq '.ps1') {
+      $resolvedGeminiCommand = "pwsh -NoProfile -File `"$geminiPath`" -p --yolo"
+    } else {
+      $resolvedGeminiCommand = "`"$geminiPath`" -p --yolo"
+    }
+  } else {
+    $resolvedGeminiCommand = 'gemini -p --yolo'
+  }
+}
+
 $apiCmd = @"
 `$env:PYTHONPATH='$src';
 `$env:PYTHONUNBUFFERED='1';
@@ -145,6 +161,7 @@ $apiCmd = @"
 `$env:AWE_ARTIFACT_ROOT='$repo/.agents';
 `$env:AWE_CLAUDE_COMMAND='$resolvedClaudeCommand';
 `$env:AWE_CODEX_COMMAND='$resolvedCodexCommand';
+`$env:AWE_GEMINI_COMMAND='$resolvedGeminiCommand';
 `$env:AWE_PARTICIPANT_TIMEOUT_SECONDS='$ParticipantTimeoutSeconds';
 `$env:AWE_COMMAND_TIMEOUT_SECONDS='$CommandTimeoutSeconds';
 `$env:AWE_PARTICIPANT_TIMEOUT_RETRIES='1';
@@ -230,6 +247,7 @@ $session = [ordered]@{
   merge_target_path = if ([string]::IsNullOrWhiteSpace($MergeTargetPath)) { $null } else { $MergeTargetPath }
   claude_command = $resolvedClaudeCommand
   codex_command = $resolvedCodexCommand
+  gemini_command = $resolvedGeminiCommand
   api_stdout = $apiStdout
   api_stderr = $apiStderr
   overnight_stdout = $nightStdout

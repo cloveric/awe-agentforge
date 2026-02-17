@@ -307,3 +307,45 @@ def test_workflow_stops_when_deadline_reached(tmp_path: Path):
 
     assert result.status == 'canceled'
     assert result.gate_reason == 'deadline_reached'
+
+
+def test_workflow_cancels_mid_phase_after_discussion(tmp_path: Path):
+    """Cancel fires after discussion completes, before implementation starts."""
+    runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+
+    # Cancel on 2nd check_cancel call (after discussion, before implementation)
+    call_count = {'n': 0}
+
+    def should_cancel():
+        call_count['n'] += 1
+        # 1st call: round start check -> False
+        # 2nd call: after discussion -> True
+        return call_count['n'] >= 2
+
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+    result = engine.run(
+        RunConfig(
+            task_id='t-mid',
+            title='Mid-phase cancel',
+            description='cancel between phases',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=5,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+        ),
+        on_event=sink,
+        should_cancel=should_cancel,
+    )
+
+    assert result.status == 'canceled'
+    # Only discussion ran, not implementation
+    assert runner.calls == 1
+    event_types = [e['type'] for e in sink.events]
+    assert 'discussion' in event_types
+    assert 'implementation' not in event_types

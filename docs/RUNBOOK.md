@@ -26,6 +26,7 @@ If PostgreSQL is unavailable, service falls back to in-memory repo automatically
 $env:AWE_DRY_RUN="false"
 $env:AWE_CLAUDE_COMMAND="claude -p --dangerously-skip-permissions --effort low"
 $env:AWE_CODEX_COMMAND="codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort=low"
+$env:AWE_GEMINI_COMMAND="gemini -p --yolo"
 $env:AWE_PARTICIPANT_TIMEOUT_SECONDS="240"
 $env:AWE_COMMAND_TIMEOUT_SECONDS="300"
 $env:AWE_PARTICIPANT_TIMEOUT_RETRIES="1"
@@ -42,7 +43,7 @@ py -m awe_agentcheck.cli run `
   --task "Implement parser" `
   --author "claude#author-A" `
   --reviewer "codex#review-B" `
-  --reviewer "claude#review-C" `
+  --reviewer "gemini#review-C" `
   --evolution-level 1 `
   --sandbox-mode 1 `
   --self-loop-mode 0 `
@@ -131,7 +132,7 @@ py scripts/overnight_autoevolve.py `
   --self-loop-mode 1 `
   --author "claude#author-A" `
   --reviewer "codex#review-B" `
-  --reviewer "claude#review-C" `
+  --reviewer "gemini#review-C" `
   --fallback-author "codex#author-A" `
   --fallback-reviewer "codex#review-B" `
   --evolution-level 0 `
@@ -226,7 +227,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "C:/Users/hangw/awe-agentcheck/scr
 
 1. `status_counts`: lifecycle state totals
 2. `reason_bucket_counts`: grouped failure reasons (`command_timeout`, `provider_limit`, `watchdog_timeout`, `review_blocker`, etc.)
-3. `provider_error_counts`: provider-attributed failures extracted from reason strings (`claude`, `codex`)
+3. `provider_error_counts`: provider-attributed failures extracted from reason strings (`claude`, `codex`, `gemini`)
 4. `pass_rate_50` / `failed_gate_rate_50` / `failed_system_rate_50`: terminal outcome ratios over recent 50 tasks
 5. `mean_task_duration_seconds_50`: average terminal duration over recent 50 tasks
 

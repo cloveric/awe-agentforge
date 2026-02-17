@@ -154,9 +154,9 @@ Every task has one **author** (who writes the code) and one or more **reviewers*
 |:---|:---|
 | `claude#author-A` | Claude CLI acting as author, alias "author-A" |
 | `codex#review-B` | Codex CLI acting as reviewer, alias "review-B" |
-| `claude#review-C` | Claude CLI acting as second reviewer, alias "review-C" |
+| `gemini#review-C` | Gemini CLI acting as second reviewer, alias "review-C" |
 
-The `provider` determines which CLI tool is invoked (`claude` or `codex`). The `alias` is a human-readable label for identification in the web console and logs.
+The `provider` determines which CLI tool is invoked (`claude`, `codex`, or `gemini`). The `alias` is a human-readable label for identification in the web console and logs.
 
 ### Task Lifecycle
 
@@ -193,6 +193,7 @@ queued → running → waiting_manual → (approve) → queued → running → p
 - **Python 3.10+**
 - **Claude CLI** installed and authenticated (for Claude participants)
 - **Codex CLI** installed and authenticated (for Codex participants)
+- **Gemini CLI** installed and authenticated (for Gemini participants)
 - **PostgreSQL** (optional — falls back to in-memory database if unavailable)
 
 ### Step 1: Install
@@ -228,7 +229,8 @@ $env:AWE_ARTIFACT_ROOT=".agents"
 | `AWE_ARTIFACT_ROOT` | `.agents` | Directory for task artifacts (threads, events, reports) |
 | `AWE_CLAUDE_COMMAND` | `claude -p --dangerously-skip-permissions --effort low` | Command template for invoking Claude CLI |
 | `AWE_CODEX_COMMAND` | `codex exec --skip-git-repo-check ...` | Command template for invoking Codex CLI |
-| `AWE_PARTICIPANT_TIMEOUT_SECONDS` | `240` | Max seconds a single participant (Claude/Codex) can run per step |
+| `AWE_GEMINI_COMMAND` | `gemini -p --yolo` | Command template for invoking Gemini CLI |
+| `AWE_PARTICIPANT_TIMEOUT_SECONDS` | `240` | Max seconds a single participant (Claude/Codex/Gemini) can run per step |
 | `AWE_COMMAND_TIMEOUT_SECONDS` | `300` | Max seconds for test/lint commands |
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | Retry count when a participant times out |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | How many tasks can run simultaneously |
@@ -328,7 +330,7 @@ If this is your first time, operate in this exact order:
 |:---|:---|:---|
 | `Title` | Task name shown everywhere | Clear and short |
 | `Workspace path` | Repository root path | Your actual project path |
-| `Author` | Implementing participant | `claude#author-A` or `codex#author-A` |
+| `Author` | Implementing participant | `claude#author-A` / `codex#author-A` / `gemini#author-A` |
 | `Reviewers` | One or more reviewers, comma-separated | At least 1 reviewer |
 | `Evolution Level` | `0` fix-only, `1` guided evolve, `2` proactive evolve | Start with `0` |
 | `Evolve Until` | Optional deadline (`YYYY-MM-DD HH:MM`) | Empty unless running overnight |
@@ -756,7 +758,7 @@ When a task passes and `auto_merge=1`:
 
 - [ ] Richer GitHub/PR integration (change summary linking to task artifacts)
 - [ ] Policy templates by repo size/risk profile
-- [ ] Pluggable participant adapters beyond Codex/Claude
+- [ ] Pluggable participant adapters beyond built-in Claude/Codex/Gemini
 
 ### 2026 Q3 &nbsp; <img src="https://img.shields.io/badge/status-planned-3b82f6?style=flat-square" alt="planned"/>
 

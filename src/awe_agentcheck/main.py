@@ -30,6 +30,7 @@ def build_app():
         command_overrides={
             'claude': settings.claude_command,
             'codex': settings.codex_command,
+            'gemini': settings.gemini_command,
         },
         dry_run=settings.dry_run,
         timeout_retries=settings.participant_timeout_retries,

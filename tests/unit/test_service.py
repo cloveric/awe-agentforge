@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from awe_agentcheck.repository import InMemoryTaskRepository
 from awe_agentcheck.service import CreateTaskInput, OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
@@ -508,6 +510,127 @@ def test_service_start_task_does_not_override_external_force_fail(tmp_path: Path
     assert 'watchdog_timeout' in (result.last_gate_reason or '')
 
 
+def test_service_force_fail_noop_when_already_passed(tmp_path: Path):
+    """force_fail_task should not overwrite a PASSED status (race guard)."""
+    svc = build_service(tmp_path)
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Build parser',
+            description='Implement parser for feed',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+        )
+    )
+    # Run the task to completion (PASSED).
+    svc.start_task(created.task_id)
+    task = svc.get_task(created.task_id)
+    assert task.status.value == 'passed'
+
+    # A late force_fail should be a no-op and preserve PASSED.
+    result = svc.force_fail_task(created.task_id, reason='watchdog_timeout: late')
+    assert result.status.value == 'passed'
+    assert result.cancel_requested is False
+
+
+def test_service_force_fail_races_with_concurrent_status_change(tmp_path: Path):
+    """force_fail_task returns current state if status changed between read and CAS."""
+    svc = build_service(tmp_path)
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Build parser',
+            description='Implement parser for feed',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+        )
+    )
+    # Manually set status to RUNNING to simulate in-progress task.
+    svc.repository.update_task_status(
+        created.task_id, status='running', reason=None, rounds_completed=0,
+    )
+    # Simulate a concurrent transition: change status to passed *between*
+    # the get_task read and the CAS write inside force_fail_task.
+    original_get = svc.repository.get_task
+
+    def patched_get(task_id):
+        row = original_get(task_id)
+        if row and row['status'] == 'running':
+            # Simulate concurrent workflow completion.
+            svc.repository.update_task_status(
+                task_id, status='passed', reason='passed', rounds_completed=1,
+            )
+        return row
+
+    svc.repository.get_task = patched_get
+
+    result = svc.force_fail_task(created.task_id, reason='watchdog_timeout: race')
+    # Should honour the concurrent PASSED, not overwrite it.
+    assert result.status.value == 'passed'
+
+
+def test_service_mark_failed_system_does_not_overwrite_force_fail(tmp_path: Path):
+    """mark_failed_system should not overwrite a force_fail that already transitioned the task."""
+    svc = build_service(tmp_path)
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Build parser',
+            description='Implement parser for feed',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+        )
+    )
+    # Move task to RUNNING.
+    svc.repository.update_task_status(
+        created.task_id, status='running', reason=None, rounds_completed=0,
+    )
+    # External force_fail transitions to FAILED_SYSTEM first.
+    svc.force_fail_task(created.task_id, reason='watchdog_timeout: 1800s')
+
+    # Now the workflow exception handler calls mark_failed_system – it should
+    # NOT overwrite the force_fail reason.
+    result = svc.mark_failed_system(created.task_id, reason='workflow_error: connection reset')
+    assert result.status.value == 'failed_system'
+    assert 'watchdog_timeout' in (result.last_gate_reason or '')
+
+
+def test_service_mark_failed_system_cas_race_honours_concurrent_pass(tmp_path: Path):
+    """mark_failed_system should honour a concurrent PASSED transition."""
+    svc = build_service(tmp_path)
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Build parser',
+            description='Implement parser for feed',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+        )
+    )
+    svc.repository.update_task_status(
+        created.task_id, status='running', reason=None, rounds_completed=0,
+    )
+    # Patch get_task to simulate concurrent pass between read and CAS.
+    original_get = svc.repository.get_task
+
+    def patched_get(task_id):
+        row = original_get(task_id)
+        if row and row['status'] == 'running':
+            svc.repository.update_task_status(
+                task_id, status='passed', reason='all_passed', rounds_completed=1,
+            )
+        return row
+
+    svc.repository.get_task = patched_get
+
+    result = svc.mark_failed_system(created.task_id, reason='workflow_error: late crash')
+    assert result.status.value == 'passed'
+
+
 def test_service_create_task_rejects_missing_workspace(tmp_path: Path):
     svc = build_service(tmp_path)
     missing = tmp_path / 'does-not-exist'
@@ -777,4 +900,35 @@ def test_service_stats_include_recent_rates_and_duration(tmp_path: Path):
     assert stats.mean_task_duration_seconds_50 == 120.0
 
 
+
+def test_create_task_rejects_invalid_author_participant(tmp_path: Path):
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match='invalid author_participant'):
+        svc.create_task(
+            CreateTaskInput(
+                sandbox_mode=False,
+                self_loop_mode=1,
+                title='Bad author',
+                description='desc',
+                author_participant='no-hash-here',
+                reviewer_participants=['codex#rev'],
+                workspace_path=str(tmp_path),
+            )
+        )
+
+
+def test_create_task_rejects_invalid_reviewer_participant(tmp_path: Path):
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match=r'invalid reviewer_participants\[1\]'):
+        svc.create_task(
+            CreateTaskInput(
+                sandbox_mode=False,
+                self_loop_mode=1,
+                title='Bad reviewer',
+                description='desc',
+                author_participant='claude#author',
+                reviewer_participants=['codex#ok', 'bad-format'],
+                workspace_path=str(tmp_path),
+            )
+        )
 
