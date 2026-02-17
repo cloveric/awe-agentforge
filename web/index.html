@@ -1313,8 +1313,8 @@
           <p class="hint">Left: projects and participant roles. Right: agent conversation stream and controls.</p>
         </div>
         <div class="toolbar">
-          <button id="refreshBtn">Refresh</button>
-          <button id="pollBtn">Auto Poll: OFF</button>
+          <button id="refreshBtn">Refresh All</button>
+          <button id="pollBtn">Background Refresh: OFF</button>
           <div class="theme-wrap">
             <span class="theme-label">Theme</span>
             <select id="themeSelect" class="theme-select" aria-label="Dashboard theme"></select>
@@ -1370,7 +1370,7 @@
             <button id="rejectBtn" class="btn-warn">Reject</button>
             <button id="cancelBtn" class="btn-warn">Cancel</button>
             <button id="forceFailBtn">Force Fail</button>
-            <button id="reloadEventsBtn">Reload Dialogue</button>
+            <button id="reloadEventsBtn">Reload Conversation Only</button>
           </div>
           <div id="actionStatus" class="mini-status"></div>
           <div id="taskSnapshot" class="status-grid"></div>
@@ -3250,7 +3250,7 @@
         state.eventsByTask.delete(task.task_id);
         const afterStatus = String((updated && updated.status) || beforeStatus || 'unknown');
         if (beforeStatus === 'running' && afterStatus === 'running') {
-          el.actionStatus.textContent = `${task.task_id} already running; wait for next event or keep Auto Poll ON.`;
+          el.actionStatus.textContent = `${task.task_id} already running; wait for next event or keep Background Refresh ON.`;
         } else if (beforeStatus === 'waiting_manual') {
           el.actionStatus.textContent = `${task.task_id} is waiting manual decision; use Approve/Reject buttons.`;
         } else if (afterStatus === 'queued' && String((updated && updated.last_gate_reason) || '') === 'concurrency_limit') {
@@ -3432,7 +3432,7 @@
 
     function setPolling(enabled) {
       state.polling = enabled;
-      el.pollBtn.textContent = `Auto Poll: ${enabled ? 'ON' : 'OFF'}`;
+      el.pollBtn.textContent = `Background Refresh: ${enabled ? 'ON' : 'OFF'}`;
       try {
         localStorage.setItem('awe-agentcheck-poll', enabled ? '1' : '0');
       } catch {
