@@ -955,7 +955,7 @@
       --accent: #f8f8f8;
       --accent-2: #a8cbff;
       --warn: #ff9a8c;
-      --ok: #b8ff7d;
+      --ok: #c8dfff;
       --mono: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
       --sans: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
       --shadow: none;
@@ -1046,9 +1046,9 @@
     }
 
     body[data-theme="pixel"] .btn-main {
-      background: #14231b;
-      color: #b8ff7d;
-      border-color: #4a7f36;
+      background: #161616;
+      color: #f2f2f2;
+      border-color: rgba(255, 255, 255, 0.42);
     }
 
     body[data-theme="pixel"] .btn-warn {
@@ -1069,7 +1069,7 @@
     }
 
     body[data-theme="pixel"] .pill.ok {
-      color: #b8ff7d;
+      color: #c8dfff;
     }
 
     body[data-theme="pixel"] .pill.warn {
@@ -1107,7 +1107,7 @@
     }
 
     body[data-theme="pixel"] .message.agent .msg-actor {
-      color: #bbff95;
+      color: #d7e2ff;
     }
 
     body[data-theme="pixel"] .message.review .msg-actor {
@@ -1119,8 +1119,8 @@
     }
 
     body[data-theme="pixel"] .role-avatar {
-      width: 36px;
-      height: 36px;
+      width: 48px;
+      height: 48px;
       border-radius: 1px;
       border-color: rgba(255, 255, 255, 0.42);
       background: #0b0b0b;
@@ -1128,8 +1128,8 @@
     }
 
     body[data-theme="pixel"] .msg-avatar {
-      width: 48px;
-      height: 48px;
+      width: 72px;
+      height: 72px;
       border-radius: 1px;
       border-color: rgba(255, 255, 255, 0.46);
       background: #0a0a0a;
@@ -1148,6 +1148,849 @@
 
     body[data-theme="pixel"] .kpi-value {
       color: #ffffff;
+    }
+
+    body[data-theme="pixel"] .card-title {
+      color: #f1f1f1;
+    }
+
+    body[data-theme="pixel"] label {
+      color: #c9c9c9;
+    }
+
+    body[data-theme="pixel"] .item-name,
+    body[data-theme="pixel"] .tree-entry,
+    body[data-theme="pixel"] .tree-item.file > .tree-entry,
+    body[data-theme="pixel"] .tree-item.dir > .tree-folder > .tree-entry {
+      color: #ececec;
+    }
+
+    body[data-theme="pixel"] .tree-item.dir > .tree-folder > .tree-entry .tree-icon,
+    body[data-theme="pixel"] .tree-icon,
+    body[data-theme="pixel"] .tree-caret,
+    body[data-theme="pixel"] .tree-pad {
+      color: #cfcfcf;
+    }
+
+    body[data-theme="pixel"] .list button,
+    body[data-theme="pixel"] input,
+    body[data-theme="pixel"] textarea,
+    body[data-theme="pixel"] select,
+    body[data-theme="pixel"] button {
+      border-color: rgba(255, 255, 255, 0.32);
+      color: #f1f1f1;
+    }
+
+    body[data-theme="pixel"] .list button.active {
+      border-color: rgba(255, 255, 255, 0.55);
+      box-shadow: none;
+      background: rgba(14, 14, 14, 0.96);
+    }
+
+    body[data-theme="pixel"] .tree-list,
+    body[data-theme="pixel"] .tree-empty,
+    body[data-theme="pixel"] .empty,
+    body[data-theme="pixel"] .status-grid,
+    body[data-theme="pixel"] .create-help,
+    body[data-theme="pixel"] .history-item,
+    body[data-theme="pixel"] .kpi-card {
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    body[data-theme="pixel"] .empty,
+    body[data-theme="pixel"] .status-grid .empty {
+      color: #d4d8df;
+      background: rgba(10, 10, 10, 0.9);
+    }
+
+    body[data-theme="pixel"] .create-help-item {
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+
+    body[data-theme="pixel"] .history-meta {
+      color: #aeb4bb;
+    }
+
+    body[data-theme="pixel"] .history-meta strong {
+      color: #ededed;
+    }
+
+    body[data-theme="pixel"] .tree-tool-btn.active {
+      border-color: rgba(255, 255, 255, 0.52);
+      box-shadow: none;
+      background: rgba(16, 16, 16, 0.95);
+      color: #f1f1f1;
+    }
+
+    body[data-theme="pixel"] input:focus,
+    body[data-theme="pixel"] textarea:focus,
+    body[data-theme="pixel"] select:focus,
+    body[data-theme="pixel"] button:focus {
+      border-color: rgba(255, 255, 255, 0.62);
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel"] .btn-main {
+      background: #161616;
+      color: #f2f2f2;
+      border-color: rgba(255, 255, 255, 0.42);
+    }
+
+    body[data-theme="pixel"] .message {
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+
+    body[data-theme="pixel"] .msg-bubble,
+    body[data-theme="pixel"] .message.agent .msg-bubble,
+    body[data-theme="pixel"] .message.review .msg-bubble,
+    body[data-theme="pixel"] .message.system .msg-bubble {
+      border-color: rgba(255, 255, 255, 0.24);
+      background: rgba(9, 9, 9, 0.92);
+    }
+
+    body[data-theme="pixel"] .tree-entry:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    body[data-theme="pixel"] .tree-leaf-empty,
+    body[data-theme="pixel"] .history-head,
+    body[data-theme="pixel"] .msg-text,
+    body[data-theme="pixel"] code {
+      color: #d7dbe2;
+    }
+
+    body[data-theme="pixel"] .history-link {
+      border-color: rgba(173, 194, 232, 0.45);
+      background: rgba(16, 20, 28, 0.92);
+      color: #dce7ff;
+    }
+
+    body[data-theme="pixel"]::-webkit-scrollbar-track,
+    body[data-theme="pixel"] ::-webkit-scrollbar-track {
+      background: rgba(9, 9, 9, 0.96);
+      border-radius: 999px;
+    }
+
+    body[data-theme="pixel"]::-webkit-scrollbar-thumb,
+    body[data-theme="pixel"] ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(224, 232, 245, 0.75), rgba(173, 194, 232, 0.75));
+      border-radius: 999px;
+      border: 2px solid rgba(9, 9, 9, 0.96);
+    }
+
+    body[data-theme="pixel-sw"] {
+      --bg-0: #02040b;
+      --bg-1: #060a18;
+      --bg-2: #0c122a;
+      --card: rgba(7, 11, 26, 0.95);
+      --ink: #f6e6a9;
+      --muted: #9ca9c8;
+      --line: rgba(96, 125, 201, 0.36);
+      --line-strong: rgba(154, 187, 255, 0.62);
+      --accent: #ffe081;
+      --accent-2: #72b9ff;
+      --warn: #ff7b7b;
+      --ok: #8ed5ff;
+      --mono: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
+      --sans: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
+      --shadow: none;
+      background:
+        radial-gradient(circle at 16% -8%, rgba(114, 185, 255, 0.2), transparent 34%),
+        radial-gradient(circle at 85% 2%, rgba(255, 103, 103, 0.13), transparent 31%),
+        linear-gradient(180deg, #02040b 0%, #060a18 56%, #0b1023 100%);
+      text-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"]::before {
+      opacity: 0.16;
+      mix-blend-mode: normal;
+      background:
+        radial-gradient(circle at 8% 12%, rgba(255, 255, 255, 0.92) 0 1px, transparent 2px),
+        radial-gradient(circle at 22% 46%, rgba(255, 224, 129, 0.76) 0 1px, transparent 2px),
+        radial-gradient(circle at 41% 28%, rgba(160, 206, 255, 0.82) 0 1px, transparent 2px),
+        radial-gradient(circle at 69% 18%, rgba(255, 255, 255, 0.9) 0 1px, transparent 2px),
+        radial-gradient(circle at 83% 53%, rgba(160, 206, 255, 0.76) 0 1px, transparent 2px),
+        radial-gradient(circle at 56% 74%, rgba(255, 224, 129, 0.68) 0 1px, transparent 2px);
+      background-size: 220px 220px;
+    }
+
+    body[data-theme="pixel-sw"] .header,
+    body[data-theme="pixel-sw"] .card,
+    body[data-theme="pixel-sw"] .tree-list,
+    body[data-theme="pixel-sw"] .tree-empty,
+    body[data-theme="pixel-sw"] .status-grid,
+    body[data-theme="pixel-sw"] .create-help,
+    body[data-theme="pixel-sw"] .create-help-item,
+    body[data-theme="pixel-sw"] .empty,
+    body[data-theme="pixel-sw"] .message,
+    body[data-theme="pixel-sw"] .list button {
+      border-radius: 2px;
+      box-shadow: none;
+      backdrop-filter: none;
+      background: rgba(7, 11, 24, 0.95);
+    }
+
+    body[data-theme="pixel-sw"] .header::after {
+      display: none;
+    }
+
+    body[data-theme="pixel-sw"] .heading {
+      font-size: 18px;
+      letter-spacing: 0.12em;
+      color: #ffe9a8;
+      text-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"] .hint,
+    body[data-theme="pixel-sw"] .mini-status,
+    body[data-theme="pixel-sw"] .msg-kind,
+    body[data-theme="pixel-sw"] .item-meta,
+    body[data-theme="pixel-sw"] .theme-label,
+    body[data-theme="pixel-sw"] .scope-key {
+      color: #9ca9c8;
+    }
+
+    body[data-theme="pixel-sw"] .scope-value {
+      color: #edf4ff;
+    }
+
+    body[data-theme="pixel-sw"] .scope-row {
+      border-bottom-color: rgba(114, 185, 255, 0.35);
+    }
+
+    body[data-theme="pixel-sw"] .create-help-item-title {
+      color: #ffe6a0;
+    }
+
+    body[data-theme="pixel-sw"] .create-help-item-desc,
+    body[data-theme="pixel-sw"] #createHelpHint {
+      color: #c8d4ef;
+    }
+
+    body[data-theme="pixel-sw"] input,
+    body[data-theme="pixel-sw"] textarea,
+    body[data-theme="pixel-sw"] select,
+    body[data-theme="pixel-sw"] button {
+      border-radius: 2px;
+      background: #090f22;
+      box-shadow: none;
+      border-color: rgba(114, 185, 255, 0.36);
+      color: #f2f6ff;
+    }
+
+    body[data-theme="pixel-sw"] button:hover {
+      transform: none;
+      box-shadow: none;
+      border-color: var(--line-strong);
+    }
+
+    body[data-theme="pixel-sw"] .btn-main {
+      background: #1a2447;
+      color: #ffe9a8;
+      border-color: #5f74b8;
+    }
+
+    body[data-theme="pixel-sw"] .btn-warn {
+      background: #2a1116;
+      color: #ffb6b6;
+      border-color: #8e4550;
+    }
+
+    body[data-theme="pixel-sw"] #forceFailBtn {
+      color: #ffb5b5;
+      border-color: rgba(255, 123, 123, 0.45);
+    }
+
+    body[data-theme="pixel-sw"] .pill {
+      border-radius: 2px;
+      background: #070b18;
+      color: #f1f5ff;
+      border-color: rgba(96, 125, 201, 0.45);
+    }
+
+    body[data-theme="pixel-sw"] .pill.ok {
+      color: #8ed5ff;
+      border-color: rgba(114, 185, 255, 0.52);
+    }
+
+    body[data-theme="pixel-sw"] .pill.warn {
+      color: #ffb6b6;
+      border-color: rgba(255, 123, 123, 0.52);
+    }
+
+    body[data-theme="pixel-sw"] .tree-entry {
+      border-radius: 1px;
+      min-height: 22px;
+    }
+
+    body[data-theme="pixel-sw"] .tree-caret,
+    body[data-theme="pixel-sw"] .tree-pad,
+    body[data-theme="pixel-sw"] .tree-icon {
+      color: #c3d1f4;
+    }
+
+    body[data-theme="pixel-sw"] .tree-branch.nested {
+      border-left-color: rgba(114, 185, 255, 0.22);
+    }
+
+    body[data-theme="pixel-sw"] .dialogue {
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      padding: 6px;
+      background: rgba(6, 10, 22, 0.9);
+    }
+
+    body[data-theme="pixel-sw"] .message.agent,
+    body[data-theme="pixel-sw"] .message.review,
+    body[data-theme="pixel-sw"] .message.system,
+    body[data-theme="pixel-sw"] .message.system.bad {
+      box-shadow: none;
+      background: rgba(6, 10, 22, 0.94);
+    }
+
+    body[data-theme="pixel-sw"] .message.agent .msg-actor {
+      color: #ffe9a8;
+    }
+
+    body[data-theme="pixel-sw"] .message.review .msg-actor {
+      color: #8ed5ff;
+    }
+
+    body[data-theme="pixel-sw"] .message.system.bad .msg-actor {
+      color: #ffb6b6;
+    }
+
+    body[data-theme="pixel-sw"] .role-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 1px;
+      border-color: rgba(114, 185, 255, 0.48);
+      background: #060b18;
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"] .msg-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 1px;
+      border-color: rgba(255, 224, 129, 0.46);
+      background: #060b18;
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"] .kpi-card {
+      border-color: rgba(96, 125, 201, 0.46);
+      background: rgba(7, 11, 24, 0.95);
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"] .kpi-label {
+      color: #b8c8eb;
+    }
+
+    body[data-theme="pixel-sw"] .kpi-value {
+      color: #ffe9a8;
+    }
+
+    body[data-theme="pixel-sw"] .card-title {
+      color: #ffe6a0;
+    }
+
+    body[data-theme="pixel-sw"] label {
+      color: #b7c4e8;
+    }
+
+    body[data-theme="pixel-sw"] .item-name,
+    body[data-theme="pixel-sw"] .tree-entry,
+    body[data-theme="pixel-sw"] .tree-item.file > .tree-entry,
+    body[data-theme="pixel-sw"] .tree-item.dir > .tree-folder > .tree-entry {
+      color: #e7efff;
+    }
+
+    body[data-theme="pixel-sw"] .tree-item.dir > .tree-folder > .tree-entry .tree-icon,
+    body[data-theme="pixel-sw"] .tree-icon,
+    body[data-theme="pixel-sw"] .tree-caret,
+    body[data-theme="pixel-sw"] .tree-pad {
+      color: #a9c3fb;
+    }
+
+    body[data-theme="pixel-sw"] .list button {
+      border-color: rgba(114, 185, 255, 0.38);
+    }
+
+    body[data-theme="pixel-sw"] .list button.active {
+      border-color: rgba(255, 224, 129, 0.7);
+      box-shadow: none;
+      background: rgba(17, 20, 41, 0.96);
+    }
+
+    body[data-theme="pixel-sw"] .tree-list,
+    body[data-theme="pixel-sw"] .tree-empty,
+    body[data-theme="pixel-sw"] .empty,
+    body[data-theme="pixel-sw"] .status-grid,
+    body[data-theme="pixel-sw"] .create-help,
+    body[data-theme="pixel-sw"] .history-item,
+    body[data-theme="pixel-sw"] .kpi-card {
+      border-color: rgba(114, 185, 255, 0.38);
+    }
+
+    body[data-theme="pixel-sw"] .empty,
+    body[data-theme="pixel-sw"] .status-grid .empty {
+      color: #dce8ff;
+      background: rgba(9, 13, 27, 0.9);
+    }
+
+    body[data-theme="pixel-sw"] .create-help-item {
+      border-color: rgba(114, 185, 255, 0.3);
+    }
+
+    body[data-theme="pixel-sw"] .history-meta {
+      color: #b9c8e8;
+    }
+
+    body[data-theme="pixel-sw"] .history-meta strong {
+      color: #ffe6a0;
+    }
+
+    body[data-theme="pixel-sw"] .tree-tool-btn.active {
+      border-color: rgba(255, 224, 129, 0.68);
+      box-shadow: none;
+      background: rgba(17, 22, 43, 0.96);
+      color: #ffe6a0;
+    }
+
+    body[data-theme="pixel-sw"] input:focus,
+    body[data-theme="pixel-sw"] textarea:focus,
+    body[data-theme="pixel-sw"] select:focus,
+    body[data-theme="pixel-sw"] button:focus {
+      border-color: rgba(255, 224, 129, 0.68);
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sw"] .message {
+      border-color: rgba(114, 185, 255, 0.32);
+    }
+
+    body[data-theme="pixel-sw"] .msg-bubble {
+      border-color: rgba(114, 185, 255, 0.35);
+      background: rgba(8, 13, 28, 0.92);
+    }
+
+    body[data-theme="pixel-sw"] .message.agent .msg-bubble {
+      border-color: rgba(255, 224, 129, 0.52);
+      background: rgba(23, 19, 9, 0.92);
+    }
+
+    body[data-theme="pixel-sw"] .message.review .msg-bubble {
+      border-color: rgba(114, 185, 255, 0.5);
+      background: rgba(8, 14, 30, 0.92);
+    }
+
+    body[data-theme="pixel-sw"] .message.system .msg-bubble {
+      border-color: rgba(174, 197, 245, 0.42);
+      background: rgba(12, 16, 30, 0.92);
+    }
+
+    body[data-theme="pixel-sw"] .message.system.bad .msg-bubble {
+      border-color: rgba(255, 123, 123, 0.56);
+      background: rgba(29, 11, 16, 0.92);
+    }
+
+    body[data-theme="pixel-sw"] .tree-entry:hover {
+      background: rgba(114, 185, 255, 0.13);
+      border-color: rgba(114, 185, 255, 0.35);
+    }
+
+    body[data-theme="pixel-sw"] .tree-leaf-empty,
+    body[data-theme="pixel-sw"] .history-head {
+      color: #d7e3fb;
+    }
+
+    body[data-theme="pixel-sw"] .msg-text {
+      color: #dde8ff;
+    }
+
+    body[data-theme="pixel-sw"] .history-link {
+      border-color: rgba(255, 224, 129, 0.46);
+      background: rgba(19, 18, 31, 0.92);
+      color: #ffe9a8;
+    }
+
+    body[data-theme="pixel-sw"] code {
+      color: #ffd885;
+    }
+
+    body[data-theme="pixel-sw"]::-webkit-scrollbar-track,
+    body[data-theme="pixel-sw"] ::-webkit-scrollbar-track {
+      background: rgba(6, 10, 22, 0.96);
+      border-radius: 999px;
+    }
+
+    body[data-theme="pixel-sw"]::-webkit-scrollbar-thumb,
+    body[data-theme="pixel-sw"] ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(255, 224, 129, 0.75), rgba(114, 185, 255, 0.75));
+      border-radius: 999px;
+      border: 2px solid rgba(6, 10, 22, 0.96);
+    }
+
+    body[data-theme="pixel-sg"] {
+      --bg-0: #090703;
+      --bg-1: #140d06;
+      --bg-2: #1f150a;
+      --card: rgba(20, 14, 8, 0.95);
+      --ink: #f6e7ca;
+      --muted: #bea47f;
+      --line: rgba(184, 140, 81, 0.36);
+      --line-strong: rgba(224, 187, 126, 0.62);
+      --accent: #d86a44;
+      --accent-2: #8aa7d9;
+      --warn: #e78a6f;
+      --ok: #d9b470;
+      --mono: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
+      --sans: "VT323", "Press Start 2P", "PxPlus IBM VGA8", "Cascadia Mono", monospace;
+      --shadow: none;
+      background:
+        radial-gradient(circle at 16% -12%, rgba(217, 180, 112, 0.2), transparent 36%),
+        radial-gradient(circle at 86% -4%, rgba(138, 167, 217, 0.15), transparent 32%),
+        linear-gradient(180deg, #090703 0%, #140d06 58%, #1f150a 100%);
+      text-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"]::before {
+      opacity: 0.13;
+      mix-blend-mode: normal;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255, 233, 192, 0.1) 0,
+          rgba(255, 233, 192, 0.1) 1px,
+          rgba(0, 0, 0, 0) 2px,
+          rgba(0, 0, 0, 0) 4px
+        ),
+        radial-gradient(circle at 11% 22%, rgba(224, 187, 126, 0.55) 0 1px, transparent 2px),
+        radial-gradient(circle at 39% 58%, rgba(255, 230, 177, 0.55) 0 1px, transparent 2px),
+        radial-gradient(circle at 74% 28%, rgba(138, 167, 217, 0.46) 0 1px, transparent 2px);
+      background-size: auto, 220px 220px, 220px 220px, 220px 220px;
+    }
+
+    body[data-theme="pixel-sg"] .header,
+    body[data-theme="pixel-sg"] .card,
+    body[data-theme="pixel-sg"] .tree-list,
+    body[data-theme="pixel-sg"] .tree-empty,
+    body[data-theme="pixel-sg"] .status-grid,
+    body[data-theme="pixel-sg"] .create-help,
+    body[data-theme="pixel-sg"] .create-help-item,
+    body[data-theme="pixel-sg"] .empty,
+    body[data-theme="pixel-sg"] .message,
+    body[data-theme="pixel-sg"] .list button {
+      border-radius: 2px;
+      box-shadow: none;
+      backdrop-filter: none;
+      background: rgba(20, 14, 8, 0.95);
+    }
+
+    body[data-theme="pixel-sg"] .header::after {
+      display: none;
+    }
+
+    body[data-theme="pixel-sg"] .heading {
+      font-size: 18px;
+      letter-spacing: 0.12em;
+      color: #f5d9a7;
+      text-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"] .hint,
+    body[data-theme="pixel-sg"] .mini-status,
+    body[data-theme="pixel-sg"] .msg-kind,
+    body[data-theme="pixel-sg"] .item-meta,
+    body[data-theme="pixel-sg"] .theme-label,
+    body[data-theme="pixel-sg"] .scope-key {
+      color: #bea47f;
+    }
+
+    body[data-theme="pixel-sg"] .scope-value {
+      color: #f0dfc0;
+    }
+
+    body[data-theme="pixel-sg"] .scope-row {
+      border-bottom-color: rgba(184, 140, 81, 0.35);
+    }
+
+    body[data-theme="pixel-sg"] .create-help-item-title {
+      color: #f2c98e;
+    }
+
+    body[data-theme="pixel-sg"] .create-help-item-desc,
+    body[data-theme="pixel-sg"] #createHelpHint {
+      color: #d9c4a1;
+    }
+
+    body[data-theme="pixel-sg"] input,
+    body[data-theme="pixel-sg"] textarea,
+    body[data-theme="pixel-sg"] select,
+    body[data-theme="pixel-sg"] button {
+      border-radius: 2px;
+      background: #1a1108;
+      box-shadow: none;
+      border-color: rgba(184, 140, 81, 0.38);
+      color: #f5e6cc;
+    }
+
+    body[data-theme="pixel-sg"] button:hover {
+      transform: none;
+      box-shadow: none;
+      border-color: var(--line-strong);
+    }
+
+    body[data-theme="pixel-sg"] .btn-main {
+      background: #402116;
+      color: #ffd7b1;
+      border-color: #b97958;
+    }
+
+    body[data-theme="pixel-sg"] .btn-warn {
+      background: #3a1811;
+      color: #ffc0af;
+      border-color: #a75e4c;
+    }
+
+    body[data-theme="pixel-sg"] #forceFailBtn {
+      color: #ffc0af;
+      border-color: rgba(231, 138, 111, 0.5);
+    }
+
+    body[data-theme="pixel-sg"] .pill {
+      border-radius: 2px;
+      background: #1a1108;
+      color: #f3ddbc;
+      border-color: rgba(184, 140, 81, 0.45);
+    }
+
+    body[data-theme="pixel-sg"] .pill.ok {
+      color: #e3bf7b;
+      border-color: rgba(217, 180, 112, 0.55);
+    }
+
+    body[data-theme="pixel-sg"] .pill.warn {
+      color: #ffbea9;
+      border-color: rgba(231, 138, 111, 0.52);
+    }
+
+    body[data-theme="pixel-sg"] .tree-entry {
+      border-radius: 1px;
+      min-height: 22px;
+    }
+
+    body[data-theme="pixel-sg"] .tree-caret,
+    body[data-theme="pixel-sg"] .tree-pad,
+    body[data-theme="pixel-sg"] .tree-icon {
+      color: #d5b98f;
+    }
+
+    body[data-theme="pixel-sg"] .tree-branch.nested {
+      border-left-color: rgba(184, 140, 81, 0.24);
+    }
+
+    body[data-theme="pixel-sg"] .dialogue {
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      padding: 6px;
+      background: rgba(22, 15, 9, 0.9);
+    }
+
+    body[data-theme="pixel-sg"] .message.agent,
+    body[data-theme="pixel-sg"] .message.review,
+    body[data-theme="pixel-sg"] .message.system,
+    body[data-theme="pixel-sg"] .message.system.bad {
+      box-shadow: none;
+      background: rgba(21, 14, 8, 0.94);
+    }
+
+    body[data-theme="pixel-sg"] .message.agent .msg-actor {
+      color: #f2c08d;
+    }
+
+    body[data-theme="pixel-sg"] .message.review .msg-actor {
+      color: #9cb6e4;
+    }
+
+    body[data-theme="pixel-sg"] .message.system.bad .msg-actor {
+      color: #ffb9a2;
+    }
+
+    body[data-theme="pixel-sg"] .role-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 1px;
+      border-color: rgba(184, 140, 81, 0.52);
+      background: #190f08;
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"] .msg-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 1px;
+      border-color: rgba(224, 187, 126, 0.5);
+      background: #190f08;
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"] .kpi-card {
+      border-color: rgba(184, 140, 81, 0.44);
+      background: rgba(20, 14, 8, 0.95);
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"] .kpi-label {
+      color: #cbaf84;
+    }
+
+    body[data-theme="pixel-sg"] .kpi-value {
+      color: #f5d8a3;
+    }
+
+    body[data-theme="pixel-sg"] .card-title {
+      color: #f2c98e;
+    }
+
+    body[data-theme="pixel-sg"] label {
+      color: #d0b38a;
+    }
+
+    body[data-theme="pixel-sg"] .item-name,
+    body[data-theme="pixel-sg"] .tree-entry,
+    body[data-theme="pixel-sg"] .tree-item.file > .tree-entry,
+    body[data-theme="pixel-sg"] .tree-item.dir > .tree-folder > .tree-entry {
+      color: #f2e1c4;
+    }
+
+    body[data-theme="pixel-sg"] .tree-item.dir > .tree-folder > .tree-entry .tree-icon,
+    body[data-theme="pixel-sg"] .tree-icon,
+    body[data-theme="pixel-sg"] .tree-caret,
+    body[data-theme="pixel-sg"] .tree-pad {
+      color: #d8bf96;
+    }
+
+    body[data-theme="pixel-sg"] .list button {
+      border-color: rgba(184, 140, 81, 0.4);
+    }
+
+    body[data-theme="pixel-sg"] .list button.active {
+      border-color: rgba(224, 187, 126, 0.72);
+      box-shadow: none;
+      background: rgba(39, 22, 13, 0.96);
+    }
+
+    body[data-theme="pixel-sg"] .tree-list,
+    body[data-theme="pixel-sg"] .tree-empty,
+    body[data-theme="pixel-sg"] .empty,
+    body[data-theme="pixel-sg"] .status-grid,
+    body[data-theme="pixel-sg"] .create-help,
+    body[data-theme="pixel-sg"] .history-item,
+    body[data-theme="pixel-sg"] .kpi-card {
+      border-color: rgba(184, 140, 81, 0.4);
+    }
+
+    body[data-theme="pixel-sg"] .empty,
+    body[data-theme="pixel-sg"] .status-grid .empty {
+      color: #ecd8b8;
+      background: rgba(27, 18, 11, 0.9);
+    }
+
+    body[data-theme="pixel-sg"] .create-help-item {
+      border-color: rgba(184, 140, 81, 0.31);
+    }
+
+    body[data-theme="pixel-sg"] .history-meta {
+      color: #ceb792;
+    }
+
+    body[data-theme="pixel-sg"] .history-meta strong {
+      color: #f2c98e;
+    }
+
+    body[data-theme="pixel-sg"] .tree-tool-btn.active {
+      border-color: rgba(224, 187, 126, 0.7);
+      box-shadow: none;
+      background: rgba(39, 24, 14, 0.96);
+      color: #f5d8a3;
+    }
+
+    body[data-theme="pixel-sg"] input:focus,
+    body[data-theme="pixel-sg"] textarea:focus,
+    body[data-theme="pixel-sg"] select:focus,
+    body[data-theme="pixel-sg"] button:focus {
+      border-color: rgba(224, 187, 126, 0.7);
+      box-shadow: none;
+    }
+
+    body[data-theme="pixel-sg"] .message {
+      border-color: rgba(184, 140, 81, 0.34);
+    }
+
+    body[data-theme="pixel-sg"] .msg-bubble {
+      border-color: rgba(184, 140, 81, 0.36);
+      background: rgba(25, 17, 10, 0.92);
+    }
+
+    body[data-theme="pixel-sg"] .message.agent .msg-bubble {
+      border-color: rgba(216, 106, 68, 0.54);
+      background: rgba(39, 18, 12, 0.92);
+    }
+
+    body[data-theme="pixel-sg"] .message.review .msg-bubble {
+      border-color: rgba(138, 167, 217, 0.52);
+      background: rgba(15, 21, 35, 0.92);
+    }
+
+    body[data-theme="pixel-sg"] .message.system .msg-bubble {
+      border-color: rgba(224, 187, 126, 0.44);
+      background: rgba(28, 20, 12, 0.92);
+    }
+
+    body[data-theme="pixel-sg"] .message.system.bad .msg-bubble {
+      border-color: rgba(231, 138, 111, 0.58);
+      background: rgba(36, 14, 12, 0.92);
+    }
+
+    body[data-theme="pixel-sg"] .tree-entry:hover {
+      background: rgba(184, 140, 81, 0.14);
+      border-color: rgba(184, 140, 81, 0.36);
+    }
+
+    body[data-theme="pixel-sg"] .tree-leaf-empty,
+    body[data-theme="pixel-sg"] .history-head {
+      color: #e4cfad;
+    }
+
+    body[data-theme="pixel-sg"] .msg-text {
+      color: #ecdabf;
+    }
+
+    body[data-theme="pixel-sg"] .history-link {
+      border-color: rgba(138, 167, 217, 0.48);
+      background: rgba(19, 20, 31, 0.92);
+      color: #cadcf9;
+    }
+
+    body[data-theme="pixel-sg"] code {
+      color: #f4c788;
+    }
+
+    body[data-theme="pixel-sg"]::-webkit-scrollbar-track,
+    body[data-theme="pixel-sg"] ::-webkit-scrollbar-track {
+      background: rgba(18, 12, 7, 0.96);
+      border-radius: 999px;
+    }
+
+    body[data-theme="pixel-sg"]::-webkit-scrollbar-thumb,
+    body[data-theme="pixel-sg"] ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(224, 187, 126, 0.76), rgba(138, 167, 217, 0.76));
+      border-radius: 999px;
+      border: 2px solid rgba(18, 12, 7, 0.96);
     }
 
     body[data-theme="executive"] {
@@ -1653,6 +2496,8 @@
     const THEME_OPTIONS = [
       { id: 'neon', label: 'Neon Grid' },
       { id: 'pixel', label: 'Terminal Pixel' },
+      { id: 'pixel-sw', label: 'Terminal Pixel: Star Wars' },
+      { id: 'pixel-sg', label: 'Terminal Pixel: Three Kingdoms' },
       { id: 'executive', label: 'Executive Glass' },
     ];
 
@@ -2021,33 +2866,52 @@
 
     function avatarPalette(provider, rng) {
       const key = String(provider || '').toLowerCase();
+      const isPixelTheme = state.theme === 'pixel';
       const skinPairs = [
         ['#f6d2b7', '#d9a88b'],
         ['#deb38c', '#bf8c68'],
         ['#c98b66', '#a76c49'],
         ['#9b6546', '#7f4f36'],
       ];
-      const hairByProvider = key === 'claude'
-        ? ['#f1f1f1', '#d7d7d7', '#aaaaaa', '#5f5f5f']
-        : key === 'codex'
-          ? ['#d8e7ff', '#b8c8df', '#8fa0bc', '#4f6076']
+      const hairByProvider = isPixelTheme
+        ? (key === 'codex'
+          ? ['#d8e7ff', '#b8c8df', '#95a8c9', '#4f6076']
           : key === 'gemini'
             ? ['#ffe59a', '#ffd166', '#e6b63f', '#8f6a1e']
-          : ['#e6d8b5', '#bfbfbf', '#8a8a8a', '#5a5a5a'];
-      const shirtByProvider = key === 'claude'
-        ? [['#2f6f49', '#24533a'], ['#315f8f', '#264970'], ['#6d5a2e', '#584821']]
-        : key === 'codex'
-          ? [['#345587', '#263f67'], ['#2d6a71', '#235258'], ['#63558b', '#4d416d']]
+            : ['#f1f1f1', '#d7d7d7', '#aaaaaa', '#5f5f5f'])
+        : key === 'claude'
+          ? ['#f1f1f1', '#d7d7d7', '#aaaaaa', '#5f5f5f']
+          : key === 'codex'
+            ? ['#d8e7ff', '#b8c8df', '#8fa0bc', '#4f6076']
+            : key === 'gemini'
+              ? ['#ffe59a', '#ffd166', '#e6b63f', '#8f6a1e']
+              : ['#e6d8b5', '#bfbfbf', '#8a8a8a', '#5a5a5a'];
+      const shirtByProvider = isPixelTheme
+        ? (key === 'codex'
+          ? [['#345587', '#263f67'], ['#2e4064', '#253453'], ['#5f5f75', '#48485d']]
           : key === 'gemini'
-            ? [['#8a5a20', '#684214'], ['#2d5d68', '#23474f'], ['#57456f', '#423455']]
-          : [['#5a5a5a', '#454545'], ['#3e5d3f', '#304932'], ['#6a4444', '#533434']];
-      const bgByProvider = key === 'claude'
-        ? [['#0f1a13', '#112319'], ['#11161f', '#15233a']]
-        : key === 'codex'
+            ? [['#8a5a20', '#684214'], ['#5d4f2e', '#463c22'], ['#4f4b68', '#3d3a53']]
+            : [['#5a5a5a', '#454545'], ['#61677a', '#4a5060'], ['#6a4444', '#533434']])
+        : key === 'claude'
+          ? [['#2f6f49', '#24533a'], ['#315f8f', '#264970'], ['#6d5a2e', '#584821']]
+          : key === 'codex'
+            ? [['#345587', '#263f67'], ['#2d6a71', '#235258'], ['#63558b', '#4d416d']]
+            : key === 'gemini'
+              ? [['#8a5a20', '#684214'], ['#2d5d68', '#23474f'], ['#57456f', '#423455']]
+              : [['#5a5a5a', '#454545'], ['#3e5d3f', '#304932'], ['#6a4444', '#533434']];
+      const bgByProvider = isPixelTheme
+        ? (key === 'codex'
           ? [['#0d1624', '#142032'], ['#11182a', '#182944']]
           : key === 'gemini'
             ? [['#1f160a', '#2a1d0e'], ['#1a1410', '#262018']]
-          : [['#141414', '#1c1c1c'], ['#101317', '#181d22']];
+            : [['#141414', '#1c1c1c'], ['#101317', '#181d22']])
+        : key === 'claude'
+          ? [['#0f1a13', '#112319'], ['#11161f', '#15233a']]
+          : key === 'codex'
+            ? [['#0d1624', '#142032'], ['#11182a', '#182944']]
+            : key === 'gemini'
+              ? [['#1f160a', '#2a1d0e'], ['#1a1410', '#262018']]
+              : [['#141414', '#1c1c1c'], ['#101317', '#181d22']];
       const skinChoice = skinPairs[Math.floor(rng() * skinPairs.length)];
       const shirtChoice = shirtByProvider[Math.floor(rng() * shirtByProvider.length)];
       const bgChoice = bgByProvider[Math.floor(rng() * bgByProvider.length)];
@@ -2063,11 +2927,22 @@
         outline: '#050505',
         bg: bgChoice[0],
         bgShade: bgChoice[1],
-        accent: key === 'claude' ? '#9fffd0' : key === 'codex' ? '#9ec9ff' : key === 'gemini' ? '#ffd166' : '#f0d79a',
+        accent: isPixelTheme
+          ? (key === 'codex' ? '#9ec9ff' : key === 'gemini' ? '#ffd166' : '#d7dce6')
+          : (key === 'claude' ? '#9fffd0' : key === 'codex' ? '#9ec9ff' : key === 'gemini' ? '#ffd166' : '#f0d79a'),
       };
     }
 
     function generateAvatarSvg(roleId, provider) {
+      if (state.theme === 'pixel-sw') {
+        return generateAvatarSvgStarWars(roleId, provider);
+      }
+      if (state.theme === 'pixel-sg') {
+        return generateAvatarSvgThreeKingdoms(roleId, provider);
+      }
+      if (state.theme === 'pixel') {
+        return generateAvatarSvgPixel(roleId, provider);
+      }
       const seed = `${provider}|${roleId}`;
       const rng = seededRandom(hashText(seed));
       const palette = avatarPalette(provider, rng);
@@ -2199,6 +3074,510 @@
       fillRect(9, 19, 14, 19, palette.outline);
 
       const rects = [`<rect width="${size}" height="${size}" fill="${palette.bg}"></rect>`];
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const color = grid[y][x];
+          if (!color) continue;
+          rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${color}"></rect>`);
+        }
+      }
+      return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${rects.join('')}</svg>`;
+    }
+
+    function generateAvatarSvgPixel(roleId, provider) {
+      const rawKey = String(provider || '').toLowerCase();
+      const key = ['claude', 'codex', 'gemini'].includes(rawKey) ? rawKey : 'system';
+      const seed = `px-modern-human|${key}|${roleId}`;
+      const rng = seededRandom(hashText(seed));
+      const size = 24;
+      const grid = Array.from({ length: size }, () => Array(size).fill(null));
+
+      const palettes = {
+        system: {
+          bg: '#0a0f16', bgShade: '#111a27', line: '#1f3147',
+          skin: '#d6dcee', skinShade: '#b4bfd8',
+          hair: '#b9c7e4', hairShade: '#8da0c5',
+          eyeWhite: '#edf3ff', pupil: '#111b2c',
+          cloth: '#3f526f', clothShade: '#2f4058',
+          accent: '#9ec4ff', lip: '#8e9ab1',
+        },
+        claude: {
+          bg: '#14100e', bgShade: '#1e1714', line: '#34261f',
+          skin: '#efcaab', skinShade: '#d9aa85',
+          hair: '#ebe7de', hairShade: '#ccc6bd',
+          eyeWhite: '#faf6ef', pupil: '#1b140f',
+          cloth: '#625a70', clothShade: '#4b4458',
+          accent: '#d8c3a1', lip: '#9b6f62',
+        },
+        codex: {
+          bg: '#0b121f', bgShade: '#121d32', line: '#26426a',
+          skin: '#dcc2a3', skinShade: '#c19c78',
+          hair: '#93abd6', hairShade: '#6d85b2',
+          eyeWhite: '#ecf3ff', pupil: '#11233f',
+          cloth: '#345383', clothShade: '#274064',
+          accent: '#9fd2ff', lip: '#8f6f58',
+        },
+        gemini: {
+          bg: '#171208', bgShade: '#231b0d', line: '#3d2f12',
+          skin: '#e8c8a1', skinShade: '#cba073',
+          hair: '#e7bc67', hairShade: '#b68d41',
+          eyeWhite: '#fff4db', pupil: '#2b1f10',
+          cloth: '#675133', clothShade: '#4c3b26',
+          accent: '#ffd978', lip: '#9f744f',
+        },
+      };
+      const p = palettes[key];
+
+      function px(x, y, color) {
+        if (x < 0 || y < 0 || x >= size || y >= size) return;
+        grid[y][x] = color;
+      }
+
+      function fillRect(x1, y1, x2, y2, color) {
+        for (let y = y1; y <= y2; y += 1) {
+          for (let x = x1; x <= x2; x += 1) {
+            px(x, y, color);
+          }
+        }
+      }
+
+      function strokeRect(x1, y1, x2, y2, color) {
+        for (let x = x1; x <= x2; x += 1) {
+          px(x, y1, color);
+          px(x, y2, color);
+        }
+        for (let y = y1; y <= y2; y += 1) {
+          px(x1, y, color);
+          px(x2, y, color);
+        }
+      }
+
+      function drawEyes() {
+        fillRect(9, 9, 10, 10, p.eyeWhite);
+        fillRect(13, 9, 14, 10, p.eyeWhite);
+        px(10, 10, p.pupil);
+        px(14, 10, p.pupil);
+      }
+
+      fillRect(0, 0, 23, 23, p.bg);
+      fillRect(0, 16, 23, 23, p.bgShade);
+      for (let y = 0; y < size; y += 2) {
+        for (let x = 0; x < size; x += 2) {
+          if (rng() > 0.8) px(x, y, p.bgShade);
+        }
+      }
+
+      for (let y = 0; y < size; y += 1) {
+        px(0, y, p.line);
+        px(size - 1, y, p.line);
+      }
+      for (let x = 0; x < size; x += 1) {
+        px(x, 0, p.line);
+        px(x, size - 1, p.line);
+      }
+
+      // Modern human portrait base.
+      fillRect(6, 16, 17, 23, p.cloth);
+      fillRect(8, 18, 15, 23, p.clothShade);
+      fillRect(10, 14, 13, 16, p.skin);
+      fillRect(10, 15, 13, 16, p.skinShade);
+
+      fillRect(7, 6, 16, 15, p.skin);
+      fillRect(8, 11, 15, 15, p.skinShade);
+      fillRect(6, 8, 6, 12, p.skin);
+      fillRect(17, 8, 17, 12, p.skin);
+      fillRect(6, 9, 6, 12, p.skinShade);
+      fillRect(17, 9, 17, 12, p.skinShade);
+
+      drawEyes();
+      fillRect(11, 10, 12, 12, p.skinShade);
+      fillRect(10, 13, 13, 13, p.lip);
+      strokeRect(7, 6, 16, 15, p.line);
+
+      if (key === 'system') {
+        // Modern ops headset.
+        fillRect(6, 4, 17, 7, p.hair);
+        fillRect(7, 8, 8, 11, p.hairShade);
+        fillRect(15, 8, 16, 10, p.hairShade);
+        fillRect(18, 8, 19, 12, p.accent);
+        fillRect(18, 12, 20, 12, p.accent);
+        fillRect(10, 18, 13, 18, p.accent);
+      } else if (key === 'claude') {
+        // Side-part + scarf.
+        fillRect(6, 4, 17, 7, p.hair);
+        fillRect(6, 8, 7, 13, p.hairShade);
+        fillRect(14, 8, 17, 9, p.hairShade);
+        fillRect(9, 18, 14, 18, p.accent);
+        fillRect(11, 19, 12, 21, p.accent);
+      } else if (key === 'codex') {
+        // Hoodie + sleek visor.
+        fillRect(5, 5, 18, 9, p.hairShade);
+        fillRect(5, 10, 6, 14, p.hairShade);
+        fillRect(17, 10, 18, 14, p.hairShade);
+        fillRect(8, 8, 15, 9, p.accent);
+        fillRect(10, 19, 13, 20, p.accent);
+      } else {
+        // Glasses + small forehead clip.
+        fillRect(6, 4, 17, 7, p.hair);
+        fillRect(7, 8, 16, 8, p.hairShade);
+        strokeRect(8, 8, 10, 11, p.accent);
+        strokeRect(13, 8, 15, 11, p.accent);
+        fillRect(11, 9, 12, 9, p.accent);
+        fillRect(11, 4, 12, 4, p.accent);
+      }
+
+      strokeRect(6, 16, 17, 23, p.line);
+
+      const rects = [`<rect width="${size}" height="${size}" fill="${p.bg}"></rect>`];
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const color = grid[y][x];
+          if (!color) continue;
+          rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${color}"></rect>`);
+        }
+      }
+      return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${rects.join('')}</svg>`;
+    }
+
+    function generateAvatarSvgStarWars(roleId, provider) {
+      const rawKey = String(provider || '').toLowerCase();
+      const key = ['claude', 'codex', 'gemini'].includes(rawKey) ? rawKey : 'system';
+      const seed = `sw|${key}|${roleId}`;
+      const rng = seededRandom(hashText(seed));
+      const size = 24;
+      const grid = Array.from({ length: size }, () => Array(size).fill(null));
+
+      const palettes = {
+        system: {
+          bg: '#050812', bgShade: '#0b1230', outline: '#010102',
+          skin: '#d2dcff', skinShade: '#a6b3d8', cloth: '#3a4e7f', clothShade: '#2b3b62',
+          armor: '#7a8ebc', armorShade: '#5d6f99', visor: '#0a0f1e',
+          saber: '#7cc7ff', saberCore: '#e0f5ff', accent: '#ffe081',
+          starA: '#dfe7ff', starB: '#ffe8a8', starC: '#95c7ff',
+        },
+        claude: {
+          bg: '#060912', bgShade: '#0f1530', outline: '#010102',
+          skin: '#f1c9a3', skinShade: '#d8a77f', cloth: '#7b5d38', clothShade: '#5b4329',
+          armor: '#3a4f66', armorShade: '#2a3b4f', visor: '#0a0d14',
+          saber: '#59b8ff', saberCore: '#e5f5ff', accent: '#ffe081',
+          starA: '#dfe7ff', starB: '#ffe8a8', starC: '#95c7ff',
+        },
+        codex: {
+          bg: '#05070f', bgShade: '#1a1022', outline: '#010102',
+          skin: '#d8dfe8', skinShade: '#b5c0cf', cloth: '#2f3448', clothShade: '#222637',
+          armor: '#e6ebf2', armorShade: '#bfc9d8', visor: '#131822',
+          saber: '#ff6262', saberCore: '#ffdada', accent: '#9fb4ff',
+          starA: '#dfe7ff', starB: '#ffe8a8', starC: '#95c7ff',
+        },
+        gemini: {
+          bg: '#09070f', bgShade: '#161327', outline: '#010102',
+          skin: '#d2b26a', skinShade: '#a1844c', cloth: '#5f4b2a', clothShade: '#45361d',
+          armor: '#b3bcc9', armorShade: '#8893a3', visor: '#13141b',
+          saber: '#ffc857', saberCore: '#fff2cf', accent: '#72b9ff',
+          starA: '#dfe7ff', starB: '#ffe8a8', starC: '#95c7ff',
+        },
+      };
+      const p = palettes[key];
+
+      function px(x, y, color) {
+        if (x < 0 || y < 0 || x >= size || y >= size) return;
+        grid[y][x] = color;
+      }
+
+      function fillRect(x1, y1, x2, y2, color) {
+        for (let y = y1; y <= y2; y += 1) {
+          for (let x = x1; x <= x2; x += 1) {
+            px(x, y, color);
+          }
+        }
+      }
+
+      function strokeRect(x1, y1, x2, y2, color) {
+        for (let x = x1; x <= x2; x += 1) {
+          px(x, y1, color);
+          px(x, y2, color);
+        }
+        for (let y = y1; y <= y2; y += 1) {
+          px(x1, y, color);
+          px(x2, y, color);
+        }
+      }
+
+      function drawVerticalSaber(x, y1, y2, glowColor, coreColor) {
+        for (let y = y1; y <= y2; y += 1) {
+          px(x, y, coreColor);
+          px(x - 1, y, glowColor);
+          px(x + 1, y, glowColor);
+        }
+        fillRect(x - 1, y2 + 1, x + 1, y2 + 2, p.outline);
+      }
+
+      function drawEyes(x1, x2, y) {
+        fillRect(x1, y, x1 + 1, y, p.visor);
+        fillRect(x2, y, x2 + 1, y, p.visor);
+      }
+
+      fillRect(0, 0, 23, 23, p.bg);
+      fillRect(0, 16, 23, 23, p.bgShade);
+      for (let i = 0; i < 34; i += 1) {
+        const sx = Math.floor(rng() * 24);
+        const sy = Math.floor(rng() * 24);
+        const starColor = (i % 3 === 0) ? p.starA : (i % 3 === 1 ? p.starB : p.starC);
+        if (rng() > 0.55) {
+          px(sx, sy, starColor);
+        }
+      }
+
+      if (key === 'claude') {
+        // Hooded Jedi-like role (blue saber)
+        fillRect(6, 15, 17, 23, p.cloth);
+        fillRect(8, 17, 15, 23, p.clothShade);
+        fillRect(8, 6, 15, 14, p.skin);
+        fillRect(9, 11, 14, 14, p.skinShade);
+        fillRect(6, 5, 17, 8, p.cloth);
+        fillRect(7, 7, 8, 12, p.cloth);
+        fillRect(15, 7, 16, 12, p.cloth);
+        fillRect(9, 4, 14, 5, p.clothShade);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.visor);
+        strokeRect(6, 5, 17, 23, p.outline);
+        drawVerticalSaber(20, 8, 20, p.saber, p.saberCore);
+      } else if (key === 'codex') {
+        // Trooper-like role (red saber)
+        fillRect(7, 15, 16, 23, p.armor);
+        fillRect(8, 17, 15, 23, p.armorShade);
+        fillRect(7, 6, 16, 14, p.armor);
+        fillRect(8, 7, 15, 13, p.skin);
+        fillRect(8, 8, 15, 10, p.visor);
+        fillRect(9, 11, 14, 13, p.skinShade);
+        fillRect(9, 6, 14, 6, p.armorShade);
+        fillRect(7, 11, 7, 12, p.armorShade);
+        fillRect(16, 11, 16, 12, p.armorShade);
+        fillRect(10, 18, 13, 19, p.visor);
+        strokeRect(7, 6, 16, 23, p.outline);
+        drawVerticalSaber(3, 8, 20, p.saber, p.saberCore);
+      } else if (key === 'gemini') {
+        // Droid-like role with protocol colors
+        fillRect(8, 15, 15, 23, p.cloth);
+        fillRect(9, 17, 14, 23, p.clothShade);
+        fillRect(8, 6, 15, 14, p.armor);
+        fillRect(9, 7, 14, 12, p.skin);
+        fillRect(10, 8, 11, 8, p.visor);
+        fillRect(12, 8, 13, 8, p.visor);
+        fillRect(10, 10, 13, 10, p.accent);
+        fillRect(9, 13, 14, 14, p.armorShade);
+        px(11, 4, p.accent);
+        px(12, 4, p.accent);
+        fillRect(11, 5, 12, 5, p.armorShade);
+        strokeRect(8, 6, 15, 23, p.outline);
+      } else {
+        // System command/hologram role
+        fillRect(7, 15, 16, 23, p.cloth);
+        fillRect(8, 17, 15, 23, p.clothShade);
+        fillRect(8, 6, 15, 14, p.skin);
+        fillRect(9, 7, 14, 13, p.skinShade);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.visor);
+        fillRect(10, 18, 13, 19, p.accent);
+        strokeRect(7, 6, 16, 23, p.outline);
+        drawVerticalSaber(19, 9, 20, p.saber, p.saberCore);
+      }
+
+      const rects = [`<rect width="${size}" height="${size}" fill="${p.bg}"></rect>`];
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const color = grid[y][x];
+          if (!color) continue;
+          rects.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${color}"></rect>`);
+        }
+      }
+      return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${rects.join('')}</svg>`;
+    }
+
+    function generateAvatarSvgThreeKingdoms(roleId, provider) {
+      const rawKey = String(provider || '').toLowerCase();
+      const key = ['claude', 'codex', 'gemini'].includes(rawKey) ? rawKey : 'system';
+      const seed = `sg|${key}|${roleId}`;
+      const rng = seededRandom(hashText(seed));
+      const size = 24;
+      const grid = Array.from({ length: size }, () => Array(size).fill(null));
+
+      const palettes = {
+        system: {
+          bg: '#1b0f08', bgShade: '#2a130c', outline: '#050302',
+          skin: '#efcdaa', skinShade: '#d7ac86',
+          robe: '#6e1f1f', robeShade: '#511414',
+          hat: '#d4a85f', hatShade: '#9a7335',
+          eye: '#170d09', prop: '#b0533b', propShade: '#7f2f22',
+          fan: '#efdec0', fanShade: '#d8c3a0',
+          scroll: '#ead7af', scrollBand: '#ae7f43',
+          plume: '#c74a3d', crown: '#d4a85f', crownShade: '#9a7335',
+          seal: '#b94732', sealShade: '#7a291f',
+          sparkA: '#f2cc92', sparkB: '#9ab4df',
+        },
+        claude: {
+          bg: '#120f12', bgShade: '#1d1520', outline: '#050505',
+          skin: '#efcfad', skinShade: '#d8ad87',
+          robe: '#365f92', robeShade: '#28496f',
+          hat: '#1c1c28', hatShade: '#2b2b39',
+          eye: '#0f1015', prop: '#8c6c3c', propShade: '#664f2c',
+          fan: '#efe7d4', fanShade: '#c9baa2',
+          scroll: '#e6d2a5', scrollBand: '#a9793f',
+          plume: '#d16d54', crown: '#c89c58', crownShade: '#906f38',
+          seal: '#ab4b39', sealShade: '#742a21',
+          sparkA: '#dfc28f', sparkB: '#9ab4df',
+        },
+        codex: {
+          bg: '#140c08', bgShade: '#23120c', outline: '#040302',
+          skin: '#e5c19f', skinShade: '#c99a75',
+          robe: '#5d2f23', robeShade: '#452217',
+          hat: '#6a727f', hatShade: '#4e5560',
+          eye: '#130b08', prop: '#cb9d5c', propShade: '#7d5d2e',
+          fan: '#ecd7b2', fanShade: '#ccb28b',
+          scroll: '#e5d09f', scrollBand: '#a67332',
+          plume: '#c83f3a', crown: '#c29b5c', crownShade: '#8f6f3a',
+          seal: '#ad4430', sealShade: '#73261d',
+          sparkA: '#e5bf83', sparkB: '#a4b8d8',
+        },
+        gemini: {
+          bg: '#0e1116', bgShade: '#151a23', outline: '#040507',
+          skin: '#e4c5a2', skinShade: '#c7a077',
+          robe: '#2f4c72', robeShade: '#223954',
+          hat: '#3f4f68', hatShade: '#2f3b4e',
+          eye: '#0b1016', prop: '#84a7d8', propShade: '#5e79a4',
+          fan: '#e8d7b6', fanShade: '#c9b28f',
+          scroll: '#e8d3a2', scrollBand: '#b47d3a',
+          plume: '#c66955', crown: '#c7a061', crownShade: '#8f6d3a',
+          seal: '#a64b3d', sealShade: '#6d2c24',
+          sparkA: '#d8bf8d', sparkB: '#9cb7e7',
+        },
+      };
+      const p = palettes[key];
+
+      function px(x, y, color) {
+        if (x < 0 || y < 0 || x >= size || y >= size) return;
+        grid[y][x] = color;
+      }
+
+      function fillRect(x1, y1, x2, y2, color) {
+        for (let y = y1; y <= y2; y += 1) {
+          for (let x = x1; x <= x2; x += 1) {
+            px(x, y, color);
+          }
+        }
+      }
+
+      function strokeRect(x1, y1, x2, y2, color) {
+        for (let x = x1; x <= x2; x += 1) {
+          px(x, y1, color);
+          px(x, y2, color);
+        }
+        for (let y = y1; y <= y2; y += 1) {
+          px(x1, y, color);
+          px(x2, y, color);
+        }
+      }
+
+      function drawEyes(x1, x2, y) {
+        fillRect(x1, y, x1 + 1, y, p.eye);
+        fillRect(x2, y, x2 + 1, y, p.eye);
+      }
+
+      fillRect(0, 0, 23, 23, p.bg);
+      fillRect(0, 16, 23, 23, p.bgShade);
+      for (let i = 0; i < 30; i += 1) {
+        const sx = Math.floor(rng() * 24);
+        const sy = Math.floor(rng() * 24);
+        const sparkle = i % 2 === 0 ? p.sparkA : p.sparkB;
+        if (rng() > 0.58) {
+          px(sx, sy, sparkle);
+        }
+      }
+
+      if (key === 'claude') {
+        // Strategist: scholar robe + feather fan.
+        fillRect(6, 15, 17, 23, p.robe);
+        fillRect(8, 17, 15, 23, p.robeShade);
+        fillRect(8, 6, 15, 14, p.skin);
+        fillRect(9, 11, 14, 14, p.skinShade);
+        fillRect(7, 4, 16, 6, p.hat);
+        fillRect(9, 3, 14, 3, p.hatShade);
+        fillRect(6, 5, 6, 8, p.hat);
+        fillRect(17, 5, 17, 8, p.hat);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.eye);
+        strokeRect(6, 6, 17, 23, p.outline);
+
+        fillRect(1, 10, 6, 14, p.fan);
+        fillRect(2, 11, 5, 13, p.fanShade);
+        fillRect(3, 11, 3, 13, p.outline);
+        fillRect(4, 11, 4, 13, p.outline);
+        fillRect(6, 12, 7, 12, p.prop);
+        fillRect(7, 11, 7, 13, p.prop);
+      } else if (key === 'codex') {
+        // General: helmet + plume + halberd.
+        fillRect(7, 15, 16, 23, p.robe);
+        fillRect(8, 17, 15, 23, p.robeShade);
+        fillRect(8, 6, 15, 13, p.skin);
+        fillRect(9, 11, 14, 13, p.skinShade);
+        fillRect(7, 5, 16, 7, p.hat);
+        fillRect(8, 8, 15, 9, p.hatShade);
+        fillRect(7, 8, 8, 11, p.hat);
+        fillRect(15, 8, 16, 11, p.hat);
+        fillRect(10, 2, 13, 4, p.plume);
+        fillRect(11, 1, 12, 1, p.plume);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.eye);
+        strokeRect(7, 6, 16, 23, p.outline);
+
+        fillRect(20, 7, 20, 21, p.propShade);
+        fillRect(19, 7, 21, 8, p.prop);
+        fillRect(19, 6, 19, 7, p.prop);
+        fillRect(21, 6, 21, 7, p.prop);
+        fillRect(18, 9, 19, 10, p.plume);
+      } else if (key === 'gemini') {
+        // Diplomat: robe + scroll + brush.
+        fillRect(7, 15, 16, 23, p.robe);
+        fillRect(8, 17, 15, 23, p.robeShade);
+        fillRect(8, 6, 15, 14, p.skin);
+        fillRect(9, 11, 14, 14, p.skinShade);
+        fillRect(7, 4, 16, 6, p.hat);
+        fillRect(9, 3, 14, 3, p.hatShade);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.eye);
+        strokeRect(7, 6, 16, 23, p.outline);
+
+        fillRect(18, 10, 21, 15, p.scroll);
+        fillRect(19, 12, 20, 13, p.scrollBand);
+        fillRect(18, 9, 18, 10, p.scrollBand);
+        fillRect(21, 15, 21, 16, p.scrollBand);
+        fillRect(2, 11, 4, 11, p.propShade);
+        fillRect(4, 10, 4, 12, p.propShade);
+        fillRect(0, 10, 1, 12, p.prop);
+      } else {
+        // Commander: imperial crown + seal token.
+        fillRect(7, 15, 16, 23, p.robe);
+        fillRect(8, 17, 15, 23, p.robeShade);
+        fillRect(8, 6, 15, 14, p.skin);
+        fillRect(9, 11, 14, 14, p.skinShade);
+        fillRect(8, 4, 15, 5, p.crown);
+        px(9, 3, p.crown);
+        px(11, 2, p.crown);
+        px(13, 3, p.crown);
+        px(15, 3, p.crown);
+        fillRect(10, 6, 13, 6, p.crownShade);
+        drawEyes(9, 13, 9);
+        fillRect(10, 12, 13, 12, p.eye);
+        fillRect(10, 18, 13, 20, p.seal);
+        fillRect(11, 19, 12, 19, p.sealShade);
+        strokeRect(7, 6, 16, 23, p.outline);
+
+        fillRect(3, 7, 3, 20, p.propShade);
+        fillRect(1, 7, 2, 9, p.prop);
+        fillRect(1, 10, 2, 12, p.propShade);
+      }
+
+      const rects = [`<rect width="${size}" height="${size}" fill="${p.bg}"></rect>`];
       for (let y = 0; y < size; y += 1) {
         for (let x = 0; x < size; x += 1) {
           const color = grid[y][x];
