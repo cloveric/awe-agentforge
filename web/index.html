@@ -733,6 +733,10 @@
       padding-right: 2px;
     }
 
+    .history-body.is-collapsed {
+      display: none;
+    }
+
     .history-item {
       border: 1px solid rgba(31, 232, 137, 0.28);
       border-radius: 10px;
@@ -1244,9 +1248,16 @@
         </section>
 
         <section class="card">
-          <h2 class="card-title">Project History</h2>
-          <div id="historySummary" class="mini-status"></div>
-          <div id="projectHistory" class="history-list"></div>
+          <div class="tree-head">
+            <h2 class="card-title">Project History</h2>
+            <div class="tree-tools">
+              <button id="toggleHistoryBtn" class="tree-tool-btn" type="button">Collapse</button>
+            </div>
+          </div>
+          <div id="projectHistoryBody" class="history-body">
+            <div id="historySummary" class="mini-status"></div>
+            <div id="projectHistory" class="history-list"></div>
+          </div>
         </section>
 
         <section class="card">
@@ -1425,6 +1436,7 @@
       eventsByTask: new Map(),
       treeByProject: new Map(),
       treeOpenByProject: new Map(),
+      historyCollapsed: false,
       polling: true,
       timer: null,
       apiHealthy: false,
@@ -1444,6 +1456,8 @@
       taskSnapshot: document.getElementById('taskSnapshot'),
       projectHistory: document.getElementById('projectHistory'),
       historySummary: document.getElementById('historySummary'),
+      projectHistoryBody: document.getElementById('projectHistoryBody'),
+      toggleHistoryBtn: document.getElementById('toggleHistoryBtn'),
       createStatus: document.getElementById('createStatus'),
       pollBtn: document.getElementById('pollBtn'),
       startBtn: document.getElementById('startBtn'),
@@ -2455,6 +2469,36 @@
       return `mode=${mode} | changed=${changed} copied=${copied} deleted=${deleted}`;
     }
 
+    function readHistoryCollapsePreference() {
+      try {
+        return localStorage.getItem('awe-agentcheck-history-collapsed') === '1';
+      } catch {
+        return false;
+      }
+    }
+
+    function renderHistoryCollapseState() {
+      const collapsed = !!state.historyCollapsed;
+      if (el.projectHistoryBody) {
+        el.projectHistoryBody.classList.toggle('is-collapsed', collapsed);
+      }
+      if (el.toggleHistoryBtn) {
+        el.toggleHistoryBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+        el.toggleHistoryBtn.title = collapsed ? 'Expand project history' : 'Collapse project history';
+        el.toggleHistoryBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }
+    }
+
+    function setHistoryCollapsed(collapsed, opts = {}) {
+      state.historyCollapsed = !!collapsed;
+      renderHistoryCollapseState();
+      if (opts.persist === false) return;
+      try {
+        localStorage.setItem('awe-agentcheck-history-collapsed', state.historyCollapsed ? '1' : '0');
+      } catch {
+      }
+    }
+
     function renderProjectHistory() {
       const scoped = historyItemsInSelectedProject();
       const selected = normalizeProjectPath(state.selectedProject || '');
@@ -2464,6 +2508,7 @@
       }
       if (!el.projectHistory) return;
       el.projectHistory.innerHTML = '';
+      if (state.historyCollapsed) return;
       if (!scoped.length) {
         el.projectHistory.innerHTML = '<div class="empty">No history records for current scope yet.</div>';
         return;
@@ -3030,6 +3075,13 @@
     if (el.collapseTreeBtn) {
       el.collapseTreeBtn.addEventListener('click', () => setTreeExpansion(false));
     }
+    if (el.toggleHistoryBtn) {
+      el.toggleHistoryBtn.addEventListener('click', () => {
+        const next = !state.historyCollapsed;
+        setHistoryCollapsed(next);
+        renderProjectHistory();
+      });
+    }
 
     if (el.evolveUntil && !String(el.evolveUntil.value || '').trim()) {
       el.evolveUntil.value = computeDefaultEvolveUntil();
@@ -3044,6 +3096,7 @@
       el.evolveUntil.addEventListener('input', syncCreateTaskPolicyControls);
     }
     syncCreateTaskPolicyControls();
+    setHistoryCollapsed(readHistoryCollapsePreference(), { persist: false });
 
     initThemeSelector();
     setPolling(readPollPreference());
