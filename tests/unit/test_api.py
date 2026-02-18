@@ -475,6 +475,7 @@ def test_api_provider_models_endpoint_includes_defaults_and_observed_models(tmp_
     assert 'gemini' in providers
     assert 'claude' in providers
     assert 'claude-opus-4-6' in providers['claude']
+    assert 'claude-sonnet-4-6' in providers['claude']
     assert 'gpt-5.3-codex' in providers['codex']
     assert 'gemini-3-pro-preview' in providers['gemini']
     assert len(providers['claude']) >= 3

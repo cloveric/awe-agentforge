@@ -381,6 +381,7 @@ def test_service_provider_model_catalog_has_multiple_defaults(tmp_path: Path):
     svc = build_service(tmp_path)
     catalog = svc.get_provider_models_catalog()
     assert 'claude-opus-4-6' in catalog.get('claude', [])
+    assert 'claude-sonnet-4-6' in catalog.get('claude', [])
     assert 'gpt-5.3-codex' in catalog.get('codex', [])
     assert 'gemini-3-pro-preview' in catalog.get('gemini', [])
     assert len(catalog.get('claude', [])) >= 3

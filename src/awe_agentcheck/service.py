@@ -126,6 +126,7 @@ _TERMINAL_STATUSES = {
 _DEFAULT_PROVIDER_MODELS = {
     'claude': [
         'claude-opus-4-6',
+        'claude-sonnet-4-6',
         'claude-opus-4-1',
         'claude-sonnet-4-5',
         'claude-3-7-sonnet',
