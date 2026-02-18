@@ -91,6 +91,7 @@ class ParticipantRunner:
         model: str | None = None,
         model_params: str | None = None,
         claude_team_agents: bool = False,
+        codex_multi_agents: bool = False,
         on_stream: Callable[[str, str], None] | None = None,
     ) -> AdapterResult:
         if self.dry_run:
@@ -118,6 +119,7 @@ class ParticipantRunner:
             model=model,
             model_params=model_params,
             claude_team_agents=claude_team_agents,
+            codex_multi_agents=codex_multi_agents,
         )
         argv = self._resolve_executable(argv)
         effective_command = self._format_command(argv)
@@ -301,6 +303,7 @@ class ParticipantRunner:
         model: str | None,
         model_params: str | None,
         claude_team_agents: bool,
+        codex_multi_agents: bool,
     ) -> list[str]:
         argv = shlex.split(command, posix=False)
 
@@ -321,6 +324,10 @@ class ParticipantRunner:
         if provider_text == 'claude':
             if claude_team_agents and not ParticipantRunner._has_agents_flag(argv):
                 argv.extend(['--agents', '{}'])
+
+        if provider_text == 'codex':
+            if codex_multi_agents and not ParticipantRunner._has_codex_multi_agent_flag(argv):
+                argv.extend(['--enable', 'multi_agent'])
 
         return argv
 
@@ -365,6 +372,44 @@ class ParticipantRunner:
             if text == '--agents' or text.startswith('--agents='):
                 return True
         return False
+
+    @staticmethod
+    def _has_codex_multi_agent_flag(argv: list[str]) -> bool:
+        for idx, token in enumerate(argv):
+            text = str(token).strip()
+            lowered = text.lower()
+            if lowered == '--enable=multi_agent':
+                return True
+            if lowered == '--enable':
+                if idx + 1 < len(argv):
+                    value = str(argv[idx + 1]).strip().lower()
+                    if value == 'multi_agent':
+                        return True
+                continue
+            if lowered == '--config':
+                if idx + 1 < len(argv):
+                    if ParticipantRunner._has_codex_multi_agent_config_token(str(argv[idx + 1])):
+                        return True
+                continue
+            if lowered.startswith('--config='):
+                value = text.split('=', 1)[1] if '=' in text else ''
+                if ParticipantRunner._has_codex_multi_agent_config_token(value):
+                    return True
+                continue
+            if lowered == '-c':
+                if idx + 1 < len(argv):
+                    if ParticipantRunner._has_codex_multi_agent_config_token(str(argv[idx + 1])):
+                        return True
+                continue
+        return False
+
+    @staticmethod
+    def _has_codex_multi_agent_config_token(value: str) -> bool:
+        text = str(value or '').strip().strip('"').strip("'")
+        lowered = text.lower()
+        if not lowered.startswith('features.multi_agent='):
+            return False
+        return True
 
     @staticmethod
     def _has_prompt_flag(argv: list[str]) -> bool:

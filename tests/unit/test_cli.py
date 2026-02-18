@@ -36,6 +36,8 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
             'codex=-c model_reasoning_effort=high',
             '--claude-team-agents',
             '1',
+            '--codex-multi-agents',
+            '1',
             '--no-plain-mode',
             '--merge-target-path',
             'C:/Users/hangw/awe-agentcheck',
@@ -54,6 +56,7 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
     assert args.provider_model == ['claude=claude-sonnet-4-5', 'codex=gpt-5-codex']
     assert args.provider_model_param == ['codex=-c model_reasoning_effort=high']
     assert args.claude_team_agents == 1
+    assert args.codex_multi_agents == 1
     assert args.plain_mode is False
     assert args.stream_mode is True
     assert args.debate_mode is True

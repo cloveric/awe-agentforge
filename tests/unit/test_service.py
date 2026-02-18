@@ -284,7 +284,7 @@ def test_service_create_task_forces_fresh_sandbox_for_multi_round_no_auto_merge(
     assert '-lab' in Path(task.workspace_path).as_posix()
 
 
-def test_service_create_task_accepts_provider_models_and_claude_team_agents(tmp_path: Path):
+def test_service_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path: Path):
     svc = build_service(tmp_path)
     task = svc.create_task(
         CreateTaskInput(
@@ -296,12 +296,14 @@ def test_service_create_task_accepts_provider_models_and_claude_team_agents(tmp_
             reviewer_participants=['codex#review-B', 'gemini#review-C'],
             provider_models={'claude': 'claude-sonnet-4-5', 'codex': 'gpt-5-codex', 'gemini': 'gemini-2.5-pro'},
             claude_team_agents=True,
+            codex_multi_agents=True,
         )
     )
     assert task.provider_models.get('claude') == 'claude-sonnet-4-5'
     assert task.provider_models.get('codex') == 'gpt-5-codex'
     assert task.provider_models.get('gemini') == 'gemini-2.5-pro'
     assert task.claude_team_agents is True
+    assert task.codex_multi_agents is True
 
 
 def test_service_create_task_accepts_provider_model_params(tmp_path: Path):

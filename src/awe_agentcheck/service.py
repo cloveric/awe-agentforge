@@ -46,6 +46,7 @@ class CreateTaskInput:
     provider_models: dict[str, str] | None = None
     provider_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
+    codex_multi_agents: bool = False
     repair_mode: str = 'balanced'
     plain_mode: bool = True
     stream_mode: bool = True
@@ -82,6 +83,7 @@ class TaskView:
     provider_models: dict[str, str]
     provider_model_params: dict[str, str]
     claude_team_agents: bool
+    codex_multi_agents: bool
     repair_mode: str
     plain_mode: bool
     stream_mode: bool
@@ -311,6 +313,7 @@ class OrchestratorService:
         provider_models = self._normalize_provider_models(payload.provider_models)
         provider_model_params = self._normalize_provider_model_params(payload.provider_model_params)
         claude_team_agents = bool(payload.claude_team_agents)
+        codex_multi_agents = bool(payload.codex_multi_agents)
         repair_mode = self._normalize_repair_mode(payload.repair_mode, strict=True)
         plain_mode = self._normalize_plain_mode(payload.plain_mode)
         stream_mode = self._normalize_bool_flag(payload.stream_mode, default=True)
@@ -369,6 +372,7 @@ class OrchestratorService:
                 provider_models=provider_models,
                 provider_model_params=provider_model_params,
                 claude_team_agents=claude_team_agents,
+                codex_multi_agents=codex_multi_agents,
                 repair_mode=repair_mode,
                 plain_mode=plain_mode,
                 stream_mode=stream_mode,
@@ -397,6 +401,7 @@ class OrchestratorService:
                     'provider_models': dict(row.get('provider_models', {})),
                     'provider_model_params': dict(row.get('provider_model_params', {})),
                     'claude_team_agents': bool(row.get('claude_team_agents', False)),
+                    'codex_multi_agents': bool(row.get('codex_multi_agents', False)),
                     'repair_mode': str(row.get('repair_mode') or 'balanced'),
                     'plain_mode': bool(row.get('plain_mode', True)),
                     'stream_mode': bool(row.get('stream_mode', True)),
@@ -1808,6 +1813,7 @@ class OrchestratorService:
                     provider_models=dict(row.get('provider_models', {})),
                     provider_model_params=dict(row.get('provider_model_params', {})),
                     claude_team_agents=bool(row.get('claude_team_agents', False)),
+                    codex_multi_agents=bool(row.get('codex_multi_agents', False)),
                     repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
                     plain_mode=self._normalize_plain_mode(row.get('plain_mode')),
                     stream_mode=self._normalize_bool_flag(row.get('stream_mode', True), default=True),
@@ -2241,6 +2247,7 @@ class OrchestratorService:
                 provider_models=dict(row.get('provider_models', {})),
                 provider_model_params=dict(row.get('provider_model_params', {})),
                 claude_team_agents=bool(row.get('claude_team_agents', False)),
+                codex_multi_agents=bool(row.get('codex_multi_agents', False)),
                 repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
                 plain_mode=self._normalize_plain_mode(row.get('plain_mode')),
                 stream_mode=self._normalize_bool_flag(row.get('stream_mode', True), default=True),
@@ -2301,6 +2308,7 @@ class OrchestratorService:
                                 model=(config.provider_models or {}).get(reviewer.provider),
                                 model_params=(config.provider_model_params or {}).get(reviewer.provider),
                                 claude_team_agents=bool(config.claude_team_agents),
+                                codex_multi_agents=bool(config.codex_multi_agents),
                                 on_stream=(
                                     WorkflowEngine._stream_emitter(
                                         emit=emit_runtime_event,
@@ -2458,6 +2466,7 @@ class OrchestratorService:
                                 model=(config.provider_models or {}).get(author.provider),
                                 model_params=(config.provider_model_params or {}).get(author.provider),
                                 claude_team_agents=bool(config.claude_team_agents),
+                                codex_multi_agents=bool(config.codex_multi_agents),
                                 on_stream=(
                                     WorkflowEngine._stream_emitter(
                                         emit=emit_runtime_event,
@@ -3497,6 +3506,7 @@ class OrchestratorService:
             provider_models={str(k): str(v) for k, v in dict(row.get('provider_models', {})).items()},
             provider_model_params={str(k): str(v) for k, v in dict(row.get('provider_model_params', {})).items()},
             claude_team_agents=bool(row.get('claude_team_agents', False)),
+            codex_multi_agents=bool(row.get('codex_multi_agents', False)),
             repair_mode=OrchestratorService._normalize_repair_mode(row.get('repair_mode')),
             plain_mode=OrchestratorService._normalize_plain_mode(row.get('plain_mode', True)),
             stream_mode=OrchestratorService._normalize_bool_flag(row.get('stream_mode', True), default=True),

@@ -261,6 +261,22 @@
    - `py -m ruff check .` passed.
    - `py -m pytest -q` passed.
 
+## Update (2026-02-18, Codex multi-agent toggle)
+
+1. Added task-level Codex multi-agent toggle end-to-end:
+   - API/UI payload key: `codex_multi_agents` (bool).
+   - CLI support: `--codex-multi-agents 0|1`.
+2. Participant runner behavior:
+   - For `provider=codex`, appends `--enable multi_agent` when `codex_multi_agents=true`.
+   - Existing explicit flags are respected; duplicate `--enable multi_agent` is not appended.
+3. Monitor UI updates:
+   - Create-task form includes `Codex Multi Agents`.
+   - Task snapshot includes `CodexMultiAgents`.
+4. Persistence and workflow propagation:
+   - Stored in task meta, surfaced in `TaskView/TaskResponse`, propagated into `RunConfig`.
+5. Coverage:
+   - Adapter, API, service, workflow, CLI, and SQL repository tests updated.
+
 ## Update (2026-02-17, safety guard)
 
 1. Added accidental-launch protection for overnight runner:

@@ -24,6 +24,7 @@ class TaskRepository(Protocol):
         provider_models: dict[str, str],
         provider_model_params: dict[str, str],
         claude_team_agents: bool,
+        codex_multi_agents: bool,
         repair_mode: str,
         plain_mode: bool,
         stream_mode: bool,
@@ -117,6 +118,7 @@ class InMemoryTaskRepository:
         provider_models: dict[str, str],
         provider_model_params: dict[str, str],
         claude_team_agents: bool,
+        codex_multi_agents: bool,
         repair_mode: str,
         plain_mode: bool,
         stream_mode: bool,
@@ -147,6 +149,7 @@ class InMemoryTaskRepository:
             'provider_models': {str(k).strip().lower(): str(v).strip() for k, v in (provider_models or {}).items() if str(k).strip() and str(v).strip()},
             'provider_model_params': {str(k).strip().lower(): str(v).strip() for k, v in (provider_model_params or {}).items() if str(k).strip() and str(v).strip()},
             'claude_team_agents': bool(claude_team_agents),
+            'codex_multi_agents': bool(codex_multi_agents),
             'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
             'plain_mode': bool(plain_mode),
             'stream_mode': bool(stream_mode),
@@ -293,6 +296,7 @@ def encode_reviewer_meta(
         provider_model_params={},
         conversation_language='en',
         claude_team_agents=False,
+        codex_multi_agents=False,
         repair_mode='balanced',
         plain_mode=True,
         stream_mode=True,
@@ -317,6 +321,7 @@ def encode_task_meta(
     provider_model_params: dict[str, str],
     conversation_language: str,
     claude_team_agents: bool,
+    codex_multi_agents: bool,
     repair_mode: str,
     plain_mode: bool,
     stream_mode: bool,
@@ -338,6 +343,7 @@ def encode_task_meta(
         'provider_models': {str(k).strip().lower(): str(v).strip() for k, v in (provider_models or {}).items() if str(k).strip() and str(v).strip()},
         'provider_model_params': {str(k).strip().lower(): str(v).strip() for k, v in (provider_model_params or {}).items() if str(k).strip() and str(v).strip()},
         'claude_team_agents': bool(claude_team_agents),
+        'codex_multi_agents': bool(codex_multi_agents),
         'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
         'plain_mode': bool(plain_mode),
         'stream_mode': bool(stream_mode),
@@ -372,6 +378,7 @@ def decode_task_meta(raw: str) -> dict:
         'provider_models': {},
         'provider_model_params': {},
         'claude_team_agents': False,
+        'codex_multi_agents': False,
         'repair_mode': 'balanced',
         'plain_mode': True,
         'stream_mode': True,
@@ -428,7 +435,8 @@ def decode_task_meta(raw: str) -> dict:
             params = str(raw or '').strip()
             if provider and params:
                 provider_model_params_out[provider] = params
-        claude_team_agents = bool(parsed.get('claude_team_agents', False))
+        claude_team_agents = _coerce_meta_bool(parsed.get('claude_team_agents', False), default=False)
+        codex_multi_agents = _coerce_meta_bool(parsed.get('codex_multi_agents', False), default=False)
         repair_mode = str(parsed.get('repair_mode') or 'balanced').strip().lower() or 'balanced'
         if repair_mode not in {'minimal', 'balanced', 'structural'}:
             repair_mode = 'balanced'
@@ -458,6 +466,7 @@ def decode_task_meta(raw: str) -> dict:
         out['provider_models'] = provider_models_out
         out['provider_model_params'] = provider_model_params_out
         out['claude_team_agents'] = claude_team_agents
+        out['codex_multi_agents'] = codex_multi_agents
         out['repair_mode'] = repair_mode
         out['plain_mode'] = plain_mode
         out['stream_mode'] = stream_mode

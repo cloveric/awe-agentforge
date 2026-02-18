@@ -2334,13 +2334,6 @@
               <select id="geminiModel"></select>
               <input id="geminiModelCustom" value="" placeholder="optional custom model override" />
             </div>
-            <div style="flex:0 0 220px;">
-              <label for="claudeTeamAgents">Claude Team Agents</label>
-              <select id="claudeTeamAgents">
-                <option value="0">0 | disabled (default)</option>
-                <option value="1">1 | enabled (--agents)</option>
-              </select>
-            </div>
           </div>
           <div class="controls-row">
             <div style="flex:1; min-width:220px;">
@@ -2354,6 +2347,30 @@
             <div style="flex:1; min-width:220px;">
               <label for="geminiModelParams">Gemini Model Params (optional)</label>
               <input id="geminiModelParams" value="--approval-mode yolo" placeholder="--approval-mode yolo" />
+            </div>
+          </div>
+          <div class="controls-row">
+            <div style="flex:1; min-width:220px;">
+              <label for="claudeTeamAgents">Claude Team Agents</label>
+              <select id="claudeTeamAgents">
+                <option value="0">0 | disabled (default)</option>
+                <option value="1">1 | enabled (--agents)</option>
+              </select>
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="codexMultiAgents">Codex Multi Agents</label>
+              <select id="codexMultiAgents">
+                <option value="0">0 | disabled (default)</option>
+                <option value="1">1 | enabled (--enable multi_agent)</option>
+              </select>
+            </div>
+            <div style="flex:2; min-width:260px;">
+              <label for="agentModeHint">Agent Toggle Hint</label>
+              <input
+                id="agentModeHint"
+                readonly
+                value="Keep 0 by default. Enable only when you explicitly want provider-native multi-agent behavior."
+              />
             </div>
           </div>
           <div class="controls-row">
@@ -2581,6 +2598,7 @@
       claudeModelParams: document.getElementById('claudeModelParams'),
       codexModelParams: document.getElementById('codexModelParams'),
       geminiModelParams: document.getElementById('geminiModelParams'),
+      codexMultiAgents: document.getElementById('codexMultiAgents'),
       sandboxMode: document.getElementById('sandboxMode'),
       autoMerge: document.getElementById('autoMerge'),
       mergeTargetPath: document.getElementById('mergeTargetPath'),
@@ -2648,6 +2666,11 @@
         field: 'Claude Team Agents',
         en: 'Enable Claude --agents behavior for Claude participants in this task.',
         zh: '为 Claude 参与者启用 `--agents` 行为。',
+      },
+      {
+        field: 'Codex Multi Agents',
+        en: 'Enable Codex multi-agent mode by appending --enable multi_agent for Codex participants.',
+        zh: '为 Codex 参与者追加 `--enable multi_agent`，启用多智能体模式。',
       },
       {
         field: 'Evolution Level',
@@ -4053,6 +4076,7 @@
         provider_models: {},
         provider_model_params: {},
         claude_team_agents: false,
+        codex_multi_agents: false,
         repair_mode: 'balanced',
         plain_mode: true,
         stream_mode: true,
@@ -4488,6 +4512,7 @@
         { label: 'ProviderModels', value: formatProviderModels(task.provider_models) },
         { label: 'ProviderModelParams', value: formatProviderModelParams(task.provider_model_params) },
         { label: 'ClaudeAgents', value: String(task.claude_team_agents ? 1 : 0) },
+        { label: 'CodexMultiAgents', value: String(task.codex_multi_agents ? 1 : 0) },
         { label: 'AutoMerge', value: String(task.auto_merge !== false ? 1 : 0) },
         { label: 'MergeTarget', value: task.merge_target_path || 'in-place' },
         { label: 'Author', value: task.author_participant },
@@ -5591,6 +5616,7 @@
         provider_models: readProviderModelsFromForm(),
         provider_model_params: readProviderModelParamsFromForm(),
         claude_team_agents: Number(document.getElementById('claudeTeamAgents').value || 0) === 1,
+        codex_multi_agents: Number(document.getElementById('codexMultiAgents').value || 0) === 1,
         repair_mode: String(document.getElementById('repairMode').value || 'balanced').trim().toLowerCase() || 'balanced',
         plain_mode: Number(document.getElementById('plainMode').value || 1) === 1,
         stream_mode: Number(document.getElementById('streamMode').value || 1) === 1,

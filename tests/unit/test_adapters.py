@@ -261,6 +261,28 @@ def test_participant_runner_appends_claude_team_agents_flag_when_enabled(tmp_pat
     assert '--agents' in captured['argv']
 
 
+def test_participant_runner_appends_codex_multi_agent_flag_when_enabled(tmp_path: Path, monkeypatch):
+    captured = {'argv': None}
+
+    def fake_run(argv, **kwargs):
+        captured['argv'] = list(argv)
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+
+    monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
+    runner = ParticipantRunner(command_overrides={'codex': 'codex exec --skip-git-repo-check'}, dry_run=False)
+    runner.run(
+        participant=parse_participant_id('codex#author-A'),
+        prompt='hello',
+        cwd=tmp_path,
+        timeout_seconds=1,
+        codex_multi_agents=True,
+    )
+
+    assert captured['argv'] is not None
+    assert '--enable' in captured['argv']
+    assert 'multi_agent' in captured['argv']
+
+
 def test_participant_runner_appends_provider_model_params_tokens(tmp_path: Path, monkeypatch):
     captured = {'argv': None}
 

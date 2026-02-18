@@ -113,6 +113,7 @@ class RunConfig:
     provider_models: dict[str, str] | None = None
     provider_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
+    codex_multi_agents: bool = False
     repair_mode: str = 'balanced'
     plain_mode: bool = True
     stream_mode: bool = False
@@ -245,6 +246,7 @@ class WorkflowEngine:
                             model=provider_models.get(reviewer.provider),
                             model_params=provider_model_params.get(reviewer.provider),
                             claude_team_agents=bool(config.claude_team_agents),
+                            codex_multi_agents=bool(config.codex_multi_agents),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,
@@ -340,6 +342,7 @@ class WorkflowEngine:
                     model=provider_models.get(config.author.provider),
                     model_params=provider_model_params.get(config.author.provider),
                     claude_team_agents=bool(config.claude_team_agents),
+                    codex_multi_agents=bool(config.codex_multi_agents),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -388,6 +391,7 @@ class WorkflowEngine:
                     model=provider_models.get(config.author.provider),
                     model_params=provider_model_params.get(config.author.provider),
                     claude_team_agents=bool(config.claude_team_agents),
+                    codex_multi_agents=bool(config.codex_multi_agents),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -435,6 +439,7 @@ class WorkflowEngine:
                             model=provider_models.get(reviewer.provider),
                             model_params=provider_model_params.get(reviewer.provider),
                             claude_team_agents=bool(config.claude_team_agents),
+                            codex_multi_agents=bool(config.codex_multi_agents),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,

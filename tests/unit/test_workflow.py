@@ -575,7 +575,7 @@ def test_workflow_cancels_mid_phase_after_discussion(tmp_path: Path):
     assert 'implementation' not in event_types
 
 
-def test_workflow_passes_provider_models_and_claude_team_agents_to_runner(tmp_path: Path):
+def test_workflow_passes_provider_models_and_agent_toggles_to_runner(tmp_path: Path):
     runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])
     executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
     engine = WorkflowEngine(runner=runner, command_executor=executor)
@@ -595,6 +595,7 @@ def test_workflow_passes_provider_models_and_claude_team_agents_to_runner(tmp_pa
             lint_command='py -m ruff check .',
             provider_models={'claude': 'claude-sonnet-4-5', 'codex': 'gpt-5-codex'},
             claude_team_agents=True,
+            codex_multi_agents=True,
         )
     )
 
@@ -604,6 +605,7 @@ def test_workflow_passes_provider_models_and_claude_team_agents_to_runner(tmp_pa
     assert runner.call_options[1].get('model') == 'claude-sonnet-4-5'
     assert runner.call_options[2].get('model') == 'gpt-5-codex'
     assert runner.call_options[0].get('claude_team_agents') is True
+    assert runner.call_options[0].get('codex_multi_agents') is True
 
 
 def test_workflow_passes_provider_model_params_to_runner(tmp_path: Path):

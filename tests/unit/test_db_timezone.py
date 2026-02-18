@@ -19,6 +19,7 @@ def _create_task(repo: SqlTaskRepository, workspace: Path) -> dict:
         provider_models={},
         provider_model_params={},
         claude_team_agents=False,
+        codex_multi_agents=False,
         repair_mode='balanced',
         plain_mode=True,
         stream_mode=True,

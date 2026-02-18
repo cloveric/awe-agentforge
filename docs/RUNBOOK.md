@@ -156,7 +156,7 @@ Capabilities:
 6. Author controls for `waiting_manual`: `Approve + Queue`, `Approve + Start`, `Reject`.
 7. `Custom Reply + Re-run` lets operator send a free-text manual note (`decision=revise`) and immediately rerun proposal consensus.
 8. Manual reply text box is enabled only when task status is `waiting_manual`.
-9. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`, `conversation_language`, `provider_models`, `provider_model_params`, and `claude_team_agents`.
+9. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`, `conversation_language`, `provider_models`, `provider_model_params`, `claude_team_agents`, and `codex_multi_agents`.
 10. Create task advanced controls include `repair_mode`, `plain_mode`, `stream_mode`, `debate_mode`.
 11. Auto polling and extended stats with reason/provider breakdown.
 12. Project history card shows cross-task records for selected project: core findings, revisions, disputes, next steps.

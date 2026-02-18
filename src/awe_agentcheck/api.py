@@ -32,6 +32,7 @@ class CreateTaskRequest(BaseModel):
     provider_models: dict[str, str] = Field(default_factory=dict)
     provider_model_params: dict[str, str] = Field(default_factory=dict)
     claude_team_agents: bool = Field(default=False)
+    codex_multi_agents: bool = Field(default=False)
     repair_mode: str = Field(default='balanced', min_length=3, max_length=32)
     plain_mode: bool = Field(default=True)
     stream_mode: bool = Field(default=True)
@@ -101,6 +102,7 @@ class TaskResponse(BaseModel):
     provider_models: dict[str, str]
     provider_model_params: dict[str, str]
     claude_team_agents: bool
+    codex_multi_agents: bool
     repair_mode: str
     plain_mode: bool
     stream_mode: bool
@@ -341,6 +343,7 @@ def _to_task_response(task) -> TaskResponse:
         provider_models=task.provider_models,
         provider_model_params=task.provider_model_params,
         claude_team_agents=task.claude_team_agents,
+        codex_multi_agents=task.codex_multi_agents,
         repair_mode=task.repair_mode,
         plain_mode=task.plain_mode,
         stream_mode=task.stream_mode,
@@ -527,6 +530,7 @@ def create_app(
                 provider_models=payload.provider_models,
                 provider_model_params=payload.provider_model_params,
                 claude_team_agents=payload.claude_team_agents,
+                codex_multi_agents=payload.codex_multi_agents,
                 repair_mode=payload.repair_mode,
                 plain_mode=payload.plain_mode,
                 stream_mode=payload.stream_mode,

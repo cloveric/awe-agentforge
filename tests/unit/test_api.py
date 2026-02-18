@@ -448,7 +448,7 @@ def test_api_promote_round_endpoint_merges_selected_round(tmp_path: Path):
     assert (project / 'src' / 'round.txt').read_text(encoding='utf-8') == 'round-2\n'
 
 
-def test_api_create_task_accepts_provider_models_and_claude_team_agents(tmp_path: Path):
+def test_api_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path: Path):
     client = build_client(tmp_path)
     resp = client.post(
         '/api/tasks',
@@ -468,6 +468,7 @@ def test_api_create_task_accepts_provider_models_and_claude_team_agents(tmp_path
                 'gemini': '--approval-mode yolo',
             },
             'claude_team_agents': True,
+            'codex_multi_agents': True,
             'sandbox_mode': False,
             'self_loop_mode': 1,
             'auto_start': False,
@@ -482,6 +483,7 @@ def test_api_create_task_accepts_provider_models_and_claude_team_agents(tmp_path
     assert body['provider_model_params']['gemini'] == '--approval-mode yolo'
     assert body['conversation_language'] == 'zh'
     assert body['claude_team_agents'] is True
+    assert body['codex_multi_agents'] is True
 
 
 def test_api_create_task_accepts_repair_mode(tmp_path: Path):
