@@ -3,14 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from awe_agentcheck.domain.models import ReviewVerdict
 from awe_agentcheck.domain.models import TaskStatus
 from awe_agentcheck.repository import InMemoryTaskRepository, TaskRepository
-from awe_agentcheck.service import CreateTaskInput, GateInput, OrchestratorService
+from awe_agentcheck.service import CreateTaskInput, GateInput, InputValidationError, OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
 
 
@@ -189,6 +190,12 @@ class ProjectHistoryClearResponse(BaseModel):
     skipped_non_terminal: int
 
 
+class ValidationErrorResponse(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
 class AppState:
     def __init__(self, service: OrchestratorService):
         self.service = service
@@ -244,6 +251,65 @@ def create_app(
     app = FastAPI(title='awe-agentcheck api', version='0.5.0')
     app.state.container = AppState(service=service)
 
+    def _field_from_loc(loc: tuple | list | None) -> str | None:
+        if not loc:
+            return None
+        source_prefixes = {'body', 'query', 'path', 'header', 'cookie'}
+        parts = list(loc)
+        if parts and str(parts[0]) in source_prefixes:
+            parts = parts[1:]
+        if not parts:
+            return None
+
+        field = ''
+        for part in parts:
+            if isinstance(part, int):
+                field += f'[{part}]'
+                continue
+
+            text = str(part)
+            if field:
+                field += f'.{text}'
+            else:
+                field = text
+
+        return field or None
+
+    def _validation_error_payload(*, message: str, field: str | None = None, code: str = 'validation_error') -> dict:
+        payload: dict[str, str] = {
+            'code': code,
+            'message': message,
+        }
+        if field:
+            payload['field'] = field
+        return payload
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation_error(request: Request, exc: RequestValidationError):  # noqa: ARG001
+        details = exc.errors()
+        if details:
+            first = details[0]
+            message = str(first.get('msg') or 'invalid request body')
+            field = _field_from_loc(first.get('loc'))
+        else:
+            message = 'invalid request body'
+            field = None
+        return JSONResponse(
+            status_code=400,
+            content=_validation_error_payload(message=message, field=field),
+        )
+
+    @app.exception_handler(InputValidationError)
+    async def handle_input_validation_error(request: Request, exc: InputValidationError):  # noqa: ARG001
+        return JSONResponse(
+            status_code=400,
+            content=_validation_error_payload(
+                message=str(exc),
+                field=exc.field,
+                code=exc.code,
+            ),
+        )
+
     def get_service() -> OrchestratorService:
         return app.state.container.service
 
@@ -270,37 +336,34 @@ def create_app(
         background_tasks: BackgroundTasks,
         service: OrchestratorService = Depends(get_service),
     ) -> TaskResponse:
-        try:
-            task = service.create_task(
-                CreateTaskInput(
-                    title=payload.title,
-                    description=payload.description,
-                    author_participant=payload.author_participant,
-                    reviewer_participants=payload.reviewer_participants,
-                    evolution_level=payload.evolution_level,
-                    evolve_until=payload.evolve_until,
-                    conversation_language=payload.conversation_language,
-                    provider_models=payload.provider_models,
-                    provider_model_params=payload.provider_model_params,
-                    claude_team_agents=payload.claude_team_agents,
-                    repair_mode=payload.repair_mode,
-                    plain_mode=payload.plain_mode,
-                    stream_mode=payload.stream_mode,
-                    debate_mode=payload.debate_mode,
-                    sandbox_mode=payload.sandbox_mode,
-                    sandbox_workspace_path=payload.sandbox_workspace_path,
-                    sandbox_cleanup_on_pass=payload.sandbox_cleanup_on_pass,
-                    self_loop_mode=payload.self_loop_mode,
-                    auto_merge=payload.auto_merge,
-                    merge_target_path=payload.merge_target_path,
-                    workspace_path=payload.workspace_path,
-                    max_rounds=payload.max_rounds,
-                    test_command=payload.test_command,
-                    lint_command=payload.lint_command,
-                )
+        task = service.create_task(
+            CreateTaskInput(
+                title=payload.title,
+                description=payload.description,
+                author_participant=payload.author_participant,
+                reviewer_participants=payload.reviewer_participants,
+                evolution_level=payload.evolution_level,
+                evolve_until=payload.evolve_until,
+                conversation_language=payload.conversation_language,
+                provider_models=payload.provider_models,
+                provider_model_params=payload.provider_model_params,
+                claude_team_agents=payload.claude_team_agents,
+                repair_mode=payload.repair_mode,
+                plain_mode=payload.plain_mode,
+                stream_mode=payload.stream_mode,
+                debate_mode=payload.debate_mode,
+                sandbox_mode=payload.sandbox_mode,
+                sandbox_workspace_path=payload.sandbox_workspace_path,
+                sandbox_cleanup_on_pass=payload.sandbox_cleanup_on_pass,
+                self_loop_mode=payload.self_loop_mode,
+                auto_merge=payload.auto_merge,
+                merge_target_path=payload.merge_target_path,
+                workspace_path=payload.workspace_path,
+                max_rounds=payload.max_rounds,
+                test_command=payload.test_command,
+                lint_command=payload.lint_command,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        )
 
         if payload.auto_start:
             background_tasks.add_task(_start_task_worker, task.task_id)

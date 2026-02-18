@@ -4554,7 +4554,8 @@
     }
 
     function stripInternalNoise(text) {
-      const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+      const ansiStripped = String(text || '').replace(/\x1b\[[0-9;]*m/g, '');
+      const lines = ansiStripped.replace(/\r\n/g, '\n').split('\n');
       const out = [];
       const dropPatterns = [
         /^\s*OpenAI Codex v/i,
@@ -4571,7 +4572,12 @@
         /^\s*tokens used\s*$/i,
         /^\s*\d[\d,]*\s*$/,
         /^\s*(user|codex|thinking)\s*$/i,
+        /^\s*exec\s*$/i,
+        /^\s*\*\*.*\*\*\s*$/,
         /^\s*mcp\s*:/i,
+        /^\s*mcp startup\s*:/i,
+        /^\s*\".*\" in .*(succeeded|failed) in \d+ms.*$/i,
+        /^\s*\".*pwsh\.exe.*-Command.*\"$/i,
         /using-superpowers/i,
         /writing-plans/i,
         /skills?\s*:/i,
@@ -4584,6 +4590,27 @@
         out.push(line);
       }
       return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function isKeyDialogueEvent(type) {
+      const t = String(type || '');
+      return (
+        t === 'task_started'
+        || t === 'round_started'
+        || t === 'discussion_started'
+        || t === 'implementation_started'
+        || t === 'review_started'
+        || t === 'proposal_precheck_review_started'
+        || t === 'proposal_review_started'
+        || t === 'verification_started'
+        || t === 'gate_passed'
+        || t === 'gate_failed'
+        || t === 'author_confirmation_required'
+        || t === 'author_decision'
+        || t === 'canceled'
+        || t === 'force_failed'
+        || t === 'system_failure'
+      );
     }
 
     function verdictLabel(verdict, lang) {
@@ -4732,7 +4759,16 @@
         if (state.selectedRole === 'all') return true;
         return eventActor(event, task) === state.selectedRole;
       });
-      const signature = dialogueSignature(task, filtered, state.selectedRole);
+      const displayItems = [];
+      for (const event of filtered) {
+        const text = String(eventText(event, task) || '').trim();
+        if (!text && !isKeyDialogueEvent(event.type)) {
+          continue;
+        }
+        displayItems.push({ event, text });
+      }
+      const displayEvents = displayItems.map((item) => item.event);
+      const signature = dialogueSignature(task, displayEvents, state.selectedRole);
       if (state.lastDialogueSignature === signature) {
         return;
       }
@@ -4743,12 +4779,13 @@
         el.dialogue.innerHTML = '<div class="empty">Select a project/task to view dialogue.</div>';
         return;
       }
-      if (!filtered.length) {
+      if (!displayItems.length) {
         el.dialogue.innerHTML = '<div class="empty">No dialogue for this role scope yet.</div>';
         return;
       }
 
-      for (const event of filtered) {
+      for (const itemDef of displayItems) {
+        const event = itemDef.event;
         const item = document.createElement('article');
         item.className = `message ${eventClass(event)}`;
 
@@ -4782,8 +4819,7 @@
 
         const body = document.createElement('pre');
         body.className = 'msg-text';
-        const text = eventText(event, task) || '(no payload text)';
-        body.textContent = text;
+        body.textContent = itemDef.text || '...';
 
         head.appendChild(actor);
         head.appendChild(meta);

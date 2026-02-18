@@ -130,6 +130,49 @@ def test_extract_self_followup_topic_prefers_blocker_review():
     assert 'reviewer concern' in topic.lower()
 
 
+def test_extract_self_followup_topic_review_gate_prefers_reviewer_summary():
+    events = [
+        {
+            'type': 'review',
+            'payload': {
+                'verdict': 'blocker',
+                'output': 'Issue: API can deadlock when cancel races with start.',
+            },
+        },
+        {'type': 'gate_failed', 'payload': {'reason': 'review_blocker'}},
+    ]
+    topic = extract_self_followup_topic(events)
+    assert topic is not None
+    assert topic.lower().startswith('address reviewer concern:')
+    assert 'deadlock' in topic.lower()
+
+
+def test_extract_self_followup_topic_non_review_gate_stays_gate_reason():
+    events = [
+        {
+            'type': 'review',
+            'payload': {
+                'verdict': 'blocker',
+                'output': 'Issue: start/cancel transition can race and leave task stuck running.',
+            },
+        },
+        {'type': 'gate_failed', 'payload': {'reason': 'tests_failed'}},
+    ]
+    topic = extract_self_followup_topic(events)
+    assert topic is not None
+    assert topic.lower().startswith('address gate failure cause:')
+    assert 'tests_failed' in topic.lower()
+
+
+def test_extract_self_followup_topic_review_gate_falls_back_without_summary():
+    events = [
+        {'type': 'review', 'payload': {'verdict': 'blocker', 'output': '   '}},
+        {'type': 'gate_failed', 'payload': {'reason': 'review_blocker'}},
+    ]
+    topic = extract_self_followup_topic(events)
+    assert topic == 'Address gate failure cause: review_blocker'
+
+
 def test_extract_self_followup_topic_from_runtime_error():
     events = [
         {

@@ -34,6 +34,16 @@
 10. Added helper coverage:
    - `src/awe_agentcheck/automation.py`: process follow-up recommendation + event-to-topic extraction.
    - `tests/unit/test_automation.py`: tests for new recommendation/summarization/extraction behavior.
+11. Deep anomaly root-cause (2026-02-17~2026-02-18) confirmed:
+   - issue was not "no response"; it was "continuous stream without lifecycle progression".
+   - representative diagnostic: `task-dda3ac6360ef` had 6330 events, 6319 were `participant_stream`, only 11 lifecycle events, still stuck at round 1.
+12. Why this happened:
+   - generated sandbox paths under `C:\Users\hangw\...` inherited parent `AGENTS.md` constraints in nested CLI subprocesses.
+   - subprocess agents spent substantial budget on meta-skill orchestration output before converging on task deliverables.
+13. Mitigations applied:
+   - default generated sandbox path now escapes AGENTS-heavy ancestor chain (`C:\Users\Public\<project>-lab` on Windows) unless explicitly overridden.
+   - `AWE_SANDBOX_BASE` supported for deterministic operator control.
+   - overnight defaults tuned for throughput stability (`stream_mode=0`, `debate_mode=0`) and stage-stall watchdog escalation.
 
 ## Update (2026-02-18, reviewer-first + consensus semantics sync)
 

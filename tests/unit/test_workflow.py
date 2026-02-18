@@ -255,6 +255,46 @@ def test_workflow_uses_configured_timeouts(tmp_path: Path):
     assert executor.timeouts == [22, 22]
 
 
+def test_workflow_caps_review_timeout_when_participant_timeout_is_large(tmp_path: Path):
+    runner = FakeRunner([
+        _ok_result(),  # discussion
+        _ok_result(),  # implementation
+        _ok_result(),  # review
+    ])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(
+        runner=runner,
+        command_executor=executor,
+        participant_timeout_seconds=240,
+        command_timeout_seconds=22,
+    )
+
+    result = engine.run(
+        RunConfig(
+            task_id='t4b',
+            title='Review timeout cap',
+            description='verify reviewer stage timeout cap',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    # discussion + implementation keep participant timeout, review is capped.
+    assert runner.timeouts == [240, 240, 75]
+    review_started = [e for e in sink.events if e.get('type') == 'review_started']
+    assert review_started
+    assert int(review_started[-1].get('timeout_seconds') or 0) == 75
+
+
 def test_workflow_prompts_clip_large_inputs(tmp_path: Path):
     cfg = RunConfig(
         task_id='t5',
@@ -295,6 +335,8 @@ def test_review_prompt_includes_strict_blocker_criteria(tmp_path: Path):
     assert 'correctness' in prompt
     assert 'security' in prompt
     assert 'style-only' in prompt
+    assert '<= 6 lines' in prompt
+    assert '<= 450 chars' in prompt
 
 
 def test_prompts_include_language_instruction_for_chinese(tmp_path: Path):

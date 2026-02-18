@@ -68,6 +68,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--sandbox-mode', type=int, default=1, choices=[0, 1])
     parser.add_argument('--sandbox-workspace-path', default='')
     parser.add_argument('--self-loop-mode', type=int, default=1, choices=[0, 1])
+    parser.add_argument('--plain-mode', type=int, default=1, choices=[0, 1])
+    parser.add_argument('--stream-mode', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--debate-mode', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--repair-mode', default='balanced')
     parser.add_argument('--auto-merge', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--merge-target-path', default='')
     parser.add_argument('--author', default='claude#author-A')
@@ -137,6 +141,10 @@ def create_task(
     sandbox_mode: int,
     sandbox_workspace_path: str | None,
     self_loop_mode: int,
+    plain_mode: int,
+    stream_mode: int,
+    debate_mode: int,
+    repair_mode: str,
     auto_merge: bool,
     merge_target_path: str | None,
     participants: ParticipantPlan,
@@ -157,6 +165,10 @@ def create_task(
         'sandbox_mode': int(sandbox_mode) == 1,
         'sandbox_workspace_path': (str(sandbox_workspace_path).strip() if sandbox_workspace_path else None),
         'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
+        'plain_mode': int(max(0, min(1, int(plain_mode)))) == 1,
+        'stream_mode': int(max(0, min(1, int(stream_mode)))) == 1,
+        'debate_mode': int(max(0, min(1, int(debate_mode)))) == 1,
+        'repair_mode': str(repair_mode or 'balanced').strip() or 'balanced',
         'auto_merge': bool(auto_merge),
         'merge_target_path': (str(merge_target_path).strip() if merge_target_path else None),
         'max_rounds': max_rounds,
@@ -242,6 +254,8 @@ def wait_terminal(
     last_event_probe = 0.0
     last_event_count: int | None = None
     last_event_change = started_at
+    last_non_stream_count: int | None = None
+    last_non_stream_change = started_at
     cached_events: list[dict] = []
 
     while True:
@@ -299,6 +313,29 @@ def wait_terminal(
                         api_base=api_base,
                         task_id=task_id,
                         reason=f'watchdog_stall: no new task events for {stall_window}s',
+                    )
+                    if forced is not None:
+                        return forced, cached_events
+
+                non_stream_count = sum(1 for ev in events if str(ev.get('type') or '') != 'participant_stream')
+                if last_non_stream_count is None or non_stream_count > last_non_stream_count:
+                    last_non_stream_count = non_stream_count
+                    last_non_stream_change = now
+                elif (now - last_non_stream_change) >= stall_window and (now - watchdog_last_attempt) >= max(1, poll_seconds):
+                    last_non_stream = None
+                    for ev in reversed(events):
+                        if str(ev.get('type') or '') != 'participant_stream':
+                            last_non_stream = ev
+                            break
+                    phase_hint = ''
+                    if isinstance(last_non_stream, dict):
+                        phase_hint = str(last_non_stream.get('type') or '').strip().lower()
+                    watchdog_last_attempt = now
+                    forced = force_fail_for_reason(
+                        client,
+                        api_base=api_base,
+                        task_id=task_id,
+                        reason=f'watchdog_phase_stall: no lifecycle progress for {stall_window}s (last={phase_hint or "unknown"})',
                     )
                     if forced is not None:
                         return forced, cached_events
@@ -395,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
                             sandbox_mode=args.sandbox_mode,
                             sandbox_workspace_path=(args.sandbox_workspace_path.strip() or None),
                             self_loop_mode=args.self_loop_mode,
+                            plain_mode=args.plain_mode,
+                            stream_mode=args.stream_mode,
+                            debate_mode=args.debate_mode,
+                            repair_mode=args.repair_mode,
                             auto_merge=bool(args.auto_merge),
                             merge_target_path=(args.merge_target_path.strip() or None),
                             participants=active,

@@ -133,7 +133,26 @@ def summarize_actionable_text(text: str, *, max_chars: int = 180) -> str:
 
 
 def extract_self_followup_topic(events: list[dict]) -> str | None:
-    for raw in reversed(list(events or [])):
+    all_events = list(events or [])
+
+    def latest_blocker_review_summary() -> str:
+        for candidate_raw in reversed(all_events):
+            if not isinstance(candidate_raw, dict):
+                continue
+            candidate_type = str(candidate_raw.get('type') or '').strip().lower()
+            if candidate_type not in {'review', 'proposal_review', 'debate_review'}:
+                continue
+            candidate_payload = candidate_raw.get('payload')
+            candidate_payload_data = candidate_payload if isinstance(candidate_payload, dict) else {}
+            verdict = str(candidate_payload_data.get('verdict') or '').strip().lower()
+            if verdict not in {'blocker', 'unknown'}:
+                continue
+            summary = summarize_actionable_text(str(candidate_payload_data.get('output') or candidate_raw.get('output') or ''))
+            if summary:
+                return summary
+        return ''
+
+    for raw in reversed(all_events):
         if not isinstance(raw, dict):
             continue
         event_type = str(raw.get('type') or '').strip().lower()
@@ -155,6 +174,10 @@ def extract_self_followup_topic(events: list[dict]) -> str | None:
         if event_type == 'gate_failed':
             reason = summarize_actionable_text(str(payload_data.get('reason') or raw.get('reason') or ''))
             if reason:
+                if reason.lower() in {'review_blocker', 'review_unknown'}:
+                    summary = latest_blocker_review_summary()
+                    if summary:
+                        return f'Address reviewer concern: {summary}'
                 return f'Address gate failure cause: {reason}'
 
         if event_type in {'review', 'proposal_review', 'debate_review'}:

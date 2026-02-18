@@ -24,6 +24,14 @@ from awe_agentcheck.workflow import RunConfig, ShellCommandExecutor, WorkflowEng
 _log = get_logger('awe_agentcheck.service')
 
 
+class InputValidationError(ValueError):
+    def __init__(self, message: str, *, field: str | None = None, code: str = 'validation_error'):
+        super().__init__(message)
+        self.message = message
+        self.field = field
+        self.code = code
+
+
 @dataclass(frozen=True)
 class CreateTaskInput:
     title: str
@@ -201,16 +209,25 @@ class OrchestratorService:
         try:
             parse_participant_id(payload.author_participant)
         except ValueError as exc:
-            raise ValueError(f'invalid author_participant: {exc}') from exc
+            raise InputValidationError(
+                f'invalid author_participant: {exc}',
+                field='author_participant',
+            ) from exc
         for i, rp in enumerate(payload.reviewer_participants):
             try:
                 parse_participant_id(rp)
             except ValueError as exc:
-                raise ValueError(f'invalid reviewer_participants[{i}]: {exc}') from exc
+                raise InputValidationError(
+                    f'invalid reviewer_participants[{i}]: {exc}',
+                    field=f'reviewer_participants[{i}]',
+                ) from exc
 
         project_root = Path(payload.workspace_path).resolve()
         if not project_root.exists() or not project_root.is_dir():
-            raise ValueError(f'workspace_path must be an existing directory: {payload.workspace_path}')
+            raise InputValidationError(
+                'workspace_path must be an existing directory',
+                field='workspace_path',
+            )
         evolution_level = max(0, min(2, int(payload.evolution_level)))
         evolve_until = self._normalize_evolve_until(payload.evolve_until)
         conversation_language = self._normalize_conversation_language(
@@ -235,7 +252,10 @@ class OrchestratorService:
                 sandbox_generated = True
             sandbox_root = Path(sandbox_workspace_path)
             if sandbox_root.exists() and not sandbox_root.is_dir():
-                raise ValueError(f'sandbox_workspace_path must be a directory: {sandbox_workspace_path}')
+                raise InputValidationError(
+                    'sandbox_workspace_path must be a directory',
+                    field='sandbox_workspace_path',
+                )
             sandbox_root.mkdir(parents=True, exist_ok=True)
             self._bootstrap_sandbox_workspace(project_root, sandbox_root)
             workspace_root = sandbox_root
@@ -251,7 +271,10 @@ class OrchestratorService:
         if auto_merge and merge_target_path:
             merge_target = Path(merge_target_path)
             if not merge_target.exists() or not merge_target.is_dir():
-                raise ValueError(f'merge_target_path must be an existing directory: {merge_target_path}')
+                raise InputValidationError(
+                    'merge_target_path must be an existing directory',
+                    field='merge_target_path',
+                )
 
         row = self.repository.create_task(
             title=payload.title,
@@ -1339,6 +1362,7 @@ class OrchestratorService:
         try:
             runner = getattr(self.workflow_engine, 'runner', None)
             timeout = int(getattr(self.workflow_engine, 'participant_timeout_seconds', 240))
+            review_timeout = self._review_timeout_seconds(timeout)
             author = parse_participant_id(str(row['author_participant']))
             reviewers = [parse_participant_id(v) for v in row.get('reviewer_participants', [])]
             config = RunConfig(
@@ -1390,7 +1414,7 @@ class OrchestratorService:
                             'round': round_no,
                             'participant': reviewer.participant_id,
                             'provider': reviewer.provider,
-                            'timeout_seconds': timeout,
+                            'timeout_seconds': review_timeout,
                         }
                         self.repository.append_event(
                             task_id,
@@ -1404,7 +1428,7 @@ class OrchestratorService:
                                 participant=reviewer,
                                 prompt=self._proposal_review_prompt(config, merged_context, stage=stage),
                                 cwd=config.cwd,
-                                timeout_seconds=timeout,
+                                timeout_seconds=review_timeout,
                                 model=(config.provider_models or {}).get(reviewer.provider),
                                 model_params=(config.provider_model_params or {}).get(reviewer.provider),
                                 claude_team_agents=bool(config.claude_team_agents),
@@ -1763,7 +1787,10 @@ class OrchestratorService:
         try:
             parsed = datetime.fromisoformat(candidate)
         except ValueError as exc:
-            raise ValueError(f'evolve_until must be ISO/local datetime, got: {text}') from exc
+            raise InputValidationError(
+                'evolve_until must be ISO/local datetime',
+                field='evolve_until',
+            ) from exc
         return parsed.replace(microsecond=0).isoformat()
 
     @staticmethod
@@ -1791,7 +1818,10 @@ class OrchestratorService:
         normalized = aliases.get(text, text)
         if normalized not in _SUPPORTED_CONVERSATION_LANGUAGES:
             if strict:
-                raise ValueError(f'invalid conversation_language: {text}')
+                raise InputValidationError(
+                    f'invalid conversation_language: {text}',
+                    field='conversation_language',
+                )
             return 'en'
         return normalized
 
@@ -1802,7 +1832,10 @@ class OrchestratorService:
             return 'balanced'
         if text not in _SUPPORTED_REPAIR_MODES:
             if strict:
-                raise ValueError(f'invalid repair_mode: {text}')
+                raise InputValidationError(
+                    f'invalid repair_mode: {text}',
+                    field='repair_mode',
+                )
             return 'balanced'
         return text
 
@@ -1831,16 +1864,22 @@ class OrchestratorService:
         if not value:
             return {}
         if not isinstance(value, dict):
-            raise ValueError('provider_models must be an object')
+            raise InputValidationError('provider_models must be an object', field='provider_models')
 
         out: dict[str, str] = {}
         for raw_provider, raw_model in value.items():
             provider = str(raw_provider or '').strip().lower()
             model = str(raw_model or '').strip()
             if provider not in SUPPORTED_PROVIDERS:
-                raise ValueError(f'invalid provider_models key: {provider}')
+                raise InputValidationError(
+                    f'invalid provider_models key: {provider}',
+                    field='provider_models',
+                )
             if not model:
-                raise ValueError(f'provider_models[{provider}] cannot be empty')
+                raise InputValidationError(
+                    f'provider_models[{provider}] cannot be empty',
+                    field=f'provider_models[{provider}]',
+                )
             out[provider] = model
         return out
 
@@ -1871,26 +1910,58 @@ class OrchestratorService:
         if not value:
             return {}
         if not isinstance(value, dict):
-            raise ValueError('provider_model_params must be an object')
+            raise InputValidationError('provider_model_params must be an object', field='provider_model_params')
 
         out: dict[str, str] = {}
         for raw_provider, raw_params in value.items():
             provider = str(raw_provider or '').strip().lower()
             params = str(raw_params or '').strip()
             if provider not in SUPPORTED_PROVIDERS:
-                raise ValueError(f'invalid provider_model_params key: {provider}')
+                raise InputValidationError(
+                    f'invalid provider_model_params key: {provider}',
+                    field='provider_model_params',
+                )
             if not params:
-                raise ValueError(f'provider_model_params[{provider}] cannot be empty')
+                raise InputValidationError(
+                    f'provider_model_params[{provider}] cannot be empty',
+                    field=f'provider_model_params[{provider}]',
+                )
             out[provider] = params
         return out
 
     @staticmethod
     def _default_sandbox_path(project_root: Path) -> str:
-        parent = project_root.parent
-        root = parent / f'{project_root.name}-lab'
+        configured_base = str(os.getenv('AWE_SANDBOX_BASE', '') or '').strip()
+        if configured_base:
+            base = Path(configured_base).resolve()
+        else:
+            # If an AGENTS.md exists in project ancestors (common in user-home setups),
+            # place generated sandboxes under a neutral public path to avoid inherited
+            # instruction overlays in nested CLI subprocess sessions.
+            if OrchestratorService._has_agents_ancestor(project_root):
+                if os.name == 'nt':
+                    public_home = str(os.getenv('PUBLIC', 'C:/Users/Public') or 'C:/Users/Public').strip()
+                    base = Path(public_home).resolve()
+                else:
+                    base = Path('/tmp')
+            else:
+                base = project_root.parent
+        root = base / f'{project_root.name}-lab'
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         suffix = uuid4().hex[:6]
         return str(root / f'{stamp}-{suffix}')
+
+    @staticmethod
+    def _has_agents_ancestor(project_root: Path) -> bool:
+        current = project_root.resolve()
+        candidates = [current, *current.parents]
+        for directory in candidates:
+            try:
+                if (directory / 'AGENTS.md').exists():
+                    return True
+            except Exception:
+                continue
+        return False
 
     @staticmethod
     def _cleanup_sandbox_after_merge(*, row: dict, workspace_root: Path) -> dict | None:
@@ -1999,8 +2070,9 @@ class OrchestratorService:
         stage_text = str(stage or 'proposal_review').strip().lower()
         audit_intent = OrchestratorService._is_audit_intent(config)
         stage_guidance = (
-            "Stage: precheck. First build an audit/review plan, then run quick checks in repository, "
-            "then summarize findings for author discussion."
+            "Stage: precheck. Build a concrete review scope fast."
+            " If you need evidence, inspect only a few directly relevant files (no repo-wide scan)."
+            " Then summarize findings for author discussion."
             if stage_text == 'proposal_precheck_review'
             else "Stage: proposal review. Evaluate the updated proposal and unresolved risks."
         )
@@ -2018,10 +2090,19 @@ class OrchestratorService:
             f"{plain_instruction}\n"
             f"{stage_guidance}\n"
             f"{audit_guidance}\n"
+            "Hard limits: keep response short (<= 6 lines, <= 450 chars).\n"
+            "Do not include command logs, internal process narration, or tool/skill references.\n"
+            "If evidence is insufficient, return VERDICT: UNKNOWN quickly.\n"
             "Output one line: VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN.\n"
             f"{plain_review_format}\n"
             f"Plan:\n{clipped}\n"
         )
+
+    @staticmethod
+    def _review_timeout_seconds(participant_timeout_seconds: int) -> int:
+        base = max(1, int(participant_timeout_seconds))
+        # Reviewer phases are intentionally capped so stalled review does not block the pipeline.
+        return min(base, 75)
 
     @staticmethod
     def _proposal_author_prompt(config: RunConfig, merged_context: str, review_payload: list[dict]) -> str:

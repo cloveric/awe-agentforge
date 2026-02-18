@@ -115,6 +115,7 @@ class WorkflowEngine:
         provider_model_params = self._normalize_provider_model_params(config.provider_model_params)
         stream_mode = bool(config.stream_mode)
         debate_mode = bool(config.debate_mode) and bool(config.reviewers)
+        review_timeout_seconds = self._review_timeout_seconds(self.participant_timeout_seconds)
         deadline_mode = deadline is not None
         round_no = 0
         while True:
@@ -151,7 +152,7 @@ class WorkflowEngine:
                             'round': round_no,
                             'participant': reviewer.participant_id,
                             'provider': reviewer.provider,
-                            'timeout_seconds': self.participant_timeout_seconds,
+                            'timeout_seconds': review_timeout_seconds,
                         }
                     )
                     try:
@@ -159,7 +160,7 @@ class WorkflowEngine:
                             participant=reviewer,
                             prompt=self._debate_review_prompt(config, round_no, implementation_context, reviewer.participant_id),
                             cwd=config.cwd,
-                            timeout_seconds=self.participant_timeout_seconds,
+                            timeout_seconds=review_timeout_seconds,
                             model=provider_models.get(reviewer.provider),
                             model_params=provider_model_params.get(reviewer.provider),
                             claude_team_agents=bool(config.claude_team_agents),
@@ -315,7 +316,7 @@ class WorkflowEngine:
                             'type': 'review_started',
                             'round': round_no,
                             'participant': reviewer.participant_id,
-                            'timeout_seconds': self.participant_timeout_seconds,
+                            'timeout_seconds': review_timeout_seconds,
                         }
                     )
                     try:
@@ -323,7 +324,7 @@ class WorkflowEngine:
                             participant=reviewer,
                             prompt=self._review_prompt(config, round_no, implementation.output),
                             cwd=config.cwd,
-                            timeout_seconds=self.participant_timeout_seconds,
+                            timeout_seconds=review_timeout_seconds,
                             model=provider_models.get(reviewer.provider),
                             model_params=provider_model_params.get(reviewer.provider),
                             claude_team_agents=bool(config.claude_team_agents),
@@ -691,12 +692,21 @@ class WorkflowEngine:
             "Review the implementation summary and decide blocker status.\n"
             "Mark BLOCKER only for correctness, regression, security, or data-loss risks.\n"
             "Do not mark BLOCKER for style-only, process-only, or preference-only feedback.\n"
+            "Hard limits: keep response short (<= 6 lines, <= 450 chars).\n"
+            "Do not include command logs, internal process narration, or tool/skill references.\n"
+            "If evidence is insufficient, return VERDICT: UNKNOWN quickly.\n"
             f"{mode_guidance}"
             "Output must include one line: VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN.\n"
             f"{plain_review_format}\n"
             "Do not ask follow-up questions. Keep response concise.\n"
             f"Implementation summary:\n{clipped}\n"
         )
+
+    @staticmethod
+    def _review_timeout_seconds(participant_timeout_seconds: int) -> int:
+        base = max(1, int(participant_timeout_seconds))
+        # Review should fail fast to avoid long-running non-converging scans.
+        return min(base, 75)
 
     @staticmethod
     def _normalize_verdict(raw: str) -> ReviewVerdict:

@@ -15,6 +15,10 @@ param(
   [string[]]$FallbackReviewers = @('codex#review-B'),
   [ValidateRange(0,2)][int]$EvolutionLevel = 0,
   [ValidateRange(0,1)][int]$SelfLoopMode = 1,
+  [ValidateRange(0,1)][int]$PlainMode = 1,
+  [ValidateRange(0,1)][int]$StreamMode = 0,
+  [ValidateRange(0,1)][int]$DebateMode = 0,
+  [ValidateSet('minimal','balanced','structural')][string]$RepairMode = 'balanced',
   [int]$MaxRounds = 3,
   [int]$ParticipantTimeoutSeconds = 240,
   [int]$CommandTimeoutSeconds = 300,
@@ -236,7 +240,7 @@ $nightCmd = @"
 `$env:PYTHONPATH='$src';
 `$env:PYTHONUNBUFFERED='1';
 Set-Location '$repo';
-py scripts/overnight_autoevolve.py --api-base '$ApiBase' --until '$until' --workspace-path '$WorkspacePath' --author '$Author' $($reviewerArgs -join ' ') --fallback-author '$FallbackAuthor' $($fallbackReviewerArgs -join ' ') --evolution-level $EvolutionLevel --self-loop-mode $SelfLoopMode --evolve-until '$until' --max-rounds $MaxRounds --test-command '$TestCommand' --lint-command '$LintCommand' --task-timeout-seconds $TaskTimeoutSeconds --lock-file '$lockFile' --primary-disable-seconds $PrimaryDisableSeconds
+py scripts/overnight_autoevolve.py --api-base '$ApiBase' --until '$until' --workspace-path '$WorkspacePath' --author '$Author' $($reviewerArgs -join ' ') --fallback-author '$FallbackAuthor' $($fallbackReviewerArgs -join ' ') --evolution-level $EvolutionLevel --self-loop-mode $SelfLoopMode --plain-mode $PlainMode --stream-mode $StreamMode --debate-mode $DebateMode --repair-mode '$RepairMode' --evolve-until '$until' --max-rounds $MaxRounds --test-command '$TestCommand' --lint-command '$LintCommand' --task-timeout-seconds $TaskTimeoutSeconds --lock-file '$lockFile' --primary-disable-seconds $PrimaryDisableSeconds
 "@
 
 if ($NoAutoMerge) {
@@ -310,6 +314,10 @@ $session = [ordered]@{
   sandbox_mode = (-not $NoSandbox)
   sandbox_workspace_path = if ([string]::IsNullOrWhiteSpace($SandboxWorkspacePath)) { $null } else { $SandboxWorkspacePath }
   self_loop_mode = $SelfLoopMode
+  plain_mode = $PlainMode
+  stream_mode = $StreamMode
+  debate_mode = $DebateMode
+  repair_mode = $RepairMode
   auto_merge = (-not $NoAutoMerge)
   merge_target_path = if ([string]::IsNullOrWhiteSpace($MergeTargetPath)) { $null } else { $MergeTargetPath }
   claude_command = $resolvedClaudeCommand

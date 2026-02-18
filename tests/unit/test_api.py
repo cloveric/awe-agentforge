@@ -167,6 +167,7 @@ def test_api_index_serves_monitor_layout(tmp_path: Path):
 
 def test_api_create_task_rejects_missing_workspace(tmp_path: Path):
     client = build_client(tmp_path)
+    missing_path = str(tmp_path / 'missing-folder')
     resp = client.post(
         '/api/tasks',
         json={
@@ -174,11 +175,58 @@ def test_api_create_task_rejects_missing_workspace(tmp_path: Path):
             'description': 'should fail',
             'author_participant': 'claude#author-A',
             'reviewer_participants': ['codex#review-B'],
-            'workspace_path': str(tmp_path / 'missing-folder'),
+            'workspace_path': missing_path,
             'auto_start': False,
         },
     )
     assert resp.status_code == 400
+    body = resp.json()
+    assert body['code'] == 'validation_error'
+    assert body['field'] == 'workspace_path'
+    assert isinstance(body['message'], str)
+    assert missing_path not in body['message']
+
+
+def test_api_create_task_body_validation_returns_stable_400_schema(tmp_path: Path):
+    client = build_client(tmp_path)
+    resp = client.post(
+        '/api/tasks',
+        json={
+            'description': 'missing title',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'auto_start': False,
+        },
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['code'] == 'validation_error'
+    assert body['field'] == 'title'
+    assert isinstance(body['message'], str)
+    assert body['message']
+
+
+def test_api_create_task_service_validation_returns_stable_400_schema(tmp_path: Path):
+    client = build_client(tmp_path)
+    resp = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Task bad repair mode',
+            'description': 'repair mode validation',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'repair_mode': 'aggressive',
+            'sandbox_mode': False,
+            'self_loop_mode': 1,
+            'auto_start': False,
+        },
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['code'] == 'validation_error'
+    assert body['field'] == 'repair_mode'
+    assert isinstance(body['message'], str)
+    assert body['message']
 
 
 def test_api_create_task_rejects_invalid_merge_target_when_auto_merge_enabled(tmp_path: Path):
@@ -450,6 +498,44 @@ def test_api_workspace_tree_lists_children(tmp_path: Path):
     paths = {n['path'] for n in body['nodes']}
     assert 'src' in paths
     assert 'src/main.py' in paths
+
+
+def test_api_workspace_tree_validation_error_reports_query_field_name(tmp_path: Path):
+    client = build_client(tmp_path)
+    resp = client.get('/api/workspace-tree', params={'max_depth': 'oops'})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['code'] == 'validation_error'
+    assert body['field'] == 'max_depth'
+
+
+def test_api_gate_validation_error_reports_nested_reviewer_verdict_index(tmp_path: Path):
+    client = build_client(tmp_path)
+    created = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Task gate validation',
+            'description': 'invalid second verdict',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'auto_start': False,
+        },
+    )
+    assert created.status_code == 201
+    task_id = created.json()['task_id']
+
+    resp = client.post(
+        f'/api/tasks/{task_id}/gate',
+        json={
+            'tests_ok': True,
+            'lint_ok': True,
+            'reviewer_verdicts': ['no_blocker', 'oops'],
+        },
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['code'] == 'validation_error'
+    assert body['field'] == 'reviewer_verdicts[1]'
 
 
 def test_api_project_history_returns_records_for_project_scope(tmp_path: Path):

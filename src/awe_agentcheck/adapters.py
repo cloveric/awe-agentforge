@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Empty, Queue
+import random
 import re
 import shlex
 import shutil
@@ -31,6 +32,7 @@ _MODEL_FLAG_BY_PROVIDER = {
     'codex': '-m',
     'gemini': '-m',
 }
+_MIN_ATTEMPT_TIMEOUT_SECONDS = 0.05
 
 
 @dataclass(frozen=True)
@@ -122,8 +124,23 @@ class ParticipantRunner:
         attempts = self.timeout_retries + 1
         current_prompt = prompt
         started = time.monotonic()
+        deadline = started + max(0.05, float(timeout_seconds))
         completed = None
+        attempts_made = 0
+        last_timeout: subprocess.TimeoutExpired | None = None
         for attempt in range(1, attempts + 1):
+            remaining_budget = self._remaining_timeout_budget_seconds(deadline=deadline)
+            if remaining_budget <= 0:
+                break
+            attempts_left = attempts - attempt + 1
+            attempt_timeout = self._compute_attempt_timeout_seconds(
+                remaining_budget=remaining_budget,
+                attempts_left=attempts_left,
+            )
+            if attempt_timeout <= 0:
+                break
+
+            attempts_made += 1
             runtime_argv, runtime_input = self._prepare_runtime_invocation(
                 argv=argv,
                 provider=participant.provider,
@@ -139,14 +156,14 @@ class ParticipantRunner:
                         encoding='utf-8',
                         errors='replace',
                         cwd=str(cwd),
-                        timeout=timeout_seconds,
+                        timeout=attempt_timeout,
                     )
                 else:
                     completed = self._run_streaming(
                         argv=runtime_argv,
                         runtime_input=runtime_input,
                         cwd=cwd,
-                        timeout_seconds=timeout_seconds,
+                        timeout_seconds=attempt_timeout,
                         on_stream=on_stream,
                     )
                 break
@@ -155,12 +172,20 @@ class ParticipantRunner:
                     f'command_not_found provider={participant.provider} command={effective_command}'
                 ) from exc
             except subprocess.TimeoutExpired as exc:
+                last_timeout = exc
                 if attempt >= attempts:
-                    raise RuntimeError(
-                        f'command_timeout provider={participant.provider} command={effective_command} '
-                        f'timeout_seconds={timeout_seconds} attempts={attempts}'
-                    ) from exc
+                    break
                 current_prompt = self._clip_prompt_for_retry(current_prompt)
+                if not self._sleep_before_timeout_retry(attempt=attempt, deadline=deadline):
+                    break
+        if completed is None:
+            reason = (
+                f'command_timeout provider={participant.provider} command={effective_command} '
+                f'timeout_seconds={timeout_seconds} attempts={attempts} attempts_made={attempts_made}'
+            )
+            if last_timeout is not None:
+                raise RuntimeError(reason) from last_timeout
+            raise RuntimeError(reason)
         assert completed is not None
         elapsed = time.monotonic() - started
 
@@ -183,6 +208,41 @@ class ParticipantRunner:
             returncode=completed.returncode,
             duration_seconds=elapsed,
         )
+
+    @staticmethod
+    def _remaining_timeout_budget_seconds(*, deadline: float) -> float:
+        return max(0.0, float(deadline) - time.monotonic())
+
+    @staticmethod
+    def _compute_attempt_timeout_seconds(*, remaining_budget: float, attempts_left: int) -> float:
+        budget = max(0.0, float(remaining_budget))
+        left = max(1, int(attempts_left))
+        if budget <= 0:
+            return 0.0
+        requested = max(min(_MIN_ATTEMPT_TIMEOUT_SECONDS, budget), budget / left)
+        return min(budget, requested)
+
+    @staticmethod
+    def _timeout_retry_backoff_seconds(*, attempt: int) -> float:
+        bounded_attempt = max(1, int(attempt))
+        base_delay = min(0.5, 0.15 * bounded_attempt)
+        jitter = random.uniform(0.0, 0.1)
+        return min(0.75, base_delay + jitter)
+
+    @staticmethod
+    def _sleep_before_timeout_retry(*, attempt: int, deadline: float) -> bool:
+        remaining = ParticipantRunner._remaining_timeout_budget_seconds(deadline=deadline)
+        if remaining <= 0:
+            return False
+        # Keep a small slice for the next retry attempt instead of spending
+        # the full remaining budget in backoff.
+        min_next_attempt = min(_MIN_ATTEMPT_TIMEOUT_SECONDS, remaining)
+        pause_cap = max(0.0, remaining - min_next_attempt)
+        if pause_cap > 0:
+            pause = min(pause_cap, ParticipantRunner._timeout_retry_backoff_seconds(attempt=attempt))
+            if pause > 0:
+                time.sleep(pause)
+        return ParticipantRunner._remaining_timeout_budget_seconds(deadline=deadline) > 0
 
     @staticmethod
     def _clip_prompt_for_retry(prompt: str) -> str:
@@ -362,7 +422,7 @@ class ParticipantRunner:
         argv: list[str],
         runtime_input: str,
         cwd: Path,
-        timeout_seconds: int,
+        timeout_seconds: float,
         on_stream: Callable[[str, str], None],
     ) -> subprocess.CompletedProcess:
         stdin_pipe = subprocess.PIPE if runtime_input else subprocess.DEVNULL
@@ -411,7 +471,7 @@ class ParticipantRunner:
         for worker in workers:
             worker.start()
 
-        deadline = time.monotonic() + max(1, int(timeout_seconds))
+        deadline = time.monotonic() + max(0.05, float(timeout_seconds))
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:

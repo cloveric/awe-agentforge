@@ -99,6 +99,89 @@ def test_participant_runner_raises_timeout_after_retries_exhausted(tmp_path: Pat
     assert calls['n'] == 2
 
 
+def test_participant_runner_stops_retry_when_total_timeout_budget_is_exhausted(tmp_path: Path, monkeypatch):
+    clock = {'now': 100.0}
+    calls = {'n': 0, 'timeouts': []}
+
+    def fake_monotonic():
+        return clock['now']
+
+    def fake_sleep(seconds: float):
+        clock['now'] += float(seconds)
+
+    def fake_run(*args, **kwargs):
+        calls['n'] += 1
+        timeout = float(kwargs.get('timeout', 0.0))
+        calls['timeouts'].append(timeout)
+        # Simulate a timeout that also consumes the remaining budget.
+        clock['now'] += timeout + 10.0
+        raise subprocess.TimeoutExpired(cmd='claude', timeout=timeout)
+
+    monkeypatch.setattr('awe_agentcheck.adapters.time.monotonic', fake_monotonic)
+    monkeypatch.setattr('awe_agentcheck.adapters.time.sleep', fake_sleep)
+    monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
+    runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False, timeout_retries=1)
+
+    with pytest.raises(RuntimeError, match='command_timeout'):
+        runner.run(
+            participant=parse_participant_id('claude#author-A'),
+            prompt='hello',
+            cwd=tmp_path,
+            timeout_seconds=4,
+        )
+
+    assert calls['n'] == 1
+    assert calls['timeouts'] == [pytest.approx(2.0)]
+
+
+def test_compute_attempt_timeout_does_not_exceed_remaining_budget():
+    timeout = ParticipantRunner._compute_attempt_timeout_seconds(remaining_budget=0.01, attempts_left=3)
+    assert timeout == pytest.approx(0.01)
+
+
+def test_participant_runner_keeps_retry_slice_when_backoff_would_consume_budget(tmp_path: Path, monkeypatch):
+    clock = {'now': 300.0}
+    calls = {'n': 0, 'timeouts': []}
+    sleeps = []
+
+    def fake_monotonic():
+        return clock['now']
+
+    def fake_sleep(seconds: float):
+        sleeps.append(float(seconds))
+        clock['now'] += float(seconds)
+
+    def fake_run(*args, **kwargs):
+        calls['n'] += 1
+        timeout = float(kwargs.get('timeout', 0.0))
+        calls['timeouts'].append(timeout)
+        if calls['n'] == 1:
+            clock['now'] += timeout
+            raise subprocess.TimeoutExpired(cmd='claude', timeout=timeout)
+        return subprocess.CompletedProcess(args=['claude'], returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+
+    monkeypatch.setattr('awe_agentcheck.adapters.time.monotonic', fake_monotonic)
+    monkeypatch.setattr('awe_agentcheck.adapters.time.sleep', fake_sleep)
+    monkeypatch.setattr('awe_agentcheck.adapters.random.uniform', lambda _a, _b: 0.0)
+    monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
+    runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False, timeout_retries=1)
+
+    result = runner.run(
+        participant=parse_participant_id('claude#author-A'),
+        prompt='hello',
+        cwd=tmp_path,
+        timeout_seconds=0.2,
+    )
+
+    assert result.returncode == 0
+    assert calls['n'] == 2
+    assert calls['timeouts'][0] == pytest.approx(0.1)
+    assert calls['timeouts'][1] > 0
+    assert calls['timeouts'][1] <= 0.05 + 1e-9
+    assert sleeps
+    assert sleeps[0] <= 0.05 + 1e-9
+
+
 def test_participant_runner_raises_provider_limit_when_cli_reports_quota_message(tmp_path: Path, monkeypatch):
     def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(
@@ -328,3 +411,49 @@ def test_participant_runner_stream_callback_receives_chunks(tmp_path: Path, monk
     assert result.verdict == 'no_blocker'
     assert ('stdout', 'line-1\n') in captured
     assert ('stderr', 'warn-1\n') in captured
+
+
+def test_participant_runner_streaming_timeout_retry_shares_budget_and_adds_backoff(tmp_path: Path, monkeypatch):
+    clock = {'now': 200.0}
+    calls = {'n': 0, 'timeouts': [], 'inputs': []}
+    sleeps = []
+    streamed = []
+
+    def fake_monotonic():
+        return clock['now']
+
+    def fake_sleep(seconds: float):
+        sleeps.append(float(seconds))
+        clock['now'] += float(seconds)
+
+    def fake_streaming(*, argv, runtime_input, cwd, timeout_seconds, on_stream):
+        calls['n'] += 1
+        calls['timeouts'].append(float(timeout_seconds))
+        calls['inputs'].append(runtime_input)
+        if calls['n'] == 1:
+            clock['now'] += float(timeout_seconds)
+            raise subprocess.TimeoutExpired(cmd='claude', timeout=timeout_seconds)
+        on_stream('stdout', 'VERDICT: NO_BLOCKER\n')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER\n', stderr='')
+
+    monkeypatch.setattr('awe_agentcheck.adapters.time.monotonic', fake_monotonic)
+    monkeypatch.setattr('awe_agentcheck.adapters.time.sleep', fake_sleep)
+    monkeypatch.setattr('awe_agentcheck.adapters.ParticipantRunner._run_streaming', staticmethod(fake_streaming))
+    runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False, timeout_retries=1)
+
+    result = runner.run(
+        participant=parse_participant_id('claude#author-A'),
+        prompt='A' * 5000,
+        cwd=tmp_path,
+        timeout_seconds=4,
+        on_stream=lambda stream_name, chunk: streamed.append((stream_name, chunk)),
+    )
+
+    assert result.returncode == 0
+    assert calls['n'] == 2
+    assert calls['timeouts'][0] == pytest.approx(2.0)
+    assert calls['timeouts'][1] < calls['timeouts'][0]
+    assert sleeps
+    assert 0.05 <= sleeps[0] <= 1.0
+    assert len(calls['inputs'][1]) < len(calls['inputs'][0])
+    assert ('stdout', 'VERDICT: NO_BLOCKER\n') in streamed

@@ -5,10 +5,11 @@ from pathlib import Path
 import pytest
 
 from awe_agentcheck.adapters import AdapterResult
+from awe_agentcheck.participants import parse_participant_id
 from awe_agentcheck.repository import InMemoryTaskRepository
 from awe_agentcheck.service import CreateTaskInput, OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
-from awe_agentcheck.workflow import RunResult
+from awe_agentcheck.workflow import RunConfig, RunResult
 
 
 class FakeWorkflowEngine:
@@ -86,9 +87,11 @@ class ProposalOnlyWorkflowEngine:
 class ProposalRunnerOrderProbe:
     def __init__(self):
         self.calls: list[str] = []
+        self.timeouts: list[int] = []
 
     def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
         self.calls.append(str(participant.participant_id))
+        self.timeouts.append(int(timeout_seconds))
         if str(participant.participant_id).startswith('codex#author'):
             return AdapterResult(
                 output='Author revised proposal after reviewer-first feedback',
@@ -372,6 +375,54 @@ def test_service_create_task_defaults_to_sandbox_workspace(tmp_path: Path):
     assert task.sandbox_cleanup_on_pass is True
     assert task.merge_target_path == str(project)
     assert (Path(task.workspace_path) / 'README.md').exists()
+
+
+def test_service_create_task_default_sandbox_respects_configured_base(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-base'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    base = tmp_path / 'custom-sandbox-root'
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(base))
+
+    svc = build_service(tmp_path)
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Sandbox base env',
+            description='sandbox',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+        )
+    )
+
+    workspace = Path(task.workspace_path).resolve()
+    expected_root = (base / 'proj-base-lab').resolve()
+    assert workspace.parent == expected_root
+
+
+def test_service_create_task_default_sandbox_avoids_agents_ancestor(tmp_path: Path, monkeypatch):
+    home_like = tmp_path / 'home-like'
+    project = home_like / 'proj-agents'
+    project.mkdir(parents=True)
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    (home_like / 'AGENTS.md').write_text('root agents\n', encoding='utf-8')
+    monkeypatch.delenv('AWE_SANDBOX_BASE', raising=False)
+
+    svc = build_service(tmp_path)
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Sandbox agents ancestor',
+            description='sandbox',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+        )
+    )
+
+    workspace = Path(task.workspace_path).resolve()
+    default_home_like_root = (project.parent / 'proj-agents-lab').resolve()
+    assert workspace.parent != default_home_like_root
+    assert 'proj-agents-lab' in workspace.parent.as_posix()
 
 
 def test_service_create_task_uses_unique_default_sandbox_per_task(tmp_path: Path):
@@ -1206,6 +1257,67 @@ def test_service_manual_mode_uses_reviewer_first_before_author_proposal(tmp_path
     assert calls[0] == 'claude#review-B'
     assert 'codex#author-A' in calls
     assert calls.index('codex#author-A') < len(calls) - 1
+
+
+def test_service_manual_mode_caps_proposal_reviewer_timeout(tmp_path: Path):
+    engine = ProposalOrderWorkflowEngine()
+    engine.participant_timeout_seconds = 240
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Reviewer timeout cap',
+            description='reviewer should use capped timeout in proposal phase',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+
+    # reviewer-precheck, author-discussion, reviewer-proposal
+    assert engine.runner.timeouts == [75, 240, 75]
+
+    events = svc.list_events(created.task_id)
+    review_started = [
+        e for e in events
+        if e['type'] in {'proposal_precheck_review_started', 'proposal_review_started'}
+    ]
+    assert review_started
+    assert all(int(e.get('payload', {}).get('timeout_seconds') or 0) == 75 for e in review_started)
+
+
+def test_service_proposal_review_prompt_enforces_short_structured_format(tmp_path: Path):
+    cfg = RunConfig(
+        task_id='t-proposal-short',
+        title='Proposal short format',
+        description='proposal prompt style',
+        author=parse_participant_id('codex#author-A'),
+        reviewers=[parse_participant_id('claude#review-B')],
+        evolution_level=0,
+        evolve_until=None,
+        cwd=tmp_path,
+        max_rounds=1,
+        test_command='py -m pytest -q',
+        lint_command='py -m ruff check .',
+        conversation_language='zh',
+        plain_mode=True,
+    )
+    prompt = OrchestratorService._proposal_review_prompt(
+        cfg,
+        discussion_output='检查不完善点并提出改进方向。',
+        stage='proposal_precheck_review',
+    )
+    assert '<= 6 lines' in prompt
+    assert '<= 450 chars' in prompt
+    assert 'VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN' in prompt
 
 
 
