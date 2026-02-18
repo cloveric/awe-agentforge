@@ -429,7 +429,9 @@ def test_service_provider_model_catalog_has_multiple_defaults(tmp_path: Path):
     assert 'claude-opus-4-6' in catalog.get('claude', [])
     assert 'claude-sonnet-4-6' in catalog.get('claude', [])
     assert 'gpt-5.3-codex' in catalog.get('codex', [])
+    assert 'gemini-3-flash-preview' in catalog.get('gemini', [])
     assert 'gemini-3-pro-preview' in catalog.get('gemini', [])
+    assert 'gemini-flash-latest' in catalog.get('gemini', [])
     assert len(catalog.get('claude', [])) >= 3
     assert len(catalog.get('codex', [])) >= 3
     assert len(catalog.get('gemini', [])) >= 3

@@ -143,10 +143,12 @@ _DEFAULT_PROVIDER_MODELS = {
         'gpt-4.1',
     ],
     'gemini': [
+        'gemini-3-flash-preview',
         'gemini-3-pro-preview',
-        'gemini-2.5-pro',
-        'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
+        'gemini-3-flash',
+        'gemini-3-pro',
+        'gemini-flash-latest',
+        'gemini-pro-latest',
     ],
 }
 
