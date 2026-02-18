@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 from awe_agentcheck.api import create_app
 from awe_agentcheck.repository import InMemoryTaskRepository
@@ -679,6 +680,24 @@ def test_api_events_fallback_to_artifact_history_when_task_missing_from_reposito
     assert rows[1]['payload']['participant'] == 'claude#review-B'
     assert rows[1]['payload']['verdict'] == 'no_blocker'
     assert rows[1]['payload']['output'] == 'history review'
+
+
+@pytest.mark.parametrize(
+    ('task_path', 'expected_statuses'),
+    [
+        ('%2E%2E', {400}),
+        ('%2E%2E%5Coutside', {400}),
+        ('%2E%2E%2Foutside', {400, 404}),
+    ],
+)
+def test_api_events_rejects_task_id_traversal_attempts(tmp_path: Path, task_path: str, expected_statuses: set[int]):
+    client = build_client(tmp_path)
+    resp = client.get(f'/api/tasks/{task_path}/events')
+    assert resp.status_code in expected_statuses
+    if resp.status_code == 400:
+        body = resp.json()
+        assert body['code'] == 'validation_error'
+        assert body['field'] == 'task_id'
 
 
 def test_api_create_task_rejects_invalid_evolve_until(tmp_path: Path):

@@ -513,6 +513,26 @@ def test_shell_command_executor_treats_shell_metachar_as_literal(monkeypatch, tm
     assert captured['kwargs']['shell'] is False
 
 
+def test_shell_command_executor_preserves_windows_drive_path(monkeypatch):
+    import awe_agentcheck.workflow as workflow_module
+
+    fake_os = type('FakeOS', (), {'name': 'nt'})()
+    monkeypatch.setattr(workflow_module, 'os', fake_os, raising=False)
+
+    argv = ShellCommandExecutor._normalize_command(r'py -m pytest C:\repo\tests -q')
+    assert argv[3] == r'C:\repo\tests'
+
+
+def test_shell_command_executor_preserves_windows_relative_path(monkeypatch):
+    import awe_agentcheck.workflow as workflow_module
+
+    fake_os = type('FakeOS', (), {'name': 'nt'})()
+    monkeypatch.setattr(workflow_module, 'os', fake_os, raising=False)
+
+    argv = ShellCommandExecutor._normalize_command(r'py -m pytest .\tests -q')
+    assert argv[3] == r'.\tests'
+
+
 def test_workflow_cancels_mid_phase_after_discussion(tmp_path: Path):
     """Cancel fires after discussion completes, before implementation starts."""
     runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])

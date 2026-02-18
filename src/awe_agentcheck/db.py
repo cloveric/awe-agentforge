@@ -6,7 +6,23 @@ import json
 from typing import Iterator
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    delete,
+    func,
+    select,
+    update,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from awe_agentcheck.repository import decode_task_meta, encode_task_meta
@@ -48,6 +64,9 @@ class TaskEntity(Base):
 
 class TaskEventEntity(Base):
     __tablename__ = 'task_events'
+    __table_args__ = (
+        UniqueConstraint('task_id', 'seq', name='uq_task_events_task_id_seq'),
+    )
 
     id: Mapped[int] = mapped_column(Integer(), primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(String(64), ForeignKey('tasks.task_id'), nullable=False, index=True)
@@ -58,6 +77,13 @@ class TaskEventEntity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     task: Mapped[TaskEntity] = relationship('TaskEntity', back_populates='events')
+
+
+class TaskEventCounterEntity(Base):
+    __tablename__ = 'task_event_counters'
+
+    task_id: Mapped[str] = mapped_column(String(64), ForeignKey('tasks.task_id'), primary_key=True)
+    next_seq: Mapped[int] = mapped_column(Integer(), nullable=False)
 
 
 class Database:
@@ -200,21 +226,36 @@ class SqlTaskRepository:
         rounds_completed: int | None = None,
         set_cancel_requested: bool | None = None,
     ) -> dict | None:
+        now = datetime.now(timezone.utc)
         with self.db.session() as session:
+            values: dict[str, object] = {
+                'status': status,
+                'last_gate_reason': reason,
+                'updated_at': now,
+            }
+            if rounds_completed is not None:
+                values['rounds_completed'] = int(rounds_completed)
+            if set_cancel_requested is not None:
+                values['cancel_requested'] = bool(set_cancel_requested)
+
+            result = session.execute(
+                update(TaskEntity)
+                .where(
+                    TaskEntity.task_id == task_id,
+                    TaskEntity.status == expected_status,
+                )
+                .values(**values)
+            )
+            session.flush()
+            if int(result.rowcount or 0) == 0:
+                existing = session.get(TaskEntity, task_id)
+                if existing is None:
+                    raise KeyError(task_id)
+                return None
+
             row = session.get(TaskEntity, task_id)
             if row is None:
                 raise KeyError(task_id)
-            if row.status != expected_status:
-                return None
-            row.status = status
-            row.last_gate_reason = reason
-            if rounds_completed is not None:
-                row.rounds_completed = int(rounds_completed)
-            if set_cancel_requested is not None:
-                row.cancel_requested = bool(set_cancel_requested)
-            row.updated_at = datetime.now(timezone.utc)
-            session.add(row)
-            session.flush()
             return self._task_to_dict(row)
 
     def set_cancel_requested(self, task_id: str, *, requested: bool) -> dict:
@@ -244,29 +285,30 @@ class SqlTaskRepository:
         round_number: int | None = None,
     ) -> dict:
         now = datetime.now(timezone.utc)
-        with self.db.session() as session:
-            task = session.get(TaskEntity, task_id)
-            if task is None:
-                raise KeyError(task_id)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with self.db.session() as session:
+                    task = session.get(TaskEntity, task_id)
+                    if task is None:
+                        raise KeyError(task_id)
 
-            current_seq = (
-                session.execute(select(TaskEventEntity).where(TaskEventEntity.task_id == task_id).order_by(TaskEventEntity.seq.desc()).limit(1))
-                .scalars()
-                .first()
-            )
-            next_seq = int(current_seq.seq) + 1 if current_seq else 1
-
-            event = TaskEventEntity(
-                task_id=task_id,
-                seq=next_seq,
-                event_type=event_type,
-                round_number=round_number,
-                payload_json=json.dumps(payload, ensure_ascii=True),
-                created_at=now,
-            )
-            session.add(event)
-            session.flush()
-            return self._event_to_dict(event)
+                    next_seq = self._reserve_next_event_seq(session, task_id)
+                    event = TaskEventEntity(
+                        task_id=task_id,
+                        seq=next_seq,
+                        event_type=event_type,
+                        round_number=round_number,
+                        payload_json=json.dumps(payload, ensure_ascii=True),
+                        created_at=now,
+                    )
+                    session.add(event)
+                    session.flush()
+                    return self._event_to_dict(event)
+            except IntegrityError:
+                if attempt + 1 >= max_attempts:
+                    raise
+        raise RuntimeError('append_event_retry_exhausted')
 
     def list_events(self, task_id: str) -> list[dict]:
         with self.db.session() as session:
@@ -294,6 +336,9 @@ class SqlTaskRepository:
 
         deleted = 0
         with self.db.session() as session:
+            session.execute(
+                delete(TaskEventCounterEntity).where(TaskEventCounterEntity.task_id.in_(unique_ids))
+            )
             rows = session.execute(
                 select(TaskEntity).where(TaskEntity.task_id.in_(unique_ids))
             ).scalars().all()
@@ -302,6 +347,62 @@ class SqlTaskRepository:
                 deleted += 1
             session.flush()
         return deleted
+
+    @staticmethod
+    def _reserve_next_event_seq(session: Session, task_id: str) -> int:
+        initial_next_seq = (
+            select((func.coalesce(func.max(TaskEventEntity.seq), 0) + 2))
+            .where(TaskEventEntity.task_id == task_id)
+            .scalar_subquery()
+        )
+        bind = session.get_bind()
+        dialect_name = bind.dialect.name if bind is not None else ''
+
+        if dialect_name == 'sqlite':
+            stmt = (
+                sqlite_insert(TaskEventCounterEntity)
+                .values(task_id=task_id, next_seq=initial_next_seq)
+                .on_conflict_do_update(
+                    index_elements=[TaskEventCounterEntity.task_id],
+                    set_={'next_seq': TaskEventCounterEntity.next_seq + 1},
+                )
+                .returning(TaskEventCounterEntity.next_seq)
+            )
+            reserved_next_seq = int(session.execute(stmt).scalar_one())
+            return reserved_next_seq - 1
+
+        if dialect_name == 'postgresql':
+            stmt = (
+                pg_insert(TaskEventCounterEntity)
+                .values(task_id=task_id, next_seq=initial_next_seq)
+                .on_conflict_do_update(
+                    index_elements=[TaskEventCounterEntity.task_id],
+                    set_={'next_seq': TaskEventCounterEntity.next_seq + 1},
+                )
+                .returning(TaskEventCounterEntity.next_seq)
+            )
+            reserved_next_seq = int(session.execute(stmt).scalar_one())
+            return reserved_next_seq - 1
+
+        # Fallback for other SQLAlchemy dialects.
+        counter = session.get(TaskEventCounterEntity, task_id, with_for_update=True)
+        if counter is None:
+            max_seq = int(
+                session.execute(
+                    select(func.coalesce(func.max(TaskEventEntity.seq), 0))
+                    .where(TaskEventEntity.task_id == task_id)
+                ).scalar_one()
+            )
+            assigned_seq = max_seq + 1
+            session.add(TaskEventCounterEntity(task_id=task_id, next_seq=assigned_seq + 1))
+            session.flush()
+            return assigned_seq
+
+        assigned_seq = int(counter.next_seq)
+        counter.next_seq = assigned_seq + 1
+        session.add(counter)
+        session.flush()
+        return assigned_seq
 
     @staticmethod
     def _task_to_dict(row: TaskEntity) -> dict:

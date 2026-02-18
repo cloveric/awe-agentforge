@@ -22,7 +22,7 @@
 <br/>
 
 <p align="center">
-  <b>Production-grade multi-agent collaboration engine for real software work.</b><br/>
+  <b>The control tower for vibe coders: multi-agent review, repair, and evolution in one place.</b><br/>
   <sub>Coordinate Claude, Codex, Gemini, and other CLI agents in reviewer-first consensus loops to diagnose bugs, implement fixes, cross-review results, and continuously evolve your codebase.</sub>
 </p>
 <p align="center">
@@ -86,6 +86,10 @@
 16. Added richer proposal-stage events for observability:
    - `proposal_precheck_review*`
    - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_consensus_failed`
+17. Merged two real codex self-check rounds into production code with regression coverage:
+   - round-1 hardening: artifact events traversal guard, Windows command path parsing, SQL conditional status-update atomicity.
+   - round-2 hardening: concurrent event sequence reservation, sandbox bootstrap rollback/cleanup, private-by-default sandbox base, secret-file skip rules.
+   - fixed reviewer-blocked FK risk by cleaning `task_event_counters` before task deletion; added DB regression test.
 
 <br/>
 
@@ -285,6 +289,7 @@ $env:AWE_WORKFLOW_BACKEND="langgraph"
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | Retry count when a participant times out |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | How many tasks can run simultaneously |
 | `AWE_WORKFLOW_BACKEND` | `langgraph` | Workflow backend (`langgraph` preferred, `classic` fallback) |
+| `AWE_SANDBOX_USE_PUBLIC_BASE` | `false` | Use shared/public sandbox root only when explicitly set to `1/true` |
 | `AWE_DRY_RUN` | `false` | When `true`, participants are not actually invoked |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | Service name for observability |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_ | OpenTelemetry collector endpoint |

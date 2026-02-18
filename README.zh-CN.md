@@ -22,7 +22,7 @@
 <br/>
 
 <p align="center">
-  <b>面向真实工程问题的多智能体协作引擎。</b><br/>
+  <b>真正给 vibe coder 用的控制塔：多智能体审阅、修复与进化一体化。</b><br/>
   <sub>协调 Claude、Codex、Gemini 及其他 CLI 智能体，以 reviewer-first 共识循环完成故障诊断、修复实现、交叉评审，并持续推动代码库自我进化。</sub>
 </p>
 <p align="center">
@@ -86,6 +86,10 @@
 16. 新增提案阶段可观测事件：
    - `proposal_precheck_review*`
    - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_consensus_failed`
+17. 已将两轮真实 codex 自检结果融合进主线并补齐回归测试：
+   - 第 1 轮加固：artifact 事件防路径穿越、Windows 命令路径解析修复、SQL 条件状态更新原子化。
+   - 第 2 轮加固：并发事件序号分配、沙盒创建失败回滚清理、沙盒默认私有目录、敏感文件跳过规则。
+   - 修复 reviewer 阻塞的 FK 风险：删除任务前先清理 `task_event_counters`，并新增 DB 回归测试。
 
 <br/>
 
@@ -285,6 +289,7 @@ $env:AWE_WORKFLOW_BACKEND="langgraph"
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | 参与者超时后的重试次数 |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | 可同时运行的任务数量 |
 | `AWE_WORKFLOW_BACKEND` | `langgraph` | 工作流后端（推荐 `langgraph`，可回退 `classic`） |
+| `AWE_SANDBOX_USE_PUBLIC_BASE` | `false` | 仅在显式设置为 `1/true` 时使用共享/公共沙盒根目录 |
 | `AWE_DRY_RUN` | `false` | 设为 `true` 时不实际调用参与者 |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | 可观测性中的服务名称 |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(无)_ | OpenTelemetry 收集器端点 |

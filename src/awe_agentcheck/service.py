@@ -148,6 +148,7 @@ _DEFAULT_PROVIDER_MODELS = {
 
 _SUPPORTED_CONVERSATION_LANGUAGES = {'en', 'zh'}
 _SUPPORTED_REPAIR_MODES = {'minimal', 'balanced', 'structural'}
+_ARTIFACT_TASK_ID_RE = re.compile(r'^[A-Za-z0-9._-]+$')
 
 
 def _reason_bucket(reason: str | None) -> str | None:
@@ -246,24 +247,6 @@ class OrchestratorService:
         sandbox_cleanup_on_pass = bool(payload.sandbox_cleanup_on_pass)
         sandbox_workspace_path = self._normalize_merge_target_path(payload.sandbox_workspace_path)
         sandbox_generated = False
-        if sandbox_mode:
-            if not sandbox_workspace_path:
-                sandbox_workspace_path = self._default_sandbox_path(project_root)
-                sandbox_generated = True
-            sandbox_root = Path(sandbox_workspace_path)
-            if sandbox_root.exists() and not sandbox_root.is_dir():
-                raise InputValidationError(
-                    'sandbox_workspace_path must be a directory',
-                    field='sandbox_workspace_path',
-                )
-            sandbox_root.mkdir(parents=True, exist_ok=True)
-            self._bootstrap_sandbox_workspace(project_root, sandbox_root)
-            workspace_root = sandbox_root
-        else:
-            sandbox_workspace_path = None
-            sandbox_generated = False
-            workspace_root = project_root
-
         auto_merge = bool(payload.auto_merge)
         merge_target_path = self._normalize_merge_target_path(payload.merge_target_path)
         if auto_merge and sandbox_mode and not merge_target_path:
@@ -276,59 +259,87 @@ class OrchestratorService:
                     field='merge_target_path',
                 )
 
-        row = self.repository.create_task(
-            title=payload.title,
-            description=payload.description,
-            author_participant=payload.author_participant,
-            reviewer_participants=payload.reviewer_participants,
-            evolution_level=evolution_level,
-            evolve_until=evolve_until,
-            conversation_language=conversation_language,
-            provider_models=provider_models,
-            provider_model_params=provider_model_params,
-            claude_team_agents=claude_team_agents,
-            repair_mode=repair_mode,
-            plain_mode=plain_mode,
-            stream_mode=stream_mode,
-            debate_mode=debate_mode,
-            sandbox_mode=sandbox_mode,
-            sandbox_workspace_path=sandbox_workspace_path,
-            sandbox_generated=sandbox_generated,
-            sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
-            project_path=str(project_root),
-            self_loop_mode=self_loop_mode,
-            auto_merge=auto_merge,
-            merge_target_path=merge_target_path,
-            workspace_path=str(workspace_root),
-            max_rounds=payload.max_rounds,
-            test_command=payload.test_command,
-            lint_command=payload.lint_command,
-        )
-        self.artifact_store.create_task_workspace(row['task_id'])
-        self.artifact_store.update_state(
-            row['task_id'],
-            {
-                'status': row['status'],
-                'rounds_completed': row.get('rounds_completed', 0),
-                'cancel_requested': row.get('cancel_requested', False),
-                'conversation_language': str(row.get('conversation_language') or 'en'),
-                'provider_models': dict(row.get('provider_models', {})),
-                'provider_model_params': dict(row.get('provider_model_params', {})),
-                'claude_team_agents': bool(row.get('claude_team_agents', False)),
-                'repair_mode': str(row.get('repair_mode') or 'balanced'),
-                'plain_mode': bool(row.get('plain_mode', True)),
-                'stream_mode': bool(row.get('stream_mode', True)),
-                'debate_mode': bool(row.get('debate_mode', True)),
-                'sandbox_mode': bool(row.get('sandbox_mode', False)),
-                'sandbox_workspace_path': row.get('sandbox_workspace_path'),
-                'sandbox_generated': bool(row.get('sandbox_generated', False)),
-                'sandbox_cleanup_on_pass': bool(row.get('sandbox_cleanup_on_pass', False)),
-                'self_loop_mode': int(row.get('self_loop_mode', 0)),
-                'project_path': row.get('project_path'),
-                'auto_merge': bool(row.get('auto_merge', True)),
-                'merge_target_path': row.get('merge_target_path'),
-            },
-        )
+        workspace_root = project_root
+        sandbox_root: Path | None = None
+        try:
+            if sandbox_mode:
+                if not sandbox_workspace_path:
+                    sandbox_workspace_path = self._default_sandbox_path(project_root)
+                    sandbox_generated = True
+                sandbox_root = Path(sandbox_workspace_path)
+                if sandbox_root.exists() and not sandbox_root.is_dir():
+                    raise InputValidationError(
+                        'sandbox_workspace_path must be a directory',
+                        field='sandbox_workspace_path',
+                    )
+                sandbox_root.mkdir(parents=True, exist_ok=True)
+                self._bootstrap_sandbox_workspace(project_root, sandbox_root)
+                workspace_root = sandbox_root
+            else:
+                sandbox_workspace_path = None
+                sandbox_generated = False
+
+            row = self.repository.create_task(
+                title=payload.title,
+                description=payload.description,
+                author_participant=payload.author_participant,
+                reviewer_participants=payload.reviewer_participants,
+                evolution_level=evolution_level,
+                evolve_until=evolve_until,
+                conversation_language=conversation_language,
+                provider_models=provider_models,
+                provider_model_params=provider_model_params,
+                claude_team_agents=claude_team_agents,
+                repair_mode=repair_mode,
+                plain_mode=plain_mode,
+                stream_mode=stream_mode,
+                debate_mode=debate_mode,
+                sandbox_mode=sandbox_mode,
+                sandbox_workspace_path=sandbox_workspace_path,
+                sandbox_generated=sandbox_generated,
+                sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
+                project_path=str(project_root),
+                self_loop_mode=self_loop_mode,
+                auto_merge=auto_merge,
+                merge_target_path=merge_target_path,
+                workspace_path=str(workspace_root),
+                max_rounds=payload.max_rounds,
+                test_command=payload.test_command,
+                lint_command=payload.lint_command,
+            )
+            self.artifact_store.create_task_workspace(row['task_id'])
+            self.artifact_store.update_state(
+                row['task_id'],
+                {
+                    'status': row['status'],
+                    'rounds_completed': row.get('rounds_completed', 0),
+                    'cancel_requested': row.get('cancel_requested', False),
+                    'conversation_language': str(row.get('conversation_language') or 'en'),
+                    'provider_models': dict(row.get('provider_models', {})),
+                    'provider_model_params': dict(row.get('provider_model_params', {})),
+                    'claude_team_agents': bool(row.get('claude_team_agents', False)),
+                    'repair_mode': str(row.get('repair_mode') or 'balanced'),
+                    'plain_mode': bool(row.get('plain_mode', True)),
+                    'stream_mode': bool(row.get('stream_mode', True)),
+                    'debate_mode': bool(row.get('debate_mode', True)),
+                    'sandbox_mode': bool(row.get('sandbox_mode', False)),
+                    'sandbox_workspace_path': row.get('sandbox_workspace_path'),
+                    'sandbox_generated': bool(row.get('sandbox_generated', False)),
+                    'sandbox_cleanup_on_pass': bool(row.get('sandbox_cleanup_on_pass', False)),
+                    'self_loop_mode': int(row.get('self_loop_mode', 0)),
+                    'project_path': row.get('project_path'),
+                    'auto_merge': bool(row.get('auto_merge', True)),
+                    'merge_target_path': row.get('merge_target_path'),
+                },
+            )
+        except Exception:
+            self._cleanup_create_task_sandbox_failure(
+                sandbox_mode=sandbox_mode,
+                sandbox_generated=sandbox_generated,
+                project_root=project_root,
+                sandbox_root=sandbox_root,
+            )
+            raise
         _log.info('task_created task_id=%s title=%s', row['task_id'], payload.title)
         return self._to_view(row)
 
@@ -563,14 +574,34 @@ class OrchestratorService:
         return events
 
     def _load_events_from_artifacts(self, task_id: str) -> list[dict] | None:
-        key = str(task_id or '').strip()
-        if not key:
-            return None
-        task_dir = self.artifact_store.root / 'threads' / key
+        key = self._validate_artifact_task_id(task_id)
+        threads_root = (self.artifact_store.root / 'threads').resolve(strict=False)
+        task_dir = (threads_root / key).resolve(strict=False)
+        if not self._is_path_within(threads_root, task_dir):
+            raise InputValidationError('invalid task_id', field='task_id')
         if not task_dir.exists() or not task_dir.is_dir():
             return None
         raw_events = self._load_history_events(task_id=key, row={}, task_dir=task_dir)
         return self._normalize_history_events(task_id=key, events=raw_events)
+
+    @staticmethod
+    def _is_path_within(base: Path, target: Path) -> bool:
+        try:
+            target.relative_to(base)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _validate_artifact_task_id(task_id: str) -> str:
+        key = str(task_id or '').strip()
+        if not key:
+            raise InputValidationError('task_id is required', field='task_id')
+        if '..' in key or '/' in key or '\\' in key:
+            raise InputValidationError('invalid task_id', field='task_id')
+        if not _ARTIFACT_TASK_ID_RE.fullmatch(key):
+            raise InputValidationError('invalid task_id', field='task_id')
+        return key
 
     @staticmethod
     def _normalize_history_events(*, task_id: str, events: list[dict]) -> list[dict]:
@@ -2048,33 +2079,52 @@ class OrchestratorService:
         if configured_base:
             base = Path(configured_base).resolve()
         else:
-            # If an AGENTS.md exists in project ancestors (common in user-home setups),
-            # place generated sandboxes under a neutral public path to avoid inherited
-            # instruction overlays in nested CLI subprocess sessions.
-            if OrchestratorService._has_agents_ancestor(project_root):
+            shared_opt_in = str(os.getenv('AWE_SANDBOX_USE_PUBLIC_BASE', '') or '').strip().lower()
+            if shared_opt_in in {'1', 'true', 'yes', 'on'}:
                 if os.name == 'nt':
                     public_home = str(os.getenv('PUBLIC', 'C:/Users/Public') or 'C:/Users/Public').strip()
-                    base = Path(public_home).resolve()
+                    base = Path(public_home).resolve() / 'awe-agentcheck-sandboxes'
                 else:
-                    base = Path('/tmp')
+                    base = Path('/tmp/awe-agentcheck-sandboxes').resolve()
             else:
-                base = project_root.parent
+                base = Path.home().resolve() / '.awe-agentcheck' / 'sandboxes'
         root = base / f'{project_root.name}-lab'
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         suffix = uuid4().hex[:6]
         return str(root / f'{stamp}-{suffix}')
 
     @staticmethod
-    def _has_agents_ancestor(project_root: Path) -> bool:
-        current = project_root.resolve()
-        candidates = [current, *current.parents]
-        for directory in candidates:
-            try:
-                if (directory / 'AGENTS.md').exists():
-                    return True
-            except Exception:
-                continue
-        return False
+    def _cleanup_create_task_sandbox_failure(
+        *,
+        sandbox_mode: bool,
+        sandbox_generated: bool,
+        project_root: Path,
+        sandbox_root: Path | None,
+    ) -> None:
+        if not sandbox_mode:
+            return
+        if not sandbox_generated:
+            return
+        if sandbox_root is None:
+            return
+        try:
+            project_resolved = project_root.resolve()
+            sandbox_resolved = sandbox_root.resolve()
+        except Exception:
+            return
+        if sandbox_resolved == project_resolved:
+            return
+        try:
+            if sandbox_resolved.exists():
+                def _onerror(func, p, exc_info):
+                    try:
+                        os.chmod(p, stat.S_IWRITE)
+                        func(p)
+                    except Exception:
+                        pass
+                shutil.rmtree(sandbox_resolved, onerror=_onerror)
+        except Exception:
+            pass
 
     @staticmethod
     def _cleanup_sandbox_after_merge(*, row: dict, workspace_root: Path) -> dict | None:
@@ -2135,6 +2185,13 @@ class OrchestratorService:
         if head in ignored_heads:
             return True
         if normalized.endswith('.pyc') or normalized.endswith('.pyo'):
+            return True
+        leaf = Path(normalized).name.lower()
+        if leaf == '.env' or leaf.startswith('.env.'):
+            return True
+        if leaf.endswith('.pem') or leaf.endswith('.key'):
+            return True
+        if re.search(r'(^|[._-])(token|tokens|secret|secrets|apikey|api-key|access-key)([._-]|$)', leaf):
             return True
         return False
 

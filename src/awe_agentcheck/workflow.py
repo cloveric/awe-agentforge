@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 import shlex
 import subprocess
 import time
@@ -50,7 +51,7 @@ class ShellCommandExecutor:
         if isinstance(command, list):
             argv = [str(part).strip() for part in command if str(part).strip()]
         else:
-            argv = shlex.split(str(command or '').strip(), posix=True)
+            argv = shlex.split(str(command or '').strip(), posix=(os.name != 'nt'))
         if not argv:
             raise ValueError('command is empty')
         lowered = [part.lower() for part in argv]

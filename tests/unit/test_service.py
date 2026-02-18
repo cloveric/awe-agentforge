@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from awe_agentcheck.adapters import AdapterResult
 from awe_agentcheck.participants import parse_participant_id
 from awe_agentcheck.repository import InMemoryTaskRepository
-from awe_agentcheck.service import CreateTaskInput, OrchestratorService
+from awe_agentcheck.service import CreateTaskInput, InputValidationError, OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
 from awe_agentcheck.workflow import RunConfig, RunResult
 
@@ -176,6 +177,11 @@ class ProposalReviewUnavailableWorkflowEngine:
     def __init__(self):
         self.runner = ProposalRunnerReviewUnavailable()
         self.participant_timeout_seconds = 60
+
+
+class FailingArtifactStore(ArtifactStore):
+    def create_task_workspace(self, task_id: str):  # type: ignore[override]
+        raise RuntimeError('artifact store failure')
 
 
 def build_service(tmp_path: Path, workflow_engine=None, *, max_concurrent_running_tasks: int = 1) -> OrchestratorService:
@@ -414,10 +420,11 @@ def test_service_create_task_rejects_unknown_provider_model_param_key(tmp_path: 
         )
 
 
-def test_service_create_task_defaults_to_sandbox_workspace(tmp_path: Path):
+def test_service_create_task_defaults_to_sandbox_workspace(tmp_path: Path, monkeypatch):
     project = tmp_path / 'proj'
     project.mkdir()
     (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(tmp_path / 'sandbox-root'))
 
     svc = build_service(tmp_path)
     task = svc.create_task(
@@ -463,6 +470,37 @@ def test_service_create_task_default_sandbox_respects_configured_base(tmp_path: 
     assert workspace.parent == expected_root
 
 
+def test_service_default_sandbox_path_uses_private_home_base_by_default(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-private-default'
+    project.mkdir()
+    fake_home = tmp_path / 'fake-home'
+    fake_home.mkdir()
+    monkeypatch.delenv('AWE_SANDBOX_BASE', raising=False)
+    monkeypatch.delenv('AWE_SANDBOX_USE_PUBLIC_BASE', raising=False)
+    monkeypatch.setattr(Path, 'home', staticmethod(lambda: fake_home))
+
+    path = Path(OrchestratorService._default_sandbox_path(project)).resolve()
+    expected_root = (fake_home / '.awe-agentcheck' / 'sandboxes' / 'proj-private-default-lab').resolve()
+    assert path.parent == expected_root
+
+
+def test_service_default_sandbox_path_shared_base_requires_opt_in(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-shared-base'
+    project.mkdir()
+    monkeypatch.delenv('AWE_SANDBOX_BASE', raising=False)
+    monkeypatch.setenv('AWE_SANDBOX_USE_PUBLIC_BASE', '1')
+
+    if os.name == 'nt':
+        public_root = tmp_path / 'public-home'
+        monkeypatch.setenv('PUBLIC', str(public_root))
+        expected_root = (public_root / 'awe-agentcheck-sandboxes' / 'proj-shared-base-lab').resolve()
+    else:
+        expected_root = (Path('/tmp/awe-agentcheck-sandboxes') / 'proj-shared-base-lab').resolve()
+
+    path = Path(OrchestratorService._default_sandbox_path(project)).resolve()
+    assert path.parent == expected_root
+
+
 def test_service_create_task_default_sandbox_avoids_agents_ancestor(tmp_path: Path, monkeypatch):
     home_like = tmp_path / 'home-like'
     project = home_like / 'proj-agents'
@@ -470,6 +508,10 @@ def test_service_create_task_default_sandbox_avoids_agents_ancestor(tmp_path: Pa
     (project / 'README.md').write_text('hello\n', encoding='utf-8')
     (home_like / 'AGENTS.md').write_text('root agents\n', encoding='utf-8')
     monkeypatch.delenv('AWE_SANDBOX_BASE', raising=False)
+    monkeypatch.delenv('AWE_SANDBOX_USE_PUBLIC_BASE', raising=False)
+    fake_home = tmp_path / 'fake-home-agents'
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, 'home', staticmethod(lambda: fake_home))
 
     svc = build_service(tmp_path)
     task = svc.create_task(
@@ -488,10 +530,11 @@ def test_service_create_task_default_sandbox_avoids_agents_ancestor(tmp_path: Pa
     assert 'proj-agents-lab' in workspace.parent.as_posix()
 
 
-def test_service_create_task_uses_unique_default_sandbox_per_task(tmp_path: Path):
+def test_service_create_task_uses_unique_default_sandbox_per_task(tmp_path: Path, monkeypatch):
     project = tmp_path / 'proj-unique'
     project.mkdir()
     (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(tmp_path / 'sandbox-root'))
     svc = build_service(tmp_path)
 
     t1 = svc.create_task(
@@ -518,10 +561,102 @@ def test_service_create_task_uses_unique_default_sandbox_per_task(tmp_path: Path
     assert Path(t2.workspace_path).exists()
 
 
-def test_service_start_task_default_sandbox_is_cleaned_after_passed_auto_merge(tmp_path: Path):
+def test_service_create_task_with_invalid_merge_target_does_not_leave_sandbox(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-invalid-merge'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    sandbox_base = tmp_path / 'sandbox-base'
+    missing_target = tmp_path / 'missing-target'
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(sandbox_base))
+
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match='merge_target_path'):
+        svc.create_task(
+            CreateTaskInput(
+                title='Invalid merge target',
+                description='sandbox should not be created',
+                author_participant='claude#author-A',
+                reviewer_participants=['codex#review-B'],
+                workspace_path=str(project),
+                sandbox_mode=True,
+                auto_merge=True,
+                merge_target_path=str(missing_target),
+            )
+        )
+
+    assert not sandbox_base.exists()
+
+
+def test_service_create_task_cleans_generated_sandbox_when_later_step_fails(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-create-failure-cleanup'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+    sandbox_base = tmp_path / 'sandbox-base'
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(sandbox_base))
+
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=FailingArtifactStore(tmp_path / '.agents'),
+        workflow_engine=FakeWorkflowEngine(),
+    )
+    with pytest.raises(RuntimeError, match='artifact store failure'):
+        svc.create_task(
+            CreateTaskInput(
+                title='Create failure cleanup',
+                description='sandbox cleanup',
+                author_participant='claude#author-A',
+                reviewer_participants=['codex#review-B'],
+                workspace_path=str(project),
+                sandbox_mode=True,
+            )
+        )
+
+    project_root = sandbox_base / 'proj-create-failure-cleanup-lab'
+    assert not project_root.exists() or not list(project_root.iterdir())
+
+
+def test_service_create_task_sandbox_bootstrap_skips_secret_files(tmp_path: Path, monkeypatch):
+    project = tmp_path / 'proj-secret-filter'
+    project.mkdir()
+    (project / 'README.md').write_text('keep\n', encoding='utf-8')
+    (project / '.env').write_text('SECRET=1\n', encoding='utf-8')
+    (project / '.env.local').write_text('LOCAL_SECRET=1\n', encoding='utf-8')
+    (project / 'api-token.txt').write_text('token\n', encoding='utf-8')
+    (project / 'service.key').write_text('key\n', encoding='utf-8')
+    (project / 'service.pem').write_text('pem\n', encoding='utf-8')
+    src_dir = project / 'src'
+    src_dir.mkdir()
+    (src_dir / 'app.py').write_text('print("ok")\n', encoding='utf-8')
+    sandbox_base = tmp_path / 'sandbox-base'
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(sandbox_base))
+
+    svc = build_service(tmp_path)
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Sandbox secrets filter',
+            description='do not copy secrets',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+            auto_merge=False,
+        )
+    )
+
+    sandbox = Path(task.workspace_path)
+    assert (sandbox / 'README.md').exists()
+    assert (sandbox / 'src' / 'app.py').exists()
+    assert not (sandbox / '.env').exists()
+    assert not (sandbox / '.env.local').exists()
+    assert not (sandbox / 'api-token.txt').exists()
+    assert not (sandbox / 'service.key').exists()
+    assert not (sandbox / 'service.pem').exists()
+
+
+def test_service_start_task_default_sandbox_is_cleaned_after_passed_auto_merge(tmp_path: Path, monkeypatch):
     project = tmp_path / 'proj-cleanup'
     project.mkdir()
     (project / 'README.md').write_text('base\n', encoding='utf-8')
+    monkeypatch.setenv('AWE_SANDBOX_BASE', str(tmp_path / 'sandbox-root'))
     svc = build_service(tmp_path, workflow_engine=FakeWorkflowEngineWithFileChange())
     task = svc.create_task(
         CreateTaskInput(
@@ -731,6 +866,14 @@ def test_service_start_task_runs_workflow_and_records_events(tmp_path: Path):
     assert result.status.value == 'passed'
     assert result.rounds_completed == 1
     assert len(events) >= 3
+
+
+@pytest.mark.parametrize('task_id', ['..', '..%5Coutside', '..\\outside', '../outside'])
+def test_service_list_events_rejects_traversal_task_ids(tmp_path: Path, task_id: str):
+    svc = build_service(tmp_path)
+    with pytest.raises(InputValidationError) as exc:
+        svc.list_events(task_id)
+    assert exc.value.field == 'task_id'
 
 
 def test_service_cancel_request_marks_flag(tmp_path: Path):

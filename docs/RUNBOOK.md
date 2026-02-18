@@ -38,6 +38,8 @@ $env:AWE_COMMAND_TIMEOUT_SECONDS="300"
 $env:AWE_PARTICIPANT_TIMEOUT_RETRIES="1"
 $env:AWE_MAX_CONCURRENT_RUNNING_TASKS="1"
 $env:AWE_WORKFLOW_BACKEND="langgraph"
+# Optional: set to 1/true only if you explicitly want shared/public sandbox base
+$env:AWE_SANDBOX_USE_PUBLIC_BASE="false"
 ```
 
 Then restart API with:

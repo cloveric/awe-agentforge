@@ -1,5 +1,30 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-18, merged from two codex self-check rounds)
+
+1. Merged round-1 hardening into mainline:
+   - artifact fallback event loading now validates task id and blocks traversal (`..`, `/`, `\\`) with path containment checks.
+   - workflow command splitting now preserves Windows paths (`posix=(os.name != 'nt')`).
+   - SQL conditional status transition (`update_task_status_if`) now uses single-statement compare-and-set semantics.
+2. Merged round-2 hardening into mainline:
+   - SQL event sequence allocation now uses per-task counters + uniqueness constraints for concurrent writers.
+   - sandbox bootstrap now supports rollback cleanup on create-task failure.
+   - default sandbox base is private-by-default; shared/public base requires explicit opt-in (`AWE_SANDBOX_USE_PUBLIC_BASE=1`).
+   - sandbox bootstrap now skips common secret-like files (`.env*`, `*.pem`, `*.key`, token/secret patterns).
+3. Fixed reviewer-blocked FK risk from round-2:
+   - `delete_tasks` now removes `task_event_counters` rows before deleting tasks.
+   - added regression coverage to ensure delete path does not fail after event writes.
+4. Tests added/updated:
+   - traversal rejection in API/service event access
+   - Windows command path parsing behavior
+   - SQL CAS conflict/missing-task behavior
+   - concurrent event seq uniqueness under 50 threads
+   - delete-with-counter regression
+5. Verification:
+   - `py -m ruff check src/awe_agentcheck/db.py src/awe_agentcheck/service.py src/awe_agentcheck/workflow.py tests/unit/test_api.py tests/unit/test_db_timezone.py tests/unit/test_service.py tests/unit/test_workflow.py`
+   - `py -m pytest tests/unit/test_db_timezone.py tests/unit/test_service.py tests/unit/test_api.py tests/unit/test_workflow.py -q`
+   - `py -m pytest -q`
+
 ## Update (2026-02-18, LangGraph backend + subprocess reliability baseline)
 
 1. Added workflow backend switch in runtime settings:
