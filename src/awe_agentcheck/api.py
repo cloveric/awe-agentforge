@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime
+from ipaddress import ip_address
+import logging
+import os
+from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,6 +16,8 @@ from awe_agentcheck.domain.models import TaskStatus
 from awe_agentcheck.repository import InMemoryTaskRepository, TaskRepository
 from awe_agentcheck.service import CreateTaskInput, GateInput, InputValidationError, OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
+
+_log = logging.getLogger(__name__)
 
 
 class CreateTaskRequest(BaseModel):
@@ -242,6 +247,10 @@ def create_app(
     repository: TaskRepository | None = None,
     service: OrchestratorService | None = None,
     artifact_root: Path | None = None,
+    workspace_tree_safe_root: Path | None = None,
+    allow_remote_api: bool | None = None,
+    api_access_token: str | None = None,
+    api_access_token_header: str = 'x-awe-api-token',
 ) -> FastAPI:
     if service is None:
         repo = repository or InMemoryTaskRepository()
@@ -250,6 +259,17 @@ def create_app(
 
     app = FastAPI(title='awe-agentcheck api', version='0.5.0')
     app.state.container = AppState(service=service)
+
+    safe_root = (workspace_tree_safe_root or Path.cwd()).resolve()
+    resolved_allow_remote_api = allow_remote_api
+    if resolved_allow_remote_api is None:
+        resolved_allow_remote_api = str(os.getenv('AWE_API_ALLOW_REMOTE', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
+    resolved_api_access_token = api_access_token
+    if resolved_api_access_token is None:
+        resolved_api_access_token = str(os.getenv('AWE_API_TOKEN', '')).strip() or None
+    resolved_api_access_token_header = str(
+        os.getenv('AWE_API_TOKEN_HEADER', api_access_token_header) or api_access_token_header
+    ).strip().lower()
 
     def _field_from_loc(loc: tuple | list | None) -> str | None:
         if not loc:
@@ -313,11 +333,48 @@ def create_app(
     def get_service() -> OrchestratorService:
         return app.state.container.service
 
-    def _start_task_worker(task_id: str) -> None:
+    def _is_loopback_host(host: str | None) -> bool:
+        text = str(host or '').strip().lower()
+        if not text:
+            return False
+        if text in {'localhost', 'testclient'}:
+            return True
+        if text.startswith('::ffff:'):
+            text = text[7:]
         try:
-            get_service().start_task(task_id)
+            return ip_address(text).is_loopback
+        except ValueError:
+            return False
+
+    @app.middleware('http')
+    async def enforce_api_access_controls(request: Request, call_next):
+        if request.url.path.startswith('/api/'):
+            client_host = request.client.host if request.client is not None else ''
+            if not resolved_allow_remote_api and not _is_loopback_host(client_host):
+                return JSONResponse(
+                    status_code=403,
+                    content=_validation_error_payload(code='forbidden', message='api access denied'),
+                )
+            if resolved_api_access_token:
+                token = request.headers.get(resolved_api_access_token_header)
+                if token != resolved_api_access_token:
+                    return JSONResponse(
+                        status_code=401,
+                        content=_validation_error_payload(code='unauthorized', message='invalid api token'),
+                    )
+        return await call_next(request)
+
+    def _start_task_worker(task_id: str) -> None:
+        service = get_service()
+        try:
+            service.start_task(task_id)
         except Exception as exc:
-            get_service().mark_failed_system(task_id, reason=f'background_error: {exc}')
+            reason_text = str(exc).strip() or exc.__class__.__name__
+            _log.exception('background worker failed task_id=%s reason=%s', task_id, reason_text)
+            try:
+                service.mark_failed_system(task_id, reason=f'background_error: {reason_text}')
+            except Exception:
+                _log.exception('background worker failed to mark task as failed task_id=%s', task_id)
 
     @app.get('/healthz')
     def healthz() -> dict[str, str]:
@@ -428,9 +485,22 @@ def create_app(
         max_depth: int = Query(default=4, ge=1, le=8),
         max_entries: int = Query(default=500, ge=50, le=5000),
     ) -> WorkspaceTreeResponse:
-        root = Path(workspace_path)
+        raw_root = Path(workspace_path)
+        if '..' in raw_root.parts:
+            raise HTTPException(status_code=400, detail='workspace_path is invalid')
+
+        try:
+            root = raw_root.resolve()
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail='workspace_path is invalid') from exc
+
+        try:
+            root.relative_to(safe_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail='workspace_path is outside allowed root') from exc
+
         if not root.exists() or not root.is_dir():
-            raise HTTPException(status_code=400, detail=f'workspace_path must be an existing directory: {workspace_path}')
+            raise HTTPException(status_code=400, detail='workspace_path must be an existing directory')
 
         nodes: list[WorkspaceTreeNodeResponse] = []
         truncated = False

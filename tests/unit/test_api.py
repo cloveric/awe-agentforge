@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -21,14 +22,25 @@ class FakeWorkflowEngine:
         return RunResult(status='passed', rounds=1, gate_reason='passed')
 
 
-def build_client(tmp_path: Path) -> TestClient:
+def build_client(
+    tmp_path: Path,
+    *,
+    api_access_token: str | None = None,
+    allow_remote_api: bool | None = None,
+    client: tuple[str, int] = ('testclient', 50000),
+) -> TestClient:
     service = OrchestratorService(
         repository=InMemoryTaskRepository(),
         artifact_store=ArtifactStore(tmp_path / '.agents'),
         workflow_engine=FakeWorkflowEngine(),
     )
-    app = create_app(service=service)
-    return TestClient(app)
+    app = create_app(
+        service=service,
+        workspace_tree_safe_root=tmp_path,
+        allow_remote_api=allow_remote_api,
+        api_access_token=api_access_token,
+    )
+    return TestClient(app, client=client)
 
 
 def test_api_create_start_and_get_task_roundtrip(tmp_path: Path):
@@ -481,6 +493,37 @@ def test_api_provider_models_endpoint_includes_defaults_and_observed_models(tmp_
     assert len(providers['claude']) >= 3
 
 
+def test_api_blocks_non_local_clients_by_default(tmp_path: Path):
+    client = build_client(tmp_path, client=('203.0.113.7', 50000))
+    resp = client.get('/api/stats')
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body['code'] == 'forbidden'
+    assert body['message'] == 'api access denied'
+
+
+def test_api_token_mode_blocks_missing_and_invalid_token(tmp_path: Path):
+    client = build_client(tmp_path, api_access_token='secret-token')
+
+    missing = client.get('/api/stats')
+    assert missing.status_code == 401
+    missing_body = missing.json()
+    assert missing_body['code'] == 'unauthorized'
+    assert missing_body['message'] == 'invalid api token'
+
+    invalid = client.get('/api/stats', headers={'x-awe-api-token': 'wrong-token'})
+    assert invalid.status_code == 401
+    invalid_body = invalid.json()
+    assert invalid_body['code'] == 'unauthorized'
+    assert invalid_body['message'] == 'invalid api token'
+
+
+def test_api_token_mode_allows_valid_token(tmp_path: Path):
+    client = build_client(tmp_path, api_access_token='secret-token')
+    resp = client.get('/api/stats', headers={'x-awe-api-token': 'secret-token'})
+    assert resp.status_code == 200
+
+
 def test_api_workspace_tree_lists_children(tmp_path: Path):
     root = tmp_path / 'repo'
     root.mkdir()
@@ -500,6 +543,28 @@ def test_api_workspace_tree_lists_children(tmp_path: Path):
     paths = {n['path'] for n in body['nodes']}
     assert 'src' in paths
     assert 'src/main.py' in paths
+
+
+def test_api_workspace_tree_rejects_dot_dot_path(tmp_path: Path):
+    root = tmp_path / 'repo'
+    root.mkdir()
+    client = build_client(tmp_path)
+    resp = client.get('/api/workspace-tree', params={'workspace_path': str(root / '..')})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['detail'] == 'workspace_path is invalid'
+
+
+def test_api_workspace_tree_rejects_absolute_path_outside_allowed_root(tmp_path: Path):
+    outside = tmp_path.parent / 'outside-workspace-root'
+    outside.mkdir(exist_ok=True)
+
+    client = build_client(tmp_path)
+    resp = client.get('/api/workspace-tree', params={'workspace_path': str(outside)})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body['detail'] == 'workspace_path is outside allowed root'
+    assert str(outside) not in str(body)
 
 
 def test_api_workspace_tree_validation_error_reports_query_field_name(tmp_path: Path):
@@ -681,6 +746,47 @@ def test_api_events_fallback_to_artifact_history_when_task_missing_from_reposito
     assert rows[1]['payload']['participant'] == 'claude#review-B'
     assert rows[1]['payload']['verdict'] == 'no_blocker'
     assert rows[1]['payload']['output'] == 'history review'
+
+
+def test_api_background_worker_logs_start_and_mark_fail_errors(tmp_path: Path, monkeypatch, caplog):
+    client = build_client(tmp_path)
+    created = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Background failure',
+            'description': 'worker should log both failures',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'auto_start': False,
+        },
+    )
+    assert created.status_code == 201
+    task_id = created.json()['task_id']
+
+    service = client.app.state.container.service
+    recorded_reasons: list[str] = []
+
+    class EmptyBackgroundError(Exception):
+        pass
+
+    def fail_start(_task_id: str):
+        raise EmptyBackgroundError()
+
+    def fail_mark(_task_id: str, *, reason: str):
+        recorded_reasons.append(reason)
+        raise RuntimeError('write failed')
+
+    monkeypatch.setattr(service, 'start_task', fail_start)
+    monkeypatch.setattr(service, 'mark_failed_system', fail_mark)
+
+    with caplog.at_level(logging.ERROR, logger='awe_agentcheck.api'):
+        resp = client.post(f'/api/tasks/{task_id}/start', json={'background': True})
+
+    assert resp.status_code == 200
+    assert recorded_reasons == ['background_error: EmptyBackgroundError']
+    messages = [record.getMessage() for record in caplog.records]
+    assert any('background worker failed task_id=' in message for message in messages)
+    assert any('failed to mark task as failed' in message for message in messages)
 
 
 @pytest.mark.parametrize(

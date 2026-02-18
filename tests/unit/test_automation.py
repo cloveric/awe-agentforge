@@ -1,4 +1,5 @@
 from datetime import datetime
+import awe_agentcheck.automation as automation
 import pytest
 
 from awe_agentcheck.automation import (
@@ -212,3 +213,16 @@ def test_acquire_single_instance_reclaims_stale_lock(tmp_path):
     with acquire_single_instance(lock, pid=888, pid_exists=lambda p: False):
         assert lock.exists() is True
         assert lock.read_text(encoding='utf-8').startswith('888')
+
+
+def test_acquire_single_instance_race_on_open_returns_stable_error(tmp_path, monkeypatch):
+    lock = tmp_path / 'overnight.lock'
+
+    def raise_file_exists(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise FileExistsError()
+
+    monkeypatch.setattr(automation.os, 'open', raise_file_exists)
+
+    with pytest.raises(RuntimeError, match='^lock already held$'):
+        with acquire_single_instance(lock, pid=888, pid_exists=lambda p: False):
+            pass

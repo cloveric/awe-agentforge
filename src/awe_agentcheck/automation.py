@@ -240,7 +240,10 @@ def acquire_single_instance(
     if target.exists():
         target.unlink()
 
-    fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError('lock already held') from exc
     try:
         payload = f'{current_pid}\n{datetime.now().isoformat()}\n'
         os.write(fd, payload.encode('utf-8'))
