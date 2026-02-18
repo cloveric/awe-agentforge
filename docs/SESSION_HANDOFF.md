@@ -1,5 +1,25 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-18, LangGraph backend + subprocess reliability baseline)
+
+1. Added workflow backend switch in runtime settings:
+   - new env var: `AWE_WORKFLOW_BACKEND`
+   - supported values: `langgraph` (default), `classic` (fallback)
+2. `main.build_app()` now wires selected backend into `WorkflowEngine`.
+3. `WorkflowEngine` now supports backend dispatch:
+   - `langgraph`: executes workflow through a LangGraph compiled graph wrapper
+   - `classic`: uses existing imperative workflow loop
+4. Safety fallback behavior:
+   - when `AWE_WORKFLOW_BACKEND=langgraph` but LangGraph package is unavailable, engine logs warning and falls back to `classic`.
+5. CLI subprocess behavior remains intact:
+   - existing participant timeout/retry/backoff/model-param handling in `ParticipantRunner` is preserved.
+6. Docs synced:
+   - `README.md`, `README.zh-CN.md`, `docs/RUNBOOK.md` now include `AWE_WORKFLOW_BACKEND`.
+7. Verification:
+   - `py -m ruff check src/awe_agentcheck/workflow.py src/awe_agentcheck/config.py src/awe_agentcheck/main.py tests/unit/test_config.py tests/unit/test_main.py tests/unit/test_workflow.py`
+   - `py -m pytest tests/unit/test_config.py tests/unit/test_main.py tests/unit/test_workflow.py -q`
+   - `py -m pytest -q`
+
 ## Update (2026-02-18, overnight stability + plain-language monitor)
 
 1. Monitor verdict wording is now plain-language:

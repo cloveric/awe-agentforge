@@ -40,6 +40,7 @@ def build_app():
         command_executor=ShellCommandExecutor(),
         participant_timeout_seconds=settings.participant_timeout_seconds,
         command_timeout_seconds=settings.command_timeout_seconds,
+        workflow_backend=settings.workflow_backend,
     )
     service = OrchestratorService(
         repository=repo,

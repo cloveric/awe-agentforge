@@ -264,6 +264,9 @@ $env:AWE_DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/awe
 
 # Optional: where task artifacts (logs, reports, events) are stored
 $env:AWE_ARTIFACT_ROOT=".agents"
+
+# Optional: workflow orchestrator backend (langgraph/classic)
+$env:AWE_WORKFLOW_BACKEND="langgraph"
 ```
 
 <details>
@@ -281,6 +284,7 @@ $env:AWE_ARTIFACT_ROOT=".agents"
 | `AWE_COMMAND_TIMEOUT_SECONDS` | `300` | Max seconds for test/lint commands |
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | Retry count when a participant times out |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | How many tasks can run simultaneously |
+| `AWE_WORKFLOW_BACKEND` | `langgraph` | Workflow backend (`langgraph` preferred, `classic` fallback) |
 | `AWE_DRY_RUN` | `false` | When `true`, participants are not actually invoked |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | Service name for observability |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_ | OpenTelemetry collector endpoint |

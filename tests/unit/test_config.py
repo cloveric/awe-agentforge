@@ -31,3 +31,21 @@ def test_load_settings_default_database_url_uses_short_connect_timeout(monkeypat
     monkeypatch.delenv('AWE_DATABASE_URL', raising=False)
     settings = load_settings()
     assert 'connect_timeout=2' in settings.database_url
+
+
+def test_load_settings_defaults_workflow_backend_to_langgraph(monkeypatch):
+    monkeypatch.delenv('AWE_WORKFLOW_BACKEND', raising=False)
+    settings = load_settings()
+    assert settings.workflow_backend == 'langgraph'
+
+
+def test_load_settings_allows_workflow_backend_override(monkeypatch):
+    monkeypatch.setenv('AWE_WORKFLOW_BACKEND', 'classic')
+    settings = load_settings()
+    assert settings.workflow_backend == 'classic'
+
+
+def test_load_settings_invalid_workflow_backend_falls_back_to_langgraph(monkeypatch):
+    monkeypatch.setenv('AWE_WORKFLOW_BACKEND', 'invalid-backend')
+    settings = load_settings()
+    assert settings.workflow_backend == 'langgraph'

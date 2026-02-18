@@ -36,3 +36,22 @@ def test_build_app_wires_gemini_command_into_runner(monkeypatch):
     overrides = captured.get('command_overrides')
     assert isinstance(overrides, dict)
     assert overrides.get('gemini') == 'gemini --yolo --model gemini-2.5-pro'
+
+
+def test_build_app_wires_workflow_backend_into_engine(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeWorkflowEngine:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setenv('AWE_DATABASE_URL', 'invalid+driver://bad')
+    monkeypatch.setenv('AWE_WORKFLOW_BACKEND', 'langgraph')
+    monkeypatch.setattr('awe_agentcheck.main.WorkflowEngine', FakeWorkflowEngine)
+
+    app = build_app()
+    client = TestClient(app)
+    resp = client.get('/healthz')
+
+    assert resp.status_code == 200
+    assert captured.get('workflow_backend') == 'langgraph'

@@ -264,6 +264,9 @@ $env:AWE_DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/awe
 
 # 可选：任务工件（日志、报告、事件）存储位置
 $env:AWE_ARTIFACT_ROOT=".agents"
+
+# 可选：工作流编排后端（langgraph/classic）
+$env:AWE_WORKFLOW_BACKEND="langgraph"
 ```
 
 <details>
@@ -281,6 +284,7 @@ $env:AWE_ARTIFACT_ROOT=".agents"
 | `AWE_COMMAND_TIMEOUT_SECONDS` | `300` | 测试/lint 命令最大运行秒数 |
 | `AWE_PARTICIPANT_TIMEOUT_RETRIES` | `1` | 参与者超时后的重试次数 |
 | `AWE_MAX_CONCURRENT_RUNNING_TASKS` | `1` | 可同时运行的任务数量 |
+| `AWE_WORKFLOW_BACKEND` | `langgraph` | 工作流后端（推荐 `langgraph`，可回退 `classic`） |
 | `AWE_DRY_RUN` | `false` | 设为 `true` 时不实际调用参与者 |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | 可观测性中的服务名称 |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(无)_ | OpenTelemetry 收集器端点 |

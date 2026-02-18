@@ -19,6 +19,7 @@ class Settings:
     command_timeout_seconds: int
     participant_timeout_retries: int
     max_concurrent_running_tasks: int
+    workflow_backend: str
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
@@ -55,6 +56,9 @@ def load_settings() -> Settings:
     command_timeout_seconds = _env_int('AWE_COMMAND_TIMEOUT_SECONDS', 300, minimum=10)
     participant_timeout_retries = _env_int('AWE_PARTICIPANT_TIMEOUT_RETRIES', 1, minimum=0)
     max_concurrent_running_tasks = _env_int('AWE_MAX_CONCURRENT_RUNNING_TASKS', 1, minimum=0)
+    workflow_backend = str(os.getenv('AWE_WORKFLOW_BACKEND', 'langgraph') or 'langgraph').strip().lower()
+    if workflow_backend not in {'langgraph', 'classic'}:
+        workflow_backend = 'langgraph'
     return Settings(
         database_url=database_url,
         artifact_root=artifact_root,
@@ -68,4 +72,5 @@ def load_settings() -> Settings:
         command_timeout_seconds=command_timeout_seconds,
         participant_timeout_retries=participant_timeout_retries,
         max_concurrent_running_tasks=max_concurrent_running_tasks,
+        workflow_backend=workflow_backend,
     )

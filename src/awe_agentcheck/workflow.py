@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+import shlex
 import subprocess
 import time
 from typing import Callable
@@ -13,6 +14,12 @@ from awe_agentcheck.domain.gate import evaluate_medium_gate
 from awe_agentcheck.domain.models import ReviewVerdict
 from awe_agentcheck.observability import get_logger, set_task_context
 from awe_agentcheck.participants import Participant
+
+try:
+    from langgraph.graph import END, StateGraph
+except Exception:  # pragma: no cover - optional import fallback
+    END = None
+    StateGraph = None
 
 _log = get_logger('awe_agentcheck.workflow')
 
@@ -27,11 +34,48 @@ class CommandResult:
 
 
 class ShellCommandExecutor:
-    def run(self, command: str, cwd: Path, timeout_seconds: int) -> CommandResult:
+    _ALLOWED_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+        ('py', '-m', 'pytest'),
+        ('py', '-m', 'ruff'),
+        ('python', '-m', 'pytest'),
+        ('python', '-m', 'ruff'),
+        ('python3', '-m', 'pytest'),
+        ('python3', '-m', 'ruff'),
+        ('pytest',),
+        ('ruff',),
+    )
+
+    @classmethod
+    def _normalize_command(cls, command: str | list[str]) -> list[str]:
+        if isinstance(command, list):
+            argv = [str(part).strip() for part in command if str(part).strip()]
+        else:
+            argv = shlex.split(str(command or '').strip(), posix=True)
+        if not argv:
+            raise ValueError('command is empty')
+        lowered = [part.lower() for part in argv]
+        allowed = any(lowered[:len(prefix)] == list(prefix) for prefix in cls._ALLOWED_COMMAND_PREFIXES)
+        if not allowed:
+            raise ValueError(f'command prefix is not allowed: {argv[0]}')
+        return argv
+
+    def run(self, command: str | list[str], cwd: Path, timeout_seconds: int) -> CommandResult:
+        display_command = str(command)
+        try:
+            argv = self._normalize_command(command)
+            display_command = ' '.join(argv)
+        except ValueError as exc:
+            return CommandResult(
+                ok=False,
+                command=display_command,
+                returncode=2,
+                stdout='',
+                stderr=str(exc),
+            )
         started = time.monotonic()
         completed = subprocess.run(
-            command,
-            shell=True,
+            argv,
+            shell=False,
             cwd=str(cwd),
             capture_output=True,
             text=True,
@@ -41,10 +85,10 @@ class ShellCommandExecutor:
         )
         elapsed = time.monotonic() - started
         _log.debug('shell_command command=%s ok=%s duration=%.2fs',
-                   command, completed.returncode == 0, elapsed)
+                   display_command, completed.returncode == 0, elapsed)
         return CommandResult(
             ok=completed.returncode == 0,
-            command=command,
+            command=display_command,
             returncode=completed.returncode,
             stdout=completed.stdout or '',
             stderr=completed.stderr or '',
@@ -62,8 +106,8 @@ class RunConfig:
     evolve_until: str | None
     cwd: Path
     max_rounds: int
-    test_command: str
-    lint_command: str
+    test_command: str | list[str]
+    lint_command: str | list[str]
     conversation_language: str = 'en'
     provider_models: dict[str, str] | None = None
     provider_model_params: dict[str, str] | None = None
@@ -89,13 +133,47 @@ class WorkflowEngine:
         command_executor: ShellCommandExecutor,
         participant_timeout_seconds: int = 3600,
         command_timeout_seconds: int = 300,
+        workflow_backend: str = 'langgraph',
     ):
         self.runner = runner
         self.command_executor = command_executor
         self.participant_timeout_seconds = max(1, int(participant_timeout_seconds))
         self.command_timeout_seconds = max(1, int(command_timeout_seconds))
+        self.workflow_backend = self._normalize_workflow_backend(workflow_backend)
+        self._langgraph_compiled = None
 
     def run(
+        self,
+        config: RunConfig,
+        *,
+        on_event: Callable[[dict], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> RunResult:
+        if self.workflow_backend == 'langgraph':
+            return self._run_langgraph(config, on_event=on_event, should_cancel=should_cancel)
+        return self._run_classic(config, on_event=on_event, should_cancel=should_cancel)
+
+    def _run_langgraph(
+        self,
+        config: RunConfig,
+        *,
+        on_event: Callable[[dict], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> RunResult:
+        graph = self._get_langgraph()
+        state = graph.invoke(
+            {
+                'config': config,
+                'on_event': on_event,
+                'should_cancel': should_cancel,
+            }
+        )
+        result = state.get('result')
+        if not isinstance(result, RunResult):
+            raise RuntimeError('langgraph_execution_error: missing RunResult payload')
+        return result
+
+    def _run_classic(
         self,
         config: RunConfig,
         *,
@@ -123,7 +201,7 @@ class WorkflowEngine:
             if debate_mode and check_cancel():
                 emit({'type': 'canceled', 'round': round_no})
                 return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
-            if deadline is not None and datetime.now() >= deadline:
+            if deadline is not None and datetime.now(timezone.utc) >= deadline:
                 emit({'type': 'deadline_reached', 'round': round_no, 'deadline': deadline.isoformat()})
                 return RunResult(status='canceled', rounds=round_no - 1, gate_reason='deadline_reached')
 
@@ -462,6 +540,40 @@ class WorkflowEngine:
             if not deadline_mode and round_no >= config.max_rounds:
                 return RunResult(status='failed_gate', rounds=round_no, gate_reason=gate.reason)
 
+    def _get_langgraph(self):
+        if self._langgraph_compiled is not None:
+            return self._langgraph_compiled
+        if StateGraph is None or END is None:
+            raise RuntimeError('langgraph_backend_unavailable: install "langgraph"')
+
+        graph = StateGraph(dict)
+        graph.add_node('execute', self._langgraph_execute_node)
+        graph.set_entry_point('execute')
+        graph.add_edge('execute', END)
+        self._langgraph_compiled = graph.compile()
+        return self._langgraph_compiled
+
+    def _langgraph_execute_node(self, state: dict) -> dict:
+        config = state.get('config')
+        if not isinstance(config, RunConfig):
+            raise RuntimeError('langgraph_execution_error: invalid config payload')
+        result = self._run_classic(
+            config,
+            on_event=state.get('on_event'),
+            should_cancel=state.get('should_cancel'),
+        )
+        return {'result': result}
+
+    @staticmethod
+    def _normalize_workflow_backend(value: str | None) -> str:
+        backend = str(value or '').strip().lower()
+        if backend == 'langgraph' and StateGraph is None:
+            _log.warning('langgraph backend requested but unavailable; falling back to classic backend')
+            return 'classic'
+        if backend == 'langgraph':
+            return 'langgraph'
+        return 'classic'
+
     @staticmethod
     def _get_tracer():
         try:
@@ -606,6 +718,9 @@ class WorkflowEngine:
             f"{plain_mode_instruction}\n"
             "Reviewer-first mode: reviewers have provided pre-implementation findings.\n"
             "Produce the author execution plan for this round and explicitly address reviewer concerns.\n"
+            "Reviewer is primary in this phase: do not invent unrelated change themes.\n"
+            "Only include revisions tied to reviewer findings and user intent.\n"
+            "If you reject a reviewer suggestion, state reason and safer alternative.\n"
             "Do not ask follow-up questions. Keep response concise.\n"
             f"Reviewer context:\n{clipped}\n"
         )
@@ -639,6 +754,8 @@ class WorkflowEngine:
             "Implement based on this plan and summarize what changed.\n"
             f"Plan:\n{clipped}\n"
             f"{mode_guidance}\n"
+            "Implement only agreed plan items; do not add unrelated changes.\n"
+            "Do not introduce default secrets/tokens or hidden bypass behavior.\n"
             "Include explicit assumptions and risks.\n"
             "Do not ask follow-up questions. Keep response concise."
         )
@@ -821,7 +938,10 @@ class WorkflowEngine:
         if not text:
             return None
         try:
-            return datetime.fromisoformat(text.replace(' ', 'T'))
+            parsed = datetime.fromisoformat(text.replace(' ', 'T'))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             return None
 

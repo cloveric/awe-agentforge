@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import subprocess
 
 from awe_agentcheck.adapters import AdapterResult
 from awe_agentcheck.participants import parse_participant_id
-from awe_agentcheck.workflow import CommandResult, RunConfig, WorkflowEngine
+from awe_agentcheck.workflow import CommandResult, RunConfig, ShellCommandExecutor, WorkflowEngine
 
 
 class FakeRunner:
@@ -395,7 +396,7 @@ def test_workflow_stops_when_deadline_reached(tmp_path: Path):
     runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])
     executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
     engine = WorkflowEngine(runner=runner, command_executor=executor)
-    past = (datetime.now() - timedelta(minutes=1)).replace(microsecond=0).isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).replace(microsecond=0).isoformat()
 
     result = engine.run(
         RunConfig(
@@ -448,6 +449,68 @@ def test_workflow_deadline_takes_priority_over_max_rounds(tmp_path: Path):
 
     assert result.status == 'passed'
     assert result.rounds == 2
+
+
+def test_workflow_stops_when_deadline_with_timezone_offset_reached(tmp_path: Path):
+    runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+    past_utc = (datetime.now(timezone.utc) - timedelta(minutes=1)).replace(microsecond=0).isoformat()
+
+    result = engine.run(
+        RunConfig(
+            task_id='t8tz',
+            title='Deadline timezone test',
+            description='deadline with tz offset',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=past_utc,
+            cwd=tmp_path,
+            max_rounds=2,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+        )
+    )
+
+    assert result.status == 'canceled'
+    assert result.gate_reason == 'deadline_reached'
+
+
+def test_shell_command_executor_uses_shell_false(monkeypatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+
+    def fake_run(argv, **kwargs):
+        captured['argv'] = argv
+        captured['kwargs'] = kwargs
+        return subprocess.CompletedProcess(argv, 0, stdout='ok', stderr='')
+
+    monkeypatch.setattr('awe_agentcheck.workflow.subprocess.run', fake_run)
+    executor = ShellCommandExecutor()
+
+    result = executor.run(['py', '-m', 'pytest', '-q'], cwd=tmp_path, timeout_seconds=10)
+
+    assert result.ok is True
+    assert captured['argv'] == ['py', '-m', 'pytest', '-q']
+    assert captured['kwargs']['shell'] is False
+
+
+def test_shell_command_executor_treats_shell_metachar_as_literal(monkeypatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+
+    def fake_run(argv, **kwargs):
+        captured['argv'] = argv
+        captured['kwargs'] = kwargs
+        return subprocess.CompletedProcess(argv, 0, stdout='ok', stderr='')
+
+    monkeypatch.setattr('awe_agentcheck.workflow.subprocess.run', fake_run)
+    executor = ShellCommandExecutor()
+
+    result = executor.run('py -m pytest -q && echo injected', cwd=tmp_path, timeout_seconds=10)
+
+    assert result.ok is True
+    assert '&&' in captured['argv']
+    assert captured['kwargs']['shell'] is False
 
 
 def test_workflow_cancels_mid_phase_after_discussion(tmp_path: Path):
@@ -758,3 +821,39 @@ def test_workflow_stream_mode_emits_participant_stream_events(tmp_path: Path):
 
     assert result.status == 'passed'
     assert any(e.get('type') == 'participant_stream' for e in sink.events)
+
+
+def test_workflow_langgraph_backend_executes_classic_flow(tmp_path: Path):
+    runner = FakeRunner([
+        _ok_result(),  # discussion
+        _ok_result(),  # implementation
+        _ok_result(),  # review
+    ])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(
+        runner=runner,
+        command_executor=executor,
+        workflow_backend='langgraph',
+    )
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-langgraph',
+            title='LangGraph backend smoke',
+            description='verify backend dispatch',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    assert any(e.get('type') == 'task_started' for e in sink.events)
+    assert runner.calls == 3
