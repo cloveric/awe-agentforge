@@ -24,7 +24,7 @@ class ArtifactStore:
         self.root = Path(root)
 
     def create_task_workspace(self, task_id: str) -> TaskWorkspace:
-        task_root = self.root / 'threads' / task_id
+        task_id_text, task_root = self._resolve_task_root(task_id)
         artifacts_dir = task_root / 'artifacts'
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -41,7 +41,7 @@ class ArtifactStore:
         self._ensure_json(
             state_json,
             {
-                'task_id': task_id,
+                'task_id': task_id_text,
                 'status': 'queued',
                 'rounds_completed': 0,
                 'updated_at': self._utc_now_iso(),
@@ -111,11 +111,24 @@ class ArtifactStore:
         return path
 
     def remove_task_workspace(self, task_id: str) -> bool:
-        task_root = self.root / 'threads' / str(task_id or '').strip()
+        _, task_root = self._resolve_task_root(task_id)
         if not task_root.exists() or not task_root.is_dir():
             return False
         shutil.rmtree(task_root, ignore_errors=False)
         return True
+
+    def _resolve_task_root(self, task_id: str) -> tuple[str, Path]:
+        task_id_text = str(task_id or '').strip()
+        if not task_id_text:
+            raise ValueError('task_id is required')
+
+        threads_root = (self.root / 'threads').resolve()
+        task_root = (threads_root / task_id_text).resolve(strict=False)
+        try:
+            task_root.relative_to(threads_root)
+        except ValueError as exc:
+            raise ValueError('invalid task_id') from exc
+        return task_id_text, task_root
 
     @staticmethod
     def _ensure_text(path: Path, content: str) -> None:

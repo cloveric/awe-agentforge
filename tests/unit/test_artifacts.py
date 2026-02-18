@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from awe_agentcheck.storage.artifacts import ArtifactStore
 
 
@@ -32,3 +34,21 @@ def test_write_artifact_json_writes_named_payload(tmp_path: Path):
     assert path.exists()
     payload = json.loads(path.read_text(encoding='utf-8'))
     assert payload == {'ok': True}
+
+
+def test_create_task_workspace_rejects_traversal_like_task_id(tmp_path: Path):
+    store = ArtifactStore(root=tmp_path)
+    with pytest.raises(ValueError, match='invalid task_id'):
+        store.create_task_workspace(task_id='../escape')
+
+
+def test_remove_task_workspace_rejects_traversal_like_task_id(tmp_path: Path):
+    store = ArtifactStore(root=tmp_path)
+    with pytest.raises(ValueError, match='invalid task_id'):
+        store.remove_task_workspace(task_id='../../escape')
+
+
+def test_remove_task_workspace_allows_normal_task_id(tmp_path: Path):
+    store = ArtifactStore(root=tmp_path)
+    store.create_task_workspace(task_id='task-normal')
+    assert store.remove_task_workspace(task_id='task-normal') is True
