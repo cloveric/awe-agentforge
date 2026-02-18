@@ -5127,8 +5127,10 @@
       }
     }
 
-    function syncCreateTaskPolicyControls() {
+    function syncCreateTaskPolicyControls(trigger = 'auto') {
       const sandboxMode = Number((el.sandboxMode && el.sandboxMode.value) || 1);
+      const maxRoundsValue = Math.max(1, Math.min(20, Number((el.maxRounds && el.maxRounds.value) || 1)));
+      const multiRoundMode = maxRoundsValue > 1;
       if (el.autoMerge) {
         if (sandboxMode === 0) {
           el.autoMerge.value = '0';
@@ -5136,7 +5138,13 @@
           el.autoMerge.title = 'Auto Merge is available only when Sandbox Mode = 1.';
         } else {
           el.autoMerge.disabled = false;
-          el.autoMerge.title = '';
+          if (multiRoundMode && (trigger === 'maxRounds' || trigger === 'sandboxMode')) {
+            // Multi-round tasks default to auto-merge on; user may still toggle it off manually.
+            el.autoMerge.value = '1';
+          }
+          el.autoMerge.title = multiRoundMode
+            ? 'Max Rounds > 1 defaults Auto Merge to 1. You can still switch it to 0 manually.'
+            : '';
         }
       }
 
@@ -5266,15 +5274,19 @@
       el.evolveUntil.value = computeDefaultEvolveUntil();
     }
     if (el.sandboxMode) {
-      el.sandboxMode.addEventListener('change', syncCreateTaskPolicyControls);
+      el.sandboxMode.addEventListener('change', () => syncCreateTaskPolicyControls('sandboxMode'));
     }
     if (el.autoMerge) {
-      el.autoMerge.addEventListener('change', syncCreateTaskPolicyControls);
+      el.autoMerge.addEventListener('change', () => syncCreateTaskPolicyControls('autoMerge'));
     }
     if (el.evolveUntil) {
-      el.evolveUntil.addEventListener('input', syncCreateTaskPolicyControls);
+      el.evolveUntil.addEventListener('input', () => syncCreateTaskPolicyControls('evolveUntil'));
     }
-    syncCreateTaskPolicyControls();
+    if (el.maxRounds) {
+      el.maxRounds.addEventListener('input', () => syncCreateTaskPolicyControls('maxRounds'));
+      el.maxRounds.addEventListener('change', () => syncCreateTaskPolicyControls('maxRounds'));
+    }
+    syncCreateTaskPolicyControls('init');
     setHistoryCollapsed(readHistoryCollapsePreference(), { persist: false });
     setCreateHelpCollapsed(readCreateHelpCollapsedPreference(), { persist: false });
     setCreateHelpLanguage(readCreateHelpLanguagePreference(), { persist: false });
