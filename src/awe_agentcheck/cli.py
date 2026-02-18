@@ -100,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     decide = sub.add_parser('decide', help='Submit author decision for waiting_manual task')
     decide.add_argument('task_id', help='Task id')
+    decide.add_argument('--decision', choices=['approve', 'reject', 'revise'], default='', help='Explicit decision action')
     decide.add_argument('--approve', action='store_true', help='Approve proposal and queue task')
     decide.add_argument('--note', default='', help='Optional note')
     decide.add_argument('--auto-start', action='store_true', help='Auto-start after approve')
@@ -246,10 +247,14 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
         elif args.command == 'decide':
+            decision_text = str(args.decision or '').strip().lower()
+            if not decision_text:
+                decision_text = 'approve' if bool(args.approve) else 'reject'
             response = client.post(
                 f'{base}/api/tasks/{args.task_id}/author-decision',
                 json={
                     'approve': bool(args.approve),
+                    'decision': decision_text,
                     'note': (args.note.strip() or None),
                     'auto_start': bool(args.auto_start),
                 },

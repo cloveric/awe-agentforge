@@ -876,6 +876,33 @@ def test_service_author_reject_cancels(tmp_path: Path):
     assert canceled.last_gate_reason == 'author_rejected'
 
 
+def test_service_author_revise_requeues_for_next_consensus(tmp_path: Path):
+    project = tmp_path / 'revise-proj'
+    project.mkdir()
+    engine = FakeWorkflowEngine()
+    svc = build_service(tmp_path, workflow_engine=engine)
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Revise path',
+            description='needs manual revise',
+            author_participant='claude#author-A',
+            reviewer_participants=['codex#review-B'],
+            workspace_path=str(project),
+            sandbox_mode=False,
+            self_loop_mode=0,
+        )
+    )
+    waiting = svc.start_task(task.task_id)
+    assert waiting.status.value == 'waiting_manual'
+
+    revised = svc.submit_author_decision(task.task_id, decision='revise', note='Please focus on auth and evidence paths')
+    assert revised.status.value == 'queued'
+    assert revised.last_gate_reason == 'author_feedback_requested'
+
+    events = svc.list_events(task.task_id)
+    assert any(e['type'] == 'author_feedback_requested' for e in events)
+
+
 def test_service_start_task_auto_merge_copies_changes_and_writes_changelog_snapshot(tmp_path: Path):
     source = tmp_path / 'source'
     target = tmp_path / 'target'

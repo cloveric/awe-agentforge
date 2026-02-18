@@ -154,14 +154,16 @@ Capabilities:
 4. Right: conversation stream in chat-bubble style with role avatars and role filtering.
 5. Start/cancel/force-fail actions for selected task.
 6. Author controls for `waiting_manual`: `Approve + Queue`, `Approve + Start`, `Reject`.
-7. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`, `conversation_language`, `provider_models`, `provider_model_params`, and `claude_team_agents`.
-8. Create task advanced controls include `repair_mode`, `plain_mode`, `stream_mode`, `debate_mode`.
-9. Auto polling and extended stats with reason/provider breakdown.
-10. Project history card shows cross-task records for selected project: core findings, revisions, disputes, next steps.
-11. `Project History` card supports scoped `Clear` (can optionally clear matching live tasks in scope).
-12. `GitHub / PR Summary` card provides PR-ready markdown and artifact links for selected task.
-13. `Advanced Analytics` card visualizes failure taxonomy trends and reviewer drift signals.
-14. `Promote Round` control is enabled only for terminal tasks with `max_rounds>1` and `auto_merge=0`.
+7. `Custom Reply + Re-run` lets operator send a free-text manual note (`decision=revise`) and immediately rerun proposal consensus.
+8. Manual reply text box is enabled only when task status is `waiting_manual`.
+9. Create task includes `sandbox_mode`, `sandbox_workspace_path`, `self_loop_mode`, `evolution_level`, optional `evolve_until`, `conversation_language`, `provider_models`, `provider_model_params`, and `claude_team_agents`.
+10. Create task advanced controls include `repair_mode`, `plain_mode`, `stream_mode`, `debate_mode`.
+11. Auto polling and extended stats with reason/provider breakdown.
+12. Project history card shows cross-task records for selected project: core findings, revisions, disputes, next steps.
+13. `Project History` card supports scoped `Clear` (can optionally clear matching live tasks in scope).
+14. `GitHub / PR Summary` card provides PR-ready markdown and artifact links for selected task.
+15. `Advanced Analytics` card visualizes failure taxonomy trends and reviewer drift signals.
+16. `Promote Round` control is enabled only for terminal tasks with `max_rounds>1` and `auto_merge=0`.
 
 ## 7) Artifacts
 

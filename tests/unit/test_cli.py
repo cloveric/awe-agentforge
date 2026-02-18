@@ -159,6 +159,15 @@ def test_cli_parser_supports_author_decide_command():
     assert args.auto_start is True
 
 
+def test_cli_parser_supports_author_decide_with_explicit_decision():
+    parser = build_parser()
+    args = parser.parse_args(['decide', 'task-8', '--decision', 'revise', '--note', 'need stronger plan'])
+    assert args.command == 'decide'
+    assert args.task_id == 'task-8'
+    assert args.decision == 'revise'
+    assert args.note == 'need stronger plan'
+
+
 def test_cli_parse_provider_model_supports_extra_provider_from_env(monkeypatch):
     monkeypatch.setenv('AWE_PROVIDER_ADAPTERS_JSON', '{"qwen":"qwen-cli --yolo"}')
     parsed = _parse_provider_models(['qwen=qwen-max'])

@@ -5,6 +5,7 @@ from ipaddress import ip_address
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -53,7 +54,8 @@ class StartTaskRequest(BaseModel):
 
 
 class AuthorDecisionRequest(BaseModel):
-    approve: bool
+    approve: bool | None = Field(default=None)
+    decision: Literal['approve', 'reject', 'revise'] | None = Field(default=None)
     note: str | None = Field(default=None, max_length=4000)
     auto_start: bool = Field(default=False)
 
@@ -740,16 +742,25 @@ def create_app(
         background_tasks: BackgroundTasks,
         service: OrchestratorService = Depends(get_service),
     ) -> TaskResponse:
+        decision = str(payload.decision or '').strip().lower()
+        if not decision:
+            decision = 'approve' if bool(payload.approve) else 'reject'
         try:
             task = service.submit_author_decision(
                 task_id,
-                approve=bool(payload.approve),
+                approve=payload.approve,
+                decision=decision,
                 note=payload.note,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='task not found') from exc
+        except InputValidationError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={'code': exc.code, 'field': exc.field, 'message': str(exc)},
+            ) from exc
 
-        if payload.approve and payload.auto_start and task.status == TaskStatus.QUEUED:
+        if decision in {'approve', 'revise'} and payload.auto_start and task.status == TaskStatus.QUEUED:
             background_tasks.add_task(_start_task_worker, task.task_id)
         return _to_task_response(task)
 

@@ -1,5 +1,24 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-19, manual custom reply path + create-help sync)
+
+1. Added third manual decision path for `waiting_manual` tasks:
+   - `decision=revise` (in addition to approve/reject)
+   - API: `POST /api/tasks/{task_id}/author-decision` now accepts `decision: approve|reject|revise`
+   - revise action requeues task with `last_gate_reason=author_feedback_requested` and can auto-start.
+2. Added reviewer/author custom manual note flow in dashboard:
+   - new `Custom Reply + Re-run` button in `Dialogue Scope`
+   - new free-text `manualReplyNote` input (enabled only when `status=waiting_manual`).
+3. Consensus re-run now consumes latest operator feedback:
+   - service injects latest revise-note context into next proposal seed and pending summary.
+4. CLI updated:
+   - `awe-agentcheck decide` supports `--decision approve|reject|revise`.
+5. Create Task help updated:
+   - `Policy Template` help now explains `custom` mode keeps manual values unchanged.
+6. Verification:
+   - `py -m pytest tests/unit/test_cli.py tests/unit/test_api.py tests/unit/test_service.py -q`
+   - `py -m ruff check src/awe_agentcheck/api.py src/awe_agentcheck/cli.py src/awe_agentcheck/service.py tests/unit/test_api.py tests/unit/test_cli.py tests/unit/test_service.py`
+
 ## Update (2026-02-18, docs + GitHub about sync)
 
 1. Documentation sync completed for newly shipped control-plane capabilities:

@@ -1057,3 +1057,35 @@ def test_api_author_decision_reject_cancels_waiting_task(tmp_path: Path):
     )
     assert rejected.status_code == 200
     assert rejected.json()['status'] == 'canceled'
+
+
+def test_api_author_decision_revise_requeues_waiting_task(tmp_path: Path):
+    client = build_client(tmp_path)
+    created = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Task Revise',
+            'description': 'manual revise',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'workspace_path': str(tmp_path),
+            'sandbox_mode': False,
+            'self_loop_mode': 0,
+            'auto_start': False,
+        },
+    )
+    assert created.status_code == 201
+    task_id = created.json()['task_id']
+
+    waiting = client.post(f'/api/tasks/{task_id}/start', json={'background': False})
+    assert waiting.status_code == 200
+    assert waiting.json()['status'] == 'waiting_manual'
+
+    revised = client.post(
+        f'/api/tasks/{task_id}/author-decision',
+        json={'decision': 'revise', 'note': 'Need concrete file-level plan', 'auto_start': False},
+    )
+    assert revised.status_code == 200
+    body = revised.json()
+    assert body['status'] == 'queued'
+    assert body['last_gate_reason'] == 'author_feedback_requested'

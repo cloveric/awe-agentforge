@@ -2211,12 +2211,19 @@
             <button id="approveQueueBtn" class="btn-main">Approve + Queue</button>
             <button id="approveStartBtn" class="btn-main">Approve + Start</button>
             <button id="rejectBtn" class="btn-warn">Reject</button>
+            <button id="customReplyBtn" class="btn-main">Custom Reply + Re-run</button>
             <button id="cancelBtn" class="btn-warn">Cancel</button>
             <button id="forceFailBtn">Force Fail</button>
             <input id="promoteRound" type="number" min="1" value="1" style="width:96px;" />
             <button id="promoteRoundBtn" class="btn-main">Promote Round</button>
             <button id="reloadEventsBtn">Reload Conversation Only</button>
             <button id="streamDetailBtn">Stream Details: OFF</button>
+          </div>
+          <div class="controls-row">
+            <div style="flex:1; min-width:260px;">
+              <label for="manualReplyNote">Manual reply for reviewer/author (used by Custom Reply + Re-run)</label>
+              <textarea id="manualReplyNote" placeholder="Type special constraints, business intent, scope changes, or acceptance criteria..."></textarea>
+            </div>
           </div>
           <div id="actionStatus" class="mini-status"></div>
           <div id="taskSnapshot" class="status-grid"></div>
@@ -2314,18 +2321,18 @@
           <div class="controls-row">
             <div style="flex:1; min-width:220px;">
               <label for="claudeModel">Claude Model</label>
-              <input id="claudeModel" list="claudeModelList" value="claude-opus-4-6" placeholder="claude-opus-4-6" />
-              <datalist id="claudeModelList"></datalist>
+              <select id="claudeModel"></select>
+              <input id="claudeModelCustom" value="" placeholder="optional custom model override" />
             </div>
             <div style="flex:1; min-width:220px;">
               <label for="codexModel">Codex Model</label>
-              <input id="codexModel" list="codexModelList" value="gpt-5.3-codex" placeholder="gpt-5.3-codex" />
-              <datalist id="codexModelList"></datalist>
+              <select id="codexModel"></select>
+              <input id="codexModelCustom" value="" placeholder="optional custom model override" />
             </div>
             <div style="flex:1; min-width:220px;">
               <label for="geminiModel">Gemini Model</label>
-              <input id="geminiModel" list="geminiModelList" value="gemini-3-pro-preview" placeholder="gemini-3-pro-preview" />
-              <datalist id="geminiModelList"></datalist>
+              <select id="geminiModel"></select>
+              <input id="geminiModelCustom" value="" placeholder="optional custom model override" />
             </div>
             <div style="flex:0 0 220px;">
               <label for="claudeTeamAgents">Claude Team Agents</label>
@@ -2546,9 +2553,11 @@
       startBtn: document.getElementById('startBtn'),
       cancelBtn: document.getElementById('cancelBtn'),
       forceFailBtn: document.getElementById('forceFailBtn'),
+      customReplyBtn: document.getElementById('customReplyBtn'),
       promoteRoundBtn: document.getElementById('promoteRoundBtn'),
       promoteRound: document.getElementById('promoteRound'),
       forceReason: document.getElementById('forceReason'),
+      manualReplyNote: document.getElementById('manualReplyNote'),
       connBadge: document.getElementById('connBadge'),
       themeSelect: document.getElementById('themeSelect'),
       expandTreeBtn: document.getElementById('expandTreeBtn'),
@@ -2564,9 +2573,9 @@
       claudeModel: document.getElementById('claudeModel'),
       codexModel: document.getElementById('codexModel'),
       geminiModel: document.getElementById('geminiModel'),
-      claudeModelList: document.getElementById('claudeModelList'),
-      codexModelList: document.getElementById('codexModelList'),
-      geminiModelList: document.getElementById('geminiModelList'),
+      claudeModelCustom: document.getElementById('claudeModelCustom'),
+      codexModelCustom: document.getElementById('codexModelCustom'),
+      geminiModelCustom: document.getElementById('geminiModelCustom'),
       claudeModelParams: document.getElementById('claudeModelParams'),
       codexModelParams: document.getElementById('codexModelParams'),
       geminiModelParams: document.getElementById('geminiModelParams'),
@@ -2620,8 +2629,8 @@
       },
       {
         field: 'Policy Template',
-        en: 'Preset control policy by repo size/risk profile. Click "Apply Policy" to fill recommended controls.',
-        zh: '按仓库规模/风险给出策略模板。点击“Apply Policy”可自动填入推荐控制项。',
+        en: 'Preset control policy by repo size/risk profile. Click "Apply Policy" to fill recommended controls. Use "custom" to keep your manual settings unchanged.',
+        zh: '按仓库规模/风险给出策略模板。点击“Apply Policy”可自动填入推荐控制项。选择“custom”可保留你当前手动配置，不覆盖。',
       },
       {
         field: 'Claude/Codex/Gemini Model',
@@ -2929,12 +2938,17 @@
     function readProviderModelsFromForm() {
       const out = {};
       const fields = [
-        ['claude', el.claudeModel],
-        ['codex', el.codexModel],
-        ['gemini', el.geminiModel],
+        ['claude', el.claudeModel, el.claudeModelCustom],
+        ['codex', el.codexModel, el.codexModelCustom],
+        ['gemini', el.geminiModel, el.geminiModelCustom],
       ];
-      for (const [provider, input] of fields) {
-        const model = String(input && input.value || '').trim();
+      for (const [provider, selectElm, customElm] of fields) {
+        const custom = String(customElm && customElm.value || '').trim();
+        if (custom) {
+          out[provider] = custom;
+          continue;
+        }
+        const model = String(selectElm && selectElm.value || '').trim();
         if (model) out[provider] = model;
       }
       return out;
@@ -2954,24 +2968,39 @@
       return out;
     }
 
-    function renderModelDatalist(elm, values) {
+    function renderModelSelect(elm, values) {
       if (!elm) return;
+      const current = String(elm.value || '').trim();
       elm.innerHTML = '';
       const list = Array.isArray(values) ? values : [];
+      const seen = new Set();
+      const normalized = [];
       for (const raw of list) {
         const value = String(raw || '').trim();
-        if (!value) continue;
+        const key = value.toLowerCase();
+        if (!value || seen.has(key)) continue;
+        seen.add(key);
+        normalized.push(value);
+      }
+      if (current && !seen.has(current.toLowerCase())) {
+        normalized.unshift(current);
+      }
+      for (const value of normalized) {
         const option = document.createElement('option');
         option.value = value;
+        option.textContent = value;
         elm.appendChild(option);
+      }
+      if (normalized.length) {
+        elm.value = normalized.includes(current) ? current : normalized[0];
       }
     }
 
     function renderProviderModelOptions() {
       const catalog = state.providerModelCatalog || {};
-      renderModelDatalist(el.claudeModelList, catalog.claude || []);
-      renderModelDatalist(el.codexModelList, catalog.codex || []);
-      renderModelDatalist(el.geminiModelList, catalog.gemini || []);
+      renderModelSelect(el.claudeModel, catalog.claude || []);
+      renderModelSelect(el.codexModel, catalog.codex || []);
+      renderModelSelect(el.geminiModel, catalog.gemini || []);
     }
 
     function normalizeProviderModelCatalog(rawCatalog) {
@@ -4520,6 +4549,13 @@
       if (el.approveQueueBtn) el.approveQueueBtn.disabled = !waitingManual;
       if (el.approveStartBtn) el.approveStartBtn.disabled = !waitingManual;
       if (el.rejectBtn) el.rejectBtn.disabled = !waitingManual;
+      if (el.customReplyBtn) el.customReplyBtn.disabled = !waitingManual;
+      if (el.manualReplyNote) {
+        el.manualReplyNote.disabled = !waitingManual;
+        el.manualReplyNote.placeholder = waitingManual
+          ? 'Type special constraints, business intent, scope changes, or acceptance criteria...'
+          : 'Manual reply is available when task status is waiting_manual.';
+      }
     }
 
     function historyItemsInSelectedProject() {
@@ -5392,7 +5428,7 @@
         if (beforeStatus === 'running' && afterStatus === 'running') {
           el.actionStatus.textContent = `${task.task_id} already running; wait for next event or keep Background Refresh ON.`;
         } else if (beforeStatus === 'waiting_manual') {
-          el.actionStatus.textContent = `${task.task_id} is waiting manual decision; use Approve/Reject buttons.`;
+          el.actionStatus.textContent = `${task.task_id} is waiting manual decision; use Approve / Reject / Custom Reply.`;
         } else if (afterStatus === 'queued' && String((updated && updated.last_gate_reason) || '') === 'concurrency_limit') {
           el.actionStatus.textContent = `${task.task_id} deferred by concurrency limit; will retry when slot is available.`;
         } else {
@@ -5459,23 +5495,41 @@
       }
     }
 
-    async function submitAuthorDecision(approve, autoStart = false) {
+    async function submitAuthorDecision(decision, autoStart = false) {
       const task = selectedTask();
       if (!task) return;
+      const normalizedDecision = String(decision || '').trim().toLowerCase();
+      const noteFromInput = String((el.manualReplyNote && el.manualReplyNote.value) || '').trim();
+      if (normalizedDecision === 'revise' && !noteFromInput) {
+        el.actionStatus.textContent = 'Custom Reply requires a non-empty manual note.';
+        return;
+      }
+      const fallbackNote = normalizedDecision === 'approve'
+        ? 'approved from operator console'
+        : (normalizedDecision === 'reject' ? 'rejected from operator console' : 'custom reply from operator console');
+      const note = noteFromInput || fallbackNote;
       try {
         await api(`/api/tasks/${task.task_id}/author-decision`, {
           method: 'POST',
           body: JSON.stringify({
-            approve: !!approve,
-            note: approve ? 'approved from operator console' : 'rejected from operator console',
+            decision: normalizedDecision,
+            approve: normalizedDecision === 'approve',
+            note,
             auto_start: !!autoStart,
           }),
         });
         state.eventsByTask.delete(task.task_id);
         state.githubSummaryByTask.delete(task.task_id);
-        el.actionStatus.textContent = approve
-          ? `Approved ${task.task_id}${autoStart ? ' and requested start' : ''}`
-          : `Rejected ${task.task_id}`;
+        if (normalizedDecision === 'approve') {
+          el.actionStatus.textContent = `Approved ${task.task_id}${autoStart ? ' and requested start' : ''}`;
+        } else if (normalizedDecision === 'reject') {
+          el.actionStatus.textContent = `Rejected ${task.task_id}`;
+        } else {
+          el.actionStatus.textContent = `Submitted custom reply for ${task.task_id}${autoStart ? ' and requested re-run' : ''}`;
+        }
+        if (el.manualReplyNote) {
+          el.manualReplyNote.value = '';
+        }
         await loadData({ forceEvents: true });
       } catch (err) {
         el.actionStatus.textContent = `Author decision failed: ${String(err)}`;
@@ -5674,9 +5728,12 @@
       });
     }
     document.getElementById('startBtn').addEventListener('click', () => startSelectedTask());
-    document.getElementById('approveQueueBtn').addEventListener('click', () => submitAuthorDecision(true, false));
-    document.getElementById('approveStartBtn').addEventListener('click', () => submitAuthorDecision(true, true));
-    document.getElementById('rejectBtn').addEventListener('click', () => submitAuthorDecision(false, false));
+    document.getElementById('approveQueueBtn').addEventListener('click', () => submitAuthorDecision('approve', false));
+    document.getElementById('approveStartBtn').addEventListener('click', () => submitAuthorDecision('approve', true));
+    document.getElementById('rejectBtn').addEventListener('click', () => submitAuthorDecision('reject', false));
+    if (el.customReplyBtn) {
+      el.customReplyBtn.addEventListener('click', () => submitAuthorDecision('revise', true));
+    }
     document.getElementById('cancelBtn').addEventListener('click', () => cancelSelectedTask());
     document.getElementById('forceFailBtn').addEventListener('click', () => forceFailSelectedTask());
     if (el.promoteRoundBtn) {

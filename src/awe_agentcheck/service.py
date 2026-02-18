@@ -1939,7 +1939,14 @@ class OrchestratorService:
 
         return self._to_view(updated)
 
-    def submit_author_decision(self, task_id: str, *, approve: bool, note: str | None = None) -> TaskView:
+    def submit_author_decision(
+        self,
+        task_id: str,
+        *,
+        approve: bool | None = None,
+        decision: str | None = None,
+        note: str | None = None,
+    ) -> TaskView:
         row = self.repository.get_task(task_id)
         if row is None:
             raise KeyError(task_id)
@@ -1948,9 +1955,19 @@ class OrchestratorService:
         if row['status'] != TaskStatus.WAITING_MANUAL.value:
             return self._to_view(row)
 
+        decision_text = str(decision or '').strip().lower()
+        if decision_text:
+            if decision_text not in {'approve', 'reject', 'revise'}:
+                raise InputValidationError(
+                    f'invalid author decision: {decision_text}',
+                    field='decision',
+                )
+        else:
+            decision_text = 'approve' if bool(approve) else 'reject'
+
         note_text = str(note or '').strip() or None
         payload = {
-            'decision': 'approved' if approve else 'rejected',
+            'decision': decision_text,
             'note': note_text,
         }
         self.repository.append_event(
@@ -1965,7 +1982,7 @@ class OrchestratorService:
         )
 
         rounds = int(row.get('rounds_completed', 0))
-        if approve:
+        if decision_text == 'approve':
             self.repository.set_cancel_requested(task_id, requested=False)
             updated = self.repository.update_task_status(
                 task_id,
@@ -1980,6 +1997,40 @@ class OrchestratorService:
                     'last_gate_reason': 'author_approved',
                     'cancel_requested': False,
                     'author_decision': payload,
+                },
+            )
+            return self._to_view(updated)
+
+        if decision_text == 'revise':
+            feedback_payload = {
+                'decision': 'revise',
+                'note': note_text,
+            }
+            self.repository.append_event(
+                task_id,
+                event_type='author_feedback_requested',
+                payload=feedback_payload,
+                round_number=None,
+            )
+            self.artifact_store.append_event(
+                task_id,
+                {'type': 'author_feedback_requested', **feedback_payload},
+            )
+            self.repository.set_cancel_requested(task_id, requested=False)
+            updated = self.repository.update_task_status(
+                task_id,
+                status=TaskStatus.QUEUED.value,
+                reason='author_feedback_requested',
+                rounds_completed=rounds,
+            )
+            self.artifact_store.update_state(
+                task_id,
+                {
+                    'status': TaskStatus.QUEUED.value,
+                    'last_gate_reason': 'author_feedback_requested',
+                    'cancel_requested': False,
+                    'author_decision': payload,
+                    'author_feedback_requested': feedback_payload,
                 },
             )
             return self._to_view(updated)
@@ -2002,6 +2053,27 @@ class OrchestratorService:
         )
         self.artifact_store.write_final_report(task_id, 'status=canceled\nreason=author_rejected')
         return self._to_view(updated)
+
+    def _latest_author_feedback_note(self, task_id: str) -> str | None:
+        try:
+            events = self.repository.list_events(task_id)
+        except Exception:
+            return None
+        for event in reversed(events):
+            event_type = str(event.get('type') or '').strip().lower()
+            payload = event.get('payload')
+            payload_obj = payload if isinstance(payload, dict) else {}
+            if event_type == 'author_feedback_requested':
+                note = str(payload_obj.get('note') or '').strip()
+                if note:
+                    return note
+            if event_type == 'author_decision':
+                decision = str(payload_obj.get('decision') or '').strip().lower()
+                if decision == 'revise':
+                    note = str(payload_obj.get('note') or '').strip()
+                    if note:
+                        return note
+        return None
 
     def evaluate_gate(self, task_id: str, payload: GateInput) -> TaskView:
         outcome = evaluate_medium_gate(
@@ -2178,6 +2250,11 @@ class OrchestratorService:
             )
 
             discussion_text = str(row.get('description') or '').strip()
+            author_feedback_note = self._latest_author_feedback_note(task_id)
+            if author_feedback_note:
+                feedback_prefix = 'Operator custom feedback (must be addressed in next proposal):'
+                feedback_block = f'{feedback_prefix}\n- {author_feedback_note}'
+                discussion_text = f'{discussion_text}\n\n{feedback_block}'.strip() if discussion_text else feedback_block
             if runner is not None:
                 def emit_runtime_event(event: dict) -> None:
                     self.repository.append_event(
@@ -2566,6 +2643,8 @@ class OrchestratorService:
                 f"Proposal verdicts: no_blocker={no_blocker}, blocker={blocker}, unknown={unknown}\n"
                 f"Proposal:\n{proposal_preview}"
             )
+            if author_feedback_note:
+                summary = f"{summary}\nAuthor feedback:\n- {author_feedback_note}"
         except Exception as exc:
             return self.mark_failed_system(task_id, reason=f'proposal_error: {exc}')
 
@@ -2581,6 +2660,7 @@ class OrchestratorService:
             'consensus_rounds': consensus_rounds,
             'target_rounds': target_rounds,
             'review_payload': review_payload,
+            'author_feedback_note': author_feedback_note,
         }
         self.repository.append_event(
             task_id,
