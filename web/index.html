@@ -795,25 +795,13 @@
       word-break: break-word;
     }
 
-    .reviewer-list {
-      display: grid;
-      gap: 8px;
-    }
-
-    .reviewer-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .reviewer-tools {
-      margin-top: 8px;
+    .participant-matrix-tools {
+      margin-bottom: 8px;
       display: flex;
       justify-content: flex-start;
     }
 
-    .reviewer-remove-btn {
+    .participant-remove-btn {
       border: 1px solid rgba(252, 101, 101, 0.45);
       background: rgba(36, 10, 10, 0.78);
       color: #ff9b9b;
@@ -824,7 +812,7 @@
       cursor: pointer;
     }
 
-    .reviewer-remove-btn:hover {
+    .participant-remove-btn:hover {
       background: rgba(54, 12, 12, 0.9);
       color: #ffd0d0;
     }
@@ -872,6 +860,25 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 8px;
+    }
+
+    .participant-role-line {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto auto;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .participant-role-pill {
+      border: 1px solid rgba(136, 229, 255, 0.35);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #9ad8ff;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(7, 19, 29, 0.7);
     }
 
     .history-body.is-collapsed {
@@ -2374,18 +2381,17 @@
             </div>
           </div>
           <div class="controls-row">
-            <div style="flex:1; min-width:220px;">
-              <label for="author">Author</label>
-              <input id="author" value="codex#author-A" />
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="reviewers">Reviewers</label>
-              <input id="reviewers" value="claude#review-B,gemini#review-C" type="hidden" />
-              <div id="reviewerList" class="reviewer-list"></div>
-              <div class="reviewer-tools">
-                <button id="addReviewerBtn" type="button">+ Add Reviewer</button>
+            <input id="author" value="codex#author-A" type="hidden" />
+            <input id="reviewers" value="claude#review-B,gemini#review-C" type="hidden" />
+          </div>
+          <div class="controls-row">
+            <div style="flex:1; min-width:520px;">
+              <label for="participantCapabilityMatrix">Bot Capability Matrix (per role, optional)</label>
+              <div class="participant-matrix-tools">
+                <button id="matrixAddReviewerBtn" type="button">+ Add Reviewer</button>
               </div>
-              <div class="mini-status">Add one or more reviewer participants (example: claude#review-B).</div>
+              <div id="participantCapabilityMatrix" class="participant-matrix"></div>
+              <div class="mini-status">Manage author/reviewers here. Per-role overrides win over provider defaults above.</div>
             </div>
           </div>
           <div class="controls-row">
@@ -2431,37 +2437,6 @@
             <div style="flex:1; min-width:220px;">
               <label for="geminiModelParams">Gemini Model Params (optional)</label>
               <input id="geminiModelParams" value="--approval-mode yolo" placeholder="--approval-mode yolo" />
-            </div>
-          </div>
-          <div class="controls-row">
-            <div style="flex:1; min-width:520px;">
-              <label for="participantCapabilityMatrix">Bot Capability Matrix (per role, optional)</label>
-              <div id="participantCapabilityMatrix" class="participant-matrix"></div>
-              <div class="mini-status">Per-role overrides win over provider defaults above. Empty row values fall back to provider defaults.</div>
-            </div>
-          </div>
-          <div class="controls-row">
-            <div style="flex:1; min-width:220px;">
-              <label for="claudeTeamAgents">Claude Team Agents</label>
-              <select id="claudeTeamAgents">
-                <option value="0">0 | disabled (default)</option>
-                <option value="1">1 | enabled (--agents)</option>
-              </select>
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="codexMultiAgents">Codex Multi Agents</label>
-              <select id="codexMultiAgents">
-                <option value="0">0 | disabled (default)</option>
-                <option value="1">1 | enabled (--enable multi_agent)</option>
-              </select>
-            </div>
-            <div style="flex:2; min-width:260px;">
-              <label for="agentModeHint">Agent Toggle Hint</label>
-              <input
-                id="agentModeHint"
-                readonly
-                value="Keep 0 by default. Enable only when you explicitly want provider-native multi-agent behavior."
-              />
             </div>
           </div>
           <div class="controls-row">
@@ -2629,6 +2604,7 @@
       avatarSessionSalt: `${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
       selectionNeedsValidation: false,
       participantCapabilityDraft: {},
+      participantRoleRows: [],
     };
 
     const SELECTION_PREF_KEY = 'awe-agentcheck-selection';
@@ -2684,8 +2660,7 @@
       workspacePath: document.getElementById('workspacePath'),
       author: document.getElementById('author'),
       reviewers: document.getElementById('reviewers'),
-      reviewerList: document.getElementById('reviewerList'),
-      addReviewerBtn: document.getElementById('addReviewerBtn'),
+      matrixAddReviewerBtn: document.getElementById('matrixAddReviewerBtn'),
       selfLoopMode: document.getElementById('selfLoopMode'),
       claudeModel: document.getElementById('claudeModel'),
       codexModel: document.getElementById('codexModel'),
@@ -2697,8 +2672,6 @@
       codexModelParams: document.getElementById('codexModelParams'),
       geminiModelParams: document.getElementById('geminiModelParams'),
       participantCapabilityMatrix: document.getElementById('participantCapabilityMatrix'),
-      claudeTeamAgents: document.getElementById('claudeTeamAgents'),
-      codexMultiAgents: document.getElementById('codexMultiAgents'),
       sandboxMode: document.getElementById('sandboxMode'),
       autoMerge: document.getElementById('autoMerge'),
       mergeTargetPath: document.getElementById('mergeTargetPath'),
@@ -2739,13 +2712,13 @@
       },
       {
         field: 'Author',
-        en: 'The implementing role. Format: provider#alias (example: codex#author-A).',
-        zh: '负责实现代码的角色。格式：provider#alias（例如 codex#author-A）。',
+        en: 'Configured inside Bot Capability Matrix (single author row). Format: provider#alias (example: codex#author-A).',
+        zh: '在 Bot Capability Matrix 内配置（单个 author 行）。格式：provider#alias（例如 codex#author-A）。',
       },
       {
         field: 'Reviewers',
-        en: 'One or more review roles. Use "+ Add Reviewer" to append rows. They challenge and evaluate the author output.',
-        zh: '一个或多个审阅角色。点击“+ Add Reviewer”增加行，用于质疑与评估作者输出。',
+        en: 'Configured inside Bot Capability Matrix. Use "+ Add Reviewer" there to append reviewer rows.',
+        zh: '在 Bot Capability Matrix 内配置。通过其中的“+ Add Reviewer”增加 reviewer 行。',
       },
       {
         field: 'Policy Template',
@@ -2764,18 +2737,8 @@
       },
       {
         field: 'Bot Capability Matrix',
-        en: 'Role-level override matrix. Configure model/params per participant and set Claude/Codex multi-agent toggles per bot (inherit/on/off). Participant values override provider defaults.',
-        zh: '角色级覆盖矩阵。可按参与者配置 model/params，并可为每个 bot 设置 Claude/Codex 多智能体开关（继承/开启/关闭）。参与者配置优先于提供者默认值。',
-      },
-      {
-        field: 'Claude Team Agents',
-        en: 'Enable Claude --agents behavior for Claude participants in this task.',
-        zh: '为 Claude 参与者启用 `--agents` 行为。',
-      },
-      {
-        field: 'Codex Multi Agents',
-        en: 'Enable Codex multi-agent mode by appending --enable multi_agent for Codex participants.',
-        zh: '为 Codex 参与者追加 `--enable multi_agent`，启用多智能体模式。',
+        en: 'Single place to manage author + reviewers. Configure model/params and per-bot multi-agent toggles (0/1). Participant values override provider defaults.',
+        zh: '统一管理 author + reviewers。可按 bot 配置 model/params 与 multi-agent 开关（0/1），参与者配置优先于提供者默认值。',
       },
       {
         field: 'Evolution Level',
@@ -3127,66 +3090,123 @@
       return out;
     }
 
-    function parseReviewerIdsFromHiddenField() {
-      const text = String((el.reviewers && el.reviewers.value) || '');
-      return normalizeParticipantIdList(text.split(',').map((v) => String(v || '').trim()));
+    function defaultAuthorParticipantId() {
+      return 'codex#author-A';
     }
 
-    function reviewerInputsFromEditor() {
-      if (!el.reviewerList) return [];
-      return Array.from(el.reviewerList.querySelectorAll('[data-reviewer-input]'));
-    }
+    function normalizeParticipantRoleRows(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      const out = [];
+      let authorId = '';
+      const reviewers = [];
+      const reviewerSeen = new Set();
 
-    function readReviewerParticipantsFromEditor() {
-      const values = reviewerInputsFromEditor()
-        .map((node) => String(node.value || '').trim());
-      return normalizeParticipantIdList(values);
-    }
-
-    function syncReviewersHiddenInputFromEditor() {
-      if (!el.reviewers) return [];
-      const reviewers = readReviewerParticipantsFromEditor();
-      el.reviewers.value = reviewers.join(',');
-      return reviewers;
-    }
-
-    function renderReviewerEditor(values, options = {}) {
-      if (!el.reviewerList) return;
-      const addBlankRow = !!options.addBlankRow;
-      const normalized = normalizeParticipantIdList(values);
-      const rows = (addBlankRow || !normalized.length)
-        ? [...normalized, '']
-        : normalized;
-      el.reviewerList.innerHTML = rows.map((reviewerId, idx) => `
-        <div class="reviewer-row" data-reviewer-row="${idx}">
-          <input
-            data-reviewer-input="1"
-            value="${escapeHtml(String(reviewerId || ''))}"
-            placeholder="provider#review-X (e.g. claude#review-B)"
-          />
-          <button class="reviewer-remove-btn" data-reviewer-remove="${idx}" type="button">Remove</button>
-        </div>
-      `).join('');
-      if (el.reviewers) {
-        el.reviewers.value = normalizeParticipantIdList(rows).join(',');
+      for (const item of list) {
+        const role = String((item && item.role) || '').trim().toLowerCase();
+        const participantId = String((item && item.participantId) || '').trim();
+        if (role === 'author') {
+          if (!authorId && participantId) {
+            authorId = participantId;
+          }
+          continue;
+        }
+        if (role === 'reviewer') {
+          const key = participantId.toLowerCase();
+          if (!participantId || reviewerSeen.has(key)) {
+            continue;
+          }
+          reviewerSeen.add(key);
+          reviewers.push(participantId);
+        }
       }
+
+      authorId = authorId || String((el.author && el.author.value) || '').trim() || defaultAuthorParticipantId();
+      out.push({ role: 'author', participantId: authorId });
+      for (const reviewerId of reviewers) {
+        if (reviewerId.toLowerCase() === authorId.toLowerCase()) {
+          continue;
+        }
+        out.push({ role: 'reviewer', participantId: reviewerId });
+      }
+      return out;
+    }
+
+    function suggestReviewerParticipantId(existingRows) {
+      const rows = Array.isArray(existingRows) ? existingRows : [];
+      const existing = new Set(
+        rows
+          .map((item) => String((item && item.participantId) || '').trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const providers = ['claude', 'codex', 'gemini'];
+      const aliases = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'];
+      for (let idx = 0; idx < 256; idx += 1) {
+        const provider = providers[idx % providers.length];
+        const alias = aliases[idx] || String(idx + 2);
+        const candidate = `${provider}#review-${alias}`;
+        if (!existing.has(candidate.toLowerCase())) {
+          return candidate;
+        }
+      }
+      return `codex#review-${Date.now()}`;
+    }
+
+    function roleRowsFromHiddenFields() {
+      const author = String((el.author && el.author.value) || '').trim() || defaultAuthorParticipantId();
+      const reviewersText = String((el.reviewers && el.reviewers.value) || '');
+      const reviewers = normalizeParticipantIdList(
+        reviewersText.split(',').map((v) => String(v || '').trim())
+      );
+      const rows = [{ role: 'author', participantId: author }];
+      for (const reviewerId of reviewers) {
+        if (reviewerId.toLowerCase() === author.toLowerCase()) continue;
+        rows.push({ role: 'reviewer', participantId: reviewerId });
+      }
+      return rows;
+    }
+
+    function syncRoleRowsToHiddenFields(rows) {
+      const normalized = normalizeParticipantRoleRows(rows);
+      const author = normalized[0] ? String(normalized[0].participantId || '').trim() : defaultAuthorParticipantId();
+      const reviewers = normalized
+        .slice(1)
+        .map((item) => String((item && item.participantId) || '').trim())
+        .filter(Boolean);
+      if (el.author) {
+        el.author.value = author;
+      }
+      if (el.reviewers) {
+        el.reviewers.value = reviewers.join(',');
+      }
+      return normalized;
+    }
+
+    function roleRowsFromState() {
+      if (!Array.isArray(state.participantRoleRows) || !state.participantRoleRows.length) {
+        state.participantRoleRows = roleRowsFromHiddenFields();
+      }
+      state.participantRoleRows = syncRoleRowsToHiddenFields(state.participantRoleRows);
+      return [...state.participantRoleRows];
+    }
+
+    function readAuthorParticipantFromForm() {
+      const rows = roleRowsFromState();
+      if (!rows.length) return defaultAuthorParticipantId();
+      return String(rows[0].participantId || '').trim() || defaultAuthorParticipantId();
     }
 
     function readReviewerParticipantsFromForm() {
-      const editorValues = readReviewerParticipantsFromEditor();
-      if (editorValues.length) {
-        if (el.reviewers) {
-          el.reviewers.value = editorValues.join(',');
-        }
-        return editorValues;
-      }
-      return parseReviewerIdsFromHiddenField();
+      const rows = roleRowsFromState();
+      return rows
+        .slice(1)
+        .map((item) => String((item && item.participantId) || '').trim())
+        .filter(Boolean);
     }
 
     function parseTaskParticipantsFromForm() {
       const out = [];
       const seen = new Set();
-      const author = String((el.author && el.author.value) || '').trim();
+      const author = readAuthorParticipantFromForm();
       if (author && !seen.has(author)) {
         seen.add(author);
         out.push(author);
@@ -3246,8 +3266,8 @@
           model: String((payload && payload.model) || '').trim(),
           customModel: String((payload && payload.customModel) || '').trim(),
           params: String((payload && payload.params) || '').trim(),
-          claudeAgentsMode: String((payload && payload.claudeAgentsMode) || 'inherit').trim().toLowerCase() || 'inherit',
-          codexMultiAgentsMode: String((payload && payload.codexMultiAgentsMode) || 'inherit').trim().toLowerCase() || 'inherit',
+          claudeAgentsMode: String((payload && payload.claudeAgentsMode) || '0').trim().toLowerCase() || '0',
+          codexMultiAgentsMode: String((payload && payload.codexMultiAgentsMode) || '0').trim().toLowerCase() || '0',
         };
       }
       state.participantCapabilityDraft = next;
@@ -3256,17 +3276,22 @@
     function renderParticipantCapabilityMatrix() {
       const host = el.participantCapabilityMatrix;
       if (!host) return;
-      const participants = parseTaskParticipantsFromForm();
+      const roleRows = roleRowsFromState();
+      const participants = roleRows.map((row) => String((row && row.participantId) || '').trim()).filter(Boolean);
       pruneParticipantCapabilityDraft(participants);
-      if (!participants.length) {
-        host.innerHTML = '<div class="empty">Add Author/Reviewers first to configure per-bot capabilities.</div>';
+      if (!roleRows.length) {
+        host.innerHTML = '<div class="empty">No participants configured.</div>';
         return;
       }
 
-      const rows = participants.map((participantId) => {
-        const provider = parseProvider(participantId);
+      const rows = roleRows.map((roleRow, rowIndex) => {
+        const role = String((roleRow && roleRow.role) || 'reviewer').trim().toLowerCase() === 'author'
+          ? 'author'
+          : 'reviewer';
+        const participantId = String((roleRow && roleRow.participantId) || '').trim();
+        const provider = participantId ? parseProvider(participantId) : '';
         const defaults = providerDefaultsFromForm(provider);
-        const draft = state.participantCapabilityDraft[participantId] || {};
+        const draft = participantId ? (state.participantCapabilityDraft[participantId] || {}) : {};
         const selectedModel = String(draft.model || defaults.model || '').trim();
         const customModel = String(draft.customModel || '').trim();
         const params = String(
@@ -3274,60 +3299,81 @@
             ? draft.params
             : defaults.params
         ).trim();
-        const globalClaudeAgents = Number((el.claudeTeamAgents && el.claudeTeamAgents.value) || 0) === 1;
-        const globalCodexMultiAgents = Number((el.codexMultiAgents && el.codexMultiAgents.value) || 0) === 1;
+        const rowDisabled = !participantId;
         const claudeToggleDisabled = provider !== 'claude';
         const codexToggleDisabled = provider !== 'codex';
-        const claudeAgentsModeRaw = String(draft.claudeAgentsMode || 'inherit').trim().toLowerCase();
-        const codexMultiAgentsModeRaw = String(draft.codexMultiAgentsMode || 'inherit').trim().toLowerCase();
+        const claudeAgentsModeRaw = String(draft.claudeAgentsMode || '0').trim().toLowerCase();
+        const codexMultiAgentsModeRaw = String(draft.codexMultiAgentsMode || '0').trim().toLowerCase();
         const claudeAgentsMode = claudeToggleDisabled
-          ? 'inherit'
-          : (['inherit', '1', '0'].includes(claudeAgentsModeRaw) ? claudeAgentsModeRaw : 'inherit');
+          ? '0'
+          : (['1', '0'].includes(claudeAgentsModeRaw) ? claudeAgentsModeRaw : '0');
         const codexMultiAgentsMode = codexToggleDisabled
-          ? 'inherit'
-          : (['inherit', '1', '0'].includes(codexMultiAgentsModeRaw) ? codexMultiAgentsModeRaw : 'inherit');
+          ? '0'
+          : (['1', '0'].includes(codexMultiAgentsModeRaw) ? codexMultiAgentsModeRaw : '0');
         const options = participantModelOptions(provider, selectedModel);
-        const optionHtml = options
-          .map((model) => `<option value="${escapeHtml(model)}"${model === selectedModel ? ' selected' : ''}>${escapeHtml(model)}</option>`)
-          .join('');
+        const optionHtml = options.length
+          ? options
+            .map((model) => `<option value="${escapeHtml(model)}"${model === selectedModel ? ' selected' : ''}>${escapeHtml(model)}</option>`)
+            .join('')
+          : `<option value="">${escapeHtml(participantId ? '(no model candidates)' : '(set Bot ID first)')}</option>`;
+        const participantAttr = participantId ? `data-participant="${escapeHtml(participantId)}"` : '';
 
         return `
           <div class="participant-matrix-row">
+            <div class="participant-role-line">
+              <div>
+                <label>Bot ID</label>
+                <input
+                  data-row-index="${rowIndex}"
+                  data-field="participantId"
+                  value="${escapeHtml(participantId)}"
+                  placeholder="${role === 'author' ? 'provider#author-A' : 'provider#review-B'}"
+                />
+              </div>
+              <span class="participant-role-pill">${role}</span>
+              ${role === 'reviewer'
+                ? `<button class="participant-remove-btn" data-remove-row="${rowIndex}" type="button">Remove</button>`
+                : '<span></span>'}
+            </div>
             <div class="participant-matrix-head">
-              <span>${escapeHtml(participantId)}</span>
-              <span class="participant-matrix-meta">provider=${escapeHtml(provider || 'unknown')}</span>
+              <span>${escapeHtml(participantId || '(empty)')}</span>
+              <span class="participant-matrix-meta">provider=${escapeHtml(provider || 'n/a')}</span>
             </div>
             <div class="participant-matrix-fields">
               <div>
                 <label>Model</label>
-                <select data-participant="${escapeHtml(participantId)}" data-field="model">${optionHtml}</select>
+                <select data-row-index="${rowIndex}" data-field="model" ${participantAttr} ${rowDisabled ? 'disabled' : ''}>${optionHtml}</select>
               </div>
               <div>
                 <label>Custom Model (override)</label>
                 <input
-                  data-participant="${escapeHtml(participantId)}"
+                  data-row-index="${rowIndex}"
                   data-field="customModel"
+                  ${participantAttr}
                   value="${escapeHtml(customModel)}"
                   placeholder="optional custom model id"
+                  ${rowDisabled ? 'disabled' : ''}
                 />
               </div>
               <div>
                 <label>Model Params</label>
                 <input
-                  data-participant="${escapeHtml(participantId)}"
+                  data-row-index="${rowIndex}"
                   data-field="params"
+                  ${participantAttr}
                   value="${escapeHtml(params)}"
                   placeholder="optional CLI params"
+                  ${rowDisabled ? 'disabled' : ''}
                 />
               </div>
               <div>
                 <label>Claude Team Agents</label>
                 <select
-                  data-participant="${escapeHtml(participantId)}"
+                  data-row-index="${rowIndex}"
                   data-field="claudeAgentsMode"
-                  ${claudeToggleDisabled ? 'disabled' : ''}
+                  ${participantAttr}
+                  ${rowDisabled || claudeToggleDisabled ? 'disabled' : ''}
                 >
-                  <option value="inherit"${claudeAgentsMode === 'inherit' ? ' selected' : ''}>inherit (${globalClaudeAgents ? 1 : 0})</option>
                   <option value="1"${claudeAgentsMode === '1' ? ' selected' : ''}>1 | on</option>
                   <option value="0"${claudeAgentsMode === '0' ? ' selected' : ''}>0 | off</option>
                 </select>
@@ -3335,11 +3381,11 @@
               <div>
                 <label>Codex Multi Agents</label>
                 <select
-                  data-participant="${escapeHtml(participantId)}"
+                  data-row-index="${rowIndex}"
                   data-field="codexMultiAgentsMode"
-                  ${codexToggleDisabled ? 'disabled' : ''}
+                  ${participantAttr}
+                  ${rowDisabled || codexToggleDisabled ? 'disabled' : ''}
                 >
-                  <option value="inherit"${codexMultiAgentsMode === 'inherit' ? ' selected' : ''}>inherit (${globalCodexMultiAgents ? 1 : 0})</option>
                   <option value="1"${codexMultiAgentsMode === '1' ? ' selected' : ''}>1 | on</option>
                   <option value="0"${codexMultiAgentsMode === '0' ? ' selected' : ''}>0 | off</option>
                 </select>
@@ -6083,7 +6129,7 @@
       const payload = {
         title: document.getElementById('title').value,
         description: document.getElementById('description').value,
-        author_participant: document.getElementById('author').value,
+        author_participant: readAuthorParticipantFromForm(),
         reviewer_participants: readReviewerParticipantsFromForm(),
         evolution_level: Number(document.getElementById('evolutionLevel').value || 0),
         evolve_until: (evolveUntilRaw || null),
@@ -6092,8 +6138,8 @@
         provider_model_params: readProviderModelParamsFromForm(),
         participant_models: readParticipantModelsFromForm(),
         participant_model_params: readParticipantModelParamsFromForm(),
-        claude_team_agents: Number(document.getElementById('claudeTeamAgents').value || 0) === 1,
-        codex_multi_agents: Number(document.getElementById('codexMultiAgents').value || 0) === 1,
+        claude_team_agents: false,
+        codex_multi_agents: false,
         claude_team_agents_overrides: readParticipantAgentOverridesFromForm('claudeAgentsMode'),
         codex_multi_agents_overrides: readParticipantAgentOverridesFromForm('codexMultiAgentsMode'),
         repair_mode: String(document.getElementById('repairMode').value || 'balanced').trim().toLowerCase() || 'balanced',
@@ -6127,20 +6173,66 @@
       }
     }
 
+    function addReviewerRoleRow() {
+      const rows = roleRowsFromState();
+      rows.push({ role: 'reviewer', participantId: suggestReviewerParticipantId(rows) });
+      state.participantRoleRows = syncRoleRowsToHiddenFields(rows);
+      renderParticipantCapabilityMatrix();
+    }
+
+    function removeReviewerRoleRowByIndex(rowIndex) {
+      if (!Number.isFinite(rowIndex) || rowIndex < 0) return;
+      const rows = roleRowsFromState();
+      if (rowIndex >= rows.length) return;
+      if (String((rows[rowIndex] && rows[rowIndex].role) || '').trim().toLowerCase() !== 'reviewer') {
+        return;
+      }
+      const next = [];
+      for (let i = 0; i < rows.length; i += 1) {
+        if (i === rowIndex) continue;
+        next.push(rows[i]);
+      }
+      state.participantRoleRows = syncRoleRowsToHiddenFields(next);
+      renderParticipantCapabilityMatrix();
+    }
+
     function updateParticipantCapabilityDraftFromEvent(event) {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      const participant = String(target.getAttribute('data-participant') || '').trim();
       const field = String(target.getAttribute('data-field') || '').trim();
-      if (!participant || !field) return;
+      if (!field) return;
+
+      const rowIndex = Number(target.getAttribute('data-row-index'));
+      if (field === 'participantId') {
+        if (!Number.isFinite(rowIndex) || rowIndex < 0) return;
+        const rows = roleRowsFromState();
+        if (rowIndex >= rows.length) return;
+        rows[rowIndex] = {
+          ...rows[rowIndex],
+          participantId: String(target.value || '').trim(),
+        };
+        state.participantRoleRows = syncRoleRowsToHiddenFields(rows);
+        if (String((event && event.type) || '').toLowerCase() === 'change') {
+          renderParticipantCapabilityMatrix();
+        }
+        return;
+      }
+
+      let participant = String(target.getAttribute('data-participant') || '').trim();
+      if (!participant && Number.isFinite(rowIndex) && rowIndex >= 0) {
+        const rows = roleRowsFromState();
+        participant = String((rows[rowIndex] && rows[rowIndex].participantId) || '').trim();
+      }
+      if (!participant) return;
+
       const value = String(target.value || '').trim();
       const current = state.participantCapabilityDraft[participant] || {};
       state.participantCapabilityDraft[participant] = {
         model: String(current.model || '').trim(),
         customModel: String(current.customModel || '').trim(),
         params: String(current.params || '').trim(),
-        claudeAgentsMode: String(current.claudeAgentsMode || 'inherit').trim().toLowerCase() || 'inherit',
-        codexMultiAgentsMode: String(current.codexMultiAgentsMode || 'inherit').trim().toLowerCase() || 'inherit',
+        claudeAgentsMode: String(current.claudeAgentsMode || '0').trim().toLowerCase() || '0',
+        codexMultiAgentsMode: String(current.codexMultiAgentsMode || '0').trim().toLowerCase() || '0',
       };
       state.participantCapabilityDraft[participant][field] = value;
     }
@@ -6305,63 +6397,6 @@
         await refreshPolicyTemplates();
       });
     }
-    if (el.author) {
-      el.author.addEventListener('input', () => renderParticipantCapabilityMatrix());
-      el.author.addEventListener('change', () => renderParticipantCapabilityMatrix());
-    }
-    if (el.addReviewerBtn) {
-      el.addReviewerBtn.addEventListener('click', () => {
-        const current = readReviewerParticipantsFromEditor();
-        renderReviewerEditor(current, { addBlankRow: true });
-        const inputs = reviewerInputsFromEditor();
-        if (inputs.length) {
-          const target = inputs[inputs.length - 1];
-          if (target && typeof target.focus === 'function') {
-            target.focus();
-          }
-        }
-        syncReviewersHiddenInputFromEditor();
-        renderParticipantCapabilityMatrix();
-      });
-    }
-    if (el.reviewerList) {
-      el.reviewerList.addEventListener('input', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        if (!target.hasAttribute('data-reviewer-input')) return;
-        syncReviewersHiddenInputFromEditor();
-        renderParticipantCapabilityMatrix();
-      });
-      el.reviewerList.addEventListener('change', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        if (!target.hasAttribute('data-reviewer-input')) return;
-        syncReviewersHiddenInputFromEditor();
-        renderParticipantCapabilityMatrix();
-      });
-      el.reviewerList.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        const raw = String(target.getAttribute('data-reviewer-remove') || '').trim();
-        if (!raw) return;
-        const index = Number(raw);
-        if (!Number.isFinite(index) || index < 0) return;
-        const current = reviewerInputsFromEditor().map((node) => String(node.value || '').trim());
-        const next = [];
-        for (let i = 0; i < current.length; i += 1) {
-          if (i === index) continue;
-          next.push(current[i]);
-        }
-        const hasAnyNonEmpty = next.some((value) => String(value || '').trim());
-        renderReviewerEditor(next, { addBlankRow: !hasAnyNonEmpty });
-        syncReviewersHiddenInputFromEditor();
-        renderParticipantCapabilityMatrix();
-      });
-    }
-    if (el.reviewers) {
-      el.reviewers.addEventListener('input', () => renderParticipantCapabilityMatrix());
-      el.reviewers.addEventListener('change', () => renderParticipantCapabilityMatrix());
-    }
     for (const field of [
       el.claudeModel,
       el.codexModel,
@@ -6372,16 +6407,26 @@
       el.claudeModelParams,
       el.codexModelParams,
       el.geminiModelParams,
-      el.claudeTeamAgents,
-      el.codexMultiAgents,
     ]) {
       if (!field) continue;
       field.addEventListener('input', () => renderParticipantCapabilityMatrix());
       field.addEventListener('change', () => renderParticipantCapabilityMatrix());
     }
+    if (el.matrixAddReviewerBtn) {
+      el.matrixAddReviewerBtn.addEventListener('click', () => addReviewerRoleRow());
+    }
     if (el.participantCapabilityMatrix) {
       el.participantCapabilityMatrix.addEventListener('input', (event) => updateParticipantCapabilityDraftFromEvent(event));
       el.participantCapabilityMatrix.addEventListener('change', (event) => updateParticipantCapabilityDraftFromEvent(event));
+      el.participantCapabilityMatrix.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const raw = String(target.getAttribute('data-remove-row') || '').trim();
+        if (!raw) return;
+        const rowIndex = Number(raw);
+        if (!Number.isFinite(rowIndex)) return;
+        removeReviewerRoleRowByIndex(rowIndex);
+      });
     }
     if (el.openCreateHelpBtn) {
       el.openCreateHelpBtn.addEventListener('click', () => setCreateHelpCollapsed(!state.createHelpCollapsed));
@@ -6399,7 +6444,8 @@
     if (el.evolveUntil && !String(el.evolveUntil.value || '').trim()) {
       el.evolveUntil.value = computeDefaultEvolveUntil();
     }
-    renderReviewerEditor(parseReviewerIdsFromHiddenField(), { addBlankRow: false });
+    state.participantRoleRows = roleRowsFromHiddenFields();
+    renderParticipantCapabilityMatrix();
     if (el.sandboxMode) {
       el.sandboxMode.addEventListener('change', () => syncCreateTaskPolicyControls('sandboxMode'));
     }
