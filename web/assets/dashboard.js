@@ -1,4 +1,24 @@
 
+import { createApiClient } from './modules/api.js';
+import {
+  readCreateHelpCollapsedPreference,
+  readCreateHelpLanguagePreference,
+  readHistoryCollapsePreference,
+  readPollPreference,
+  readSelectionPreference,
+  readStreamDetailPreference,
+  persistSelectionPreference as persistSelectionPreferenceStore,
+} from './modules/store.js';
+import {
+  escapeHtml,
+  hashText,
+  normalizeProjectPath,
+  projectName,
+  seededRandom,
+  sleep,
+} from './modules/utils.js';
+import { renderModelSelect } from './modules/ui.js';
+
     const DEFAULT_PROVIDER_MODEL_CATALOG = Object.freeze({
       claude: [
         'claude-opus-4-6',
@@ -283,10 +303,6 @@
       },
     ];
 
-    function sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
     function normalizeTheme(themeId) {
       const value = String(themeId || '').trim().toLowerCase();
       return THEME_OPTIONS.some((theme) => theme.id === value) ? value : 'neon';
@@ -300,62 +316,15 @@
       }
     }
 
-    function readPollPreference() {
-      try {
-        const raw = String(localStorage.getItem('awe-agentcheck-poll') || '').trim();
-        if (raw === '0') return false;
-        if (raw === '1') return true;
-      } catch {
-      }
-      return true;
-    }
-
-    function readSelectionPreference() {
-      try {
-        const raw = String(localStorage.getItem(SELECTION_PREF_KEY) || '').trim();
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return null;
-        const selectedProject = normalizeProjectPath(parsed.selectedProject || '') || null;
-        const selectedTaskId = String(parsed.selectedTaskId || '').trim() || null;
-        const selectedRoleRaw = String(parsed.selectedRole || '').trim();
-        const selectedRole = selectedRoleRaw || 'all';
-        return { selectedProject, selectedTaskId, selectedRole };
-      } catch {
-        return null;
-      }
-    }
-
     function persistSelectionPreference() {
-      try {
-        const selectedProject = normalizeProjectPath(state.selectedProject || '') || '';
-        const selectedTaskId = String(state.selectedTaskId || '').trim();
-        const selectedRoleRaw = String(state.selectedRole || '').trim();
-        const selectedRole = selectedRoleRaw || 'all';
-        if (!selectedProject && !selectedTaskId && selectedRole === 'all') {
-          localStorage.removeItem(SELECTION_PREF_KEY);
-          return;
-        }
-        localStorage.setItem(
-          SELECTION_PREF_KEY,
-          JSON.stringify({
-            selectedProject,
-            selectedTaskId,
-            selectedRole,
-          }),
-        );
-      } catch {
-      }
-    }
-
-    function readStreamDetailPreference() {
-      try {
-        const raw = String(localStorage.getItem('awe-agentcheck-stream-detail') || '').trim();
-        if (raw === '1') return true;
-        if (raw === '0') return false;
-      } catch {
-      }
-      return false;
+      persistSelectionPreferenceStore(
+        {
+          selectedProject: state.selectedProject,
+          selectedTaskId: state.selectedTaskId,
+          selectedRole: state.selectedRole,
+        },
+        SELECTION_PREF_KEY,
+      );
     }
 
     function applyTheme(themeId, { persist = true } = {}) {
@@ -410,80 +379,7 @@
       }
     }
 
-    async function api(path, options = {}) {
-      const {
-        retryable: retryableOption,
-        retryAttempts: retryAttemptsOption,
-        healthImpact = true,
-        ...fetchOptions
-      } = options;
-      const method = String(fetchOptions.method || 'GET').toUpperCase();
-      const retryable = retryableOption !== undefined ? !!retryableOption : true;
-      const retryAttempts = Number(retryAttemptsOption || (method === 'GET' ? 3 : 2));
-      let lastError = null;
-
-      for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10000);
-          const resp = await fetch(path, {
-            headers: { 'Content-Type': 'application/json' },
-            ...fetchOptions,
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-
-          const text = await resp.text();
-          let data = {};
-          try {
-            data = text ? JSON.parse(text) : {};
-          } catch {
-            data = { raw: text };
-          }
-          if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}: ${JSON.stringify(data)}`);
-          }
-          if (healthImpact) {
-            setApiHealth(true);
-          }
-          return data;
-        } catch (err) {
-          lastError = err;
-          const canRetry = retryable && attempt < retryAttempts;
-          if (healthImpact) {
-            setApiHealth(false, String(err), { increment: !canRetry });
-          }
-          if (!canRetry) {
-            break;
-          }
-          await sleep(Math.min(2000, 250 * (2 ** (attempt - 1))));
-        }
-      }
-
-      throw lastError || new Error('API request failed');
-    }
-
-    function normalizeProjectPath(path) {
-      return String(path || '.').trim() || '.';
-    }
-
-    function escapeHtml(value) {
-      const text = String(value ?? '');
-      const table = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '\"': '&quot;',
-        "'": '&#39;',
-      };
-      return text.replace(/[&<>\"']/g, (ch) => table[ch] || ch);
-    }
-
-    function projectName(path) {
-      const clean = normalizeProjectPath(path).replace(/\\/g, '/');
-      const parts = clean.split('/').filter(Boolean);
-      return parts.length ? parts[parts.length - 1] : clean;
-    }
+    const api = createApiClient({ setApiHealth, fetchImpl: fetch, sleepFn: sleep });
 
     function treeNodeLabel(path) {
       const raw = String(path || '').replace(/\\/g, '/');
@@ -906,34 +802,6 @@
       return out;
     }
 
-    function renderModelSelect(elm, values) {
-      if (!elm) return;
-      const current = String(elm.value || '').trim();
-      elm.innerHTML = '';
-      const list = Array.isArray(values) ? values : [];
-      const seen = new Set();
-      const normalized = [];
-      for (const raw of list) {
-        const value = String(raw || '').trim();
-        const key = value.toLowerCase();
-        if (!value || seen.has(key)) continue;
-        seen.add(key);
-        normalized.push(value);
-      }
-      if (current && !seen.has(current.toLowerCase())) {
-        normalized.unshift(current);
-      }
-      for (const value of normalized) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = value;
-        elm.appendChild(option);
-      }
-      if (normalized.length) {
-        elm.value = normalized.includes(current) ? current : normalized[0];
-      }
-    }
-
     function renderProviderModelOptions() {
       const catalog = state.providerModelCatalog || {};
       renderModelSelect(el.claudeModel, catalog.claude || []);
@@ -1005,27 +873,6 @@
         .filter(([participant]) => participant);
       if (!entries.length) return 'n/a';
       return entries.map(([participant, enabled]) => `${participant}=${enabled ? 1 : 0}`).join(' | ');
-    }
-
-    function hashText(text) {
-      let hash = 2166136261;
-      const src = String(text || '');
-      for (let i = 0; i < src.length; i += 1) {
-        hash ^= src.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-      }
-      return hash >>> 0;
-    }
-
-    function seededRandom(seed) {
-      let value = seed >>> 0;
-      return () => {
-        value += 0x6d2b79f5;
-        let t = value;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
     }
 
     function normalizeAvatarProvider(provider) {
@@ -2585,14 +2432,6 @@
       return `mode=${mode} | changed=${changed} copied=${copied} deleted=${deleted}`;
     }
 
-    function readHistoryCollapsePreference() {
-      try {
-        return localStorage.getItem('awe-agentcheck-history-collapsed') === '1';
-      } catch {
-        return false;
-      }
-    }
-
     function renderHistoryCollapseState() {
       const collapsed = !!state.historyCollapsed;
       if (el.projectHistoryBody) {
@@ -2612,23 +2451,6 @@
       try {
         localStorage.setItem('awe-agentcheck-history-collapsed', state.historyCollapsed ? '1' : '0');
       } catch {
-      }
-    }
-
-    function readCreateHelpCollapsedPreference() {
-      try {
-        return localStorage.getItem('awe-agentcheck-create-help-collapsed') !== '0';
-      } catch {
-        return true;
-      }
-    }
-
-    function readCreateHelpLanguagePreference() {
-      try {
-        const raw = String(localStorage.getItem('awe-agentcheck-create-help-lang') || '').trim().toLowerCase();
-        return raw === 'en' ? 'en' : 'zh';
-      } catch {
-        return 'zh';
       }
     }
 

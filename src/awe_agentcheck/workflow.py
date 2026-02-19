@@ -984,7 +984,10 @@ class WorkflowEngine:
             }
         emit = state.get('on_event')
         if not callable(emit):
-            emit = (lambda event: None)
+            def _noop_emit(event: dict) -> None:
+                _ = event
+                return None
+            emit = _noop_emit
         emit({'type': 'task_started', 'task_id': config.task_id})
         set_task_context(task_id=config.task_id)
         _log.info('workflow_started task_id=%s max_rounds=%d backend=langgraph', config.task_id, config.max_rounds)
@@ -1006,10 +1009,15 @@ class WorkflowEngine:
             }
         emit = state.get('on_event')
         if not callable(emit):
-            emit = (lambda event: None)
+            def _noop_emit(event: dict) -> None:
+                _ = event
+                return None
+            emit = _noop_emit
         check_cancel = state.get('should_cancel')
         if not callable(check_cancel):
-            check_cancel = (lambda: False)
+            def _noop_cancel() -> bool:
+                return False
+            check_cancel = _noop_cancel
         round_offset = 0
 
         def _emit_with_round_offset(event: dict) -> None:

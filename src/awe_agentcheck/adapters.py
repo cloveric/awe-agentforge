@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC
 from dataclasses import dataclass
 from queue import Empty, Queue
 import json
@@ -181,6 +182,229 @@ def parse_next_action(output: str, *, allow_legacy: bool | None = None) -> str |
     return None
 
 
+def _split_extra_args(value: str | None) -> list[str]:
+    text = str(value or '').strip()
+    if not text:
+        return []
+    try:
+        return [str(v) for v in shlex.split(text, posix=False) if str(v).strip()]
+    except ValueError:
+        return [v for v in text.split() if v]
+
+
+def _has_model_flag(argv: list[str]) -> bool:
+    for token in argv:
+        text = str(token).strip()
+        if text in {'--model', '-m'}:
+            return True
+        if text.startswith('--model='):
+            return True
+    return False
+
+
+def _has_agents_flag(argv: list[str]) -> bool:
+    for token in argv:
+        text = str(token).strip()
+        if text == '--agents' or text.startswith('--agents='):
+            return True
+    return False
+
+
+def _has_codex_multi_agent_config_token(value: str) -> bool:
+    text = str(value or '').strip().strip('"').strip("'")
+    lowered = text.lower()
+    if not lowered.startswith('features.multi_agent='):
+        return False
+    return True
+
+
+def _has_codex_multi_agent_flag(argv: list[str]) -> bool:
+    for idx, token in enumerate(argv):
+        text = str(token).strip()
+        lowered = text.lower()
+        if lowered == '--enable=multi_agent':
+            return True
+        if lowered == '--enable':
+            if idx + 1 < len(argv):
+                value = str(argv[idx + 1]).strip().lower()
+                if value == 'multi_agent':
+                    return True
+            continue
+        if lowered == '--config':
+            if idx + 1 < len(argv):
+                if _has_codex_multi_agent_config_token(str(argv[idx + 1])):
+                    return True
+            continue
+        if lowered.startswith('--config='):
+            value = text.split('=', 1)[1] if '=' in text else ''
+            if _has_codex_multi_agent_config_token(value):
+                return True
+            continue
+        if lowered == '-c':
+            if idx + 1 < len(argv):
+                if _has_codex_multi_agent_config_token(str(argv[idx + 1])):
+                    return True
+            continue
+    return False
+
+
+def _has_prompt_flag(argv: list[str]) -> bool:
+    for token in argv:
+        text = str(token).strip()
+        if text in {'-p', '--prompt'}:
+            return True
+        if text.startswith('--prompt='):
+            return True
+    return False
+
+
+def _normalize_gemini_approval_flags(argv: list[str]) -> list[str]:
+    has_yolo = False
+    has_approval_mode = False
+    for token in argv:
+        text = str(token).strip()
+        if text in {'-y', '--yolo'}:
+            has_yolo = True
+        elif text == '--approval-mode' or text.startswith('--approval-mode='):
+            has_approval_mode = True
+    if not (has_yolo and has_approval_mode):
+        return argv
+
+    # Gemini CLI treats --yolo and --approval-mode as mutually exclusive.
+    out: list[str] = []
+    for token in argv:
+        text = str(token).strip()
+        if text in {'-y', '--yolo'}:
+            continue
+        out.append(str(token))
+    return out
+
+
+class ProviderAdapter(ABC):
+    def __init__(self, *, provider: str, provider_spec: dict[str, object] | None = None):
+        self.provider = str(provider or '').strip().lower()
+        self.provider_spec = dict(provider_spec or {})
+
+    def build_argv(
+        self,
+        *,
+        command: str,
+        model: str | None,
+        model_params: str | None,
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+    ) -> list[str]:
+        argv = shlex.split(command, posix=False)
+
+        model_text = str(model or '').strip()
+        if model_text and not _has_model_flag(argv):
+            flag = str(self.provider_spec.get('model_flag') or '').strip()
+            if flag:
+                argv.extend([flag, model_text])
+
+        extra = _split_extra_args(model_params)
+        if extra:
+            argv.extend(extra)
+
+        return self._build_provider_argv(
+            argv=argv,
+            claude_team_agents=claude_team_agents,
+            codex_multi_agents=codex_multi_agents,
+        )
+
+    def _build_provider_argv(
+        self,
+        *,
+        argv: list[str],
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+    ) -> list[str]:
+        _ = claude_team_agents
+        _ = codex_multi_agents
+        return argv
+
+    def prepare_runtime_invocation(self, *, argv: list[str], prompt: str) -> tuple[list[str], str]:
+        return list(argv), prompt
+
+    def normalize_output(self, output: str) -> str:
+        return str(output or '').strip()
+
+
+class ClaudeAdapter(ProviderAdapter):
+    def _build_provider_argv(
+        self,
+        *,
+        argv: list[str],
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+    ) -> list[str]:
+        _ = codex_multi_agents
+        capabilities = dict(self.provider_spec.get('capabilities') or {})
+        supports_team_agents = bool(capabilities.get('claude_team_agents', False))
+        if claude_team_agents and supports_team_agents and not _has_agents_flag(argv):
+            argv.extend(['--agents', '{}'])
+        return argv
+
+
+class CodexAdapter(ProviderAdapter):
+    def _build_provider_argv(
+        self,
+        *,
+        argv: list[str],
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+    ) -> list[str]:
+        _ = claude_team_agents
+        capabilities = dict(self.provider_spec.get('capabilities') or {})
+        supports_multi_agents = bool(capabilities.get('codex_multi_agents', False))
+        if codex_multi_agents and supports_multi_agents and not _has_codex_multi_agent_flag(argv):
+            argv.extend(['--enable', 'multi_agent'])
+        return argv
+
+    def normalize_output(self, output: str) -> str:
+        return ParticipantRunner._normalize_codex_exec_output(str(output or '').strip())
+
+
+class GeminiAdapter(ProviderAdapter):
+    def _build_provider_argv(
+        self,
+        *,
+        argv: list[str],
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+    ) -> list[str]:
+        _ = claude_team_agents
+        _ = codex_multi_agents
+        return _normalize_gemini_approval_flags(argv)
+
+    def prepare_runtime_invocation(self, *, argv: list[str], prompt: str) -> tuple[list[str], str]:
+        runtime_argv = list(argv)
+        runtime_input = prompt
+        if _has_prompt_flag(runtime_argv):
+            return runtime_argv, runtime_input
+        # Gemini CLI is significantly more stable in non-interactive mode.
+        runtime_argv.extend(['--prompt', prompt])
+        return runtime_argv, ''
+
+
+class GenericProviderAdapter(ProviderAdapter):
+    pass
+
+
+class ProviderFactory:
+    _ADAPTERS: dict[str, type[ProviderAdapter]] = {
+        'claude': ClaudeAdapter,
+        'codex': CodexAdapter,
+        'gemini': GeminiAdapter,
+    }
+
+    @classmethod
+    def create(cls, *, provider: str, provider_spec: dict[str, object] | None = None) -> ProviderAdapter:
+        key = str(provider or '').strip().lower()
+        adapter_cls = cls._ADAPTERS.get(key, GenericProviderAdapter)
+        return adapter_cls(provider=key, provider_spec=provider_spec)
+
+
 class ParticipantRunner:
     def __init__(
         self,
@@ -220,6 +444,7 @@ class ParticipantRunner:
             for provider, spec in self.provider_registry.items()
             if str(spec.get('command') or '').strip()
         }
+        self.provider_factory = ProviderFactory()
         self.dry_run = dry_run
         self.timeout_retries = max(0, int(timeout_retries))
 
@@ -240,7 +465,13 @@ class ParticipantRunner:
             simulated = (
                 f'[dry-run participant={participant.participant_id}]\\n'
                 '{"verdict":"NO_BLOCKER","next_action":"pass","issue":"n/a","impact":"n/a","next":"n/a"}\\n'
-                'Simulated output for orchestration smoke testing.'
+                'Evidence:\\n'
+                '- src/awe_agentcheck/service.py\\n'
+                '- src/awe_agentcheck/adapters.py\\n'
+                '- tests/unit/test_service.py\\n'
+                'Verification:\\n'
+                '- py -m pytest -q tests/unit/test_service.py\\n'
+                '- py -m ruff check src/awe_agentcheck'
             )
             return AdapterResult(
                 output=simulated,
@@ -258,11 +489,10 @@ class ParticipantRunner:
                 duration_seconds=0.0,
             )
         provider_spec = dict(self.provider_registry.get(provider) or {})
+        adapter = self.provider_factory.create(provider=provider, provider_spec=provider_spec)
 
-        argv = self._build_argv(
+        argv = adapter.build_argv(
             command=command,
-            provider=provider,
-            provider_spec=provider_spec,
             model=model,
             model_params=model_params,
             claude_team_agents=claude_team_agents,
@@ -290,11 +520,7 @@ class ParticipantRunner:
                 break
 
             attempts_made += 1
-            runtime_argv, runtime_input = self._prepare_runtime_invocation(
-                argv=argv,
-                provider=provider,
-                prompt=current_prompt,
-            )
+            runtime_argv, runtime_input = adapter.prepare_runtime_invocation(argv=argv, prompt=current_prompt)
             try:
                 if on_stream is None:
                     completed = subprocess.run(
@@ -365,7 +591,7 @@ class ParticipantRunner:
 
         verdict = parse_verdict(output)
         next_action = parse_next_action(output)
-        normalized_output = self._normalize_output_for_provider(provider=provider, output=output)
+        normalized_output = adapter.normalize_output(output)
 
         return AdapterResult(
             output=normalized_output,
@@ -439,11 +665,8 @@ class ParticipantRunner:
 
     @staticmethod
     def _normalize_output_for_provider(*, provider: str, output: str) -> str:
-        text = str(output or '').strip()
-        provider_text = str(provider or '').strip().lower()
-        if provider_text != 'codex':
-            return text
-        return ParticipantRunner._normalize_codex_exec_output(text)
+        adapter = ProviderFactory.create(provider=provider, provider_spec=None)
+        return adapter.normalize_output(output)
 
     @staticmethod
     def _normalize_codex_exec_output(output: str) -> str:
@@ -481,147 +704,47 @@ class ParticipantRunner:
         claude_team_agents: bool,
         codex_multi_agents: bool,
     ) -> list[str]:
-        argv = shlex.split(command, posix=False)
-
-        model_text = str(model or '').strip()
-        if model_text and not ParticipantRunner._has_model_flag(argv):
-            spec = dict(provider_spec or {})
-            flag = str(spec.get('model_flag') or '').strip()
-            if flag:
-                argv.extend([flag, model_text])
-
-        extra = ParticipantRunner._split_extra_args(model_params)
-        if extra:
-            argv.extend(extra)
-
-        provider_text = str(provider or '').strip().lower()
-        if provider_text == 'gemini':
-            argv = ParticipantRunner._normalize_gemini_approval_flags(argv)
-
-        capabilities = dict((provider_spec or {}).get('capabilities') or {})
-        if provider_text == 'claude':
-            supports_team_agents = bool(capabilities.get('claude_team_agents', False))
-            if claude_team_agents and supports_team_agents and not ParticipantRunner._has_agents_flag(argv):
-                argv.extend(['--agents', '{}'])
-
-        if provider_text == 'codex':
-            supports_multi_agents = bool(capabilities.get('codex_multi_agents', False))
-            if codex_multi_agents and supports_multi_agents and not ParticipantRunner._has_codex_multi_agent_flag(argv):
-                argv.extend(['--enable', 'multi_agent'])
-
-        return argv
+        adapter = ProviderFactory.create(provider=provider, provider_spec=provider_spec)
+        return adapter.build_argv(
+            command=command,
+            model=model,
+            model_params=model_params,
+            claude_team_agents=claude_team_agents,
+            codex_multi_agents=codex_multi_agents,
+        )
 
     @staticmethod
     def _prepare_runtime_invocation(*, argv: list[str], provider: str, prompt: str) -> tuple[list[str], str]:
-        provider_text = str(provider or '').strip().lower()
-        runtime_argv = list(argv)
-        runtime_input = prompt
-        if provider_text != 'gemini':
-            return runtime_argv, runtime_input
-        if ParticipantRunner._has_prompt_flag(runtime_argv):
-            return runtime_argv, runtime_input
-        # Gemini CLI is significantly more stable in non-interactive mode.
-        runtime_argv.extend(['--prompt', prompt])
-        runtime_input = ''
-        return runtime_argv, runtime_input
+        adapter = ProviderFactory.create(provider=provider, provider_spec=None)
+        return adapter.prepare_runtime_invocation(argv=argv, prompt=prompt)
 
     @staticmethod
     def _split_extra_args(value: str | None) -> list[str]:
-        text = str(value or '').strip()
-        if not text:
-            return []
-        try:
-            return [str(v) for v in shlex.split(text, posix=False) if str(v).strip()]
-        except ValueError:
-            return [v for v in text.split() if v]
+        return _split_extra_args(value)
 
     @staticmethod
     def _has_model_flag(argv: list[str]) -> bool:
-        for token in argv:
-            text = str(token).strip()
-            if text in {'--model', '-m'}:
-                return True
-            if text.startswith('--model='):
-                return True
-        return False
+        return _has_model_flag(argv)
 
     @staticmethod
     def _has_agents_flag(argv: list[str]) -> bool:
-        for token in argv:
-            text = str(token).strip()
-            if text == '--agents' or text.startswith('--agents='):
-                return True
-        return False
+        return _has_agents_flag(argv)
 
     @staticmethod
     def _has_codex_multi_agent_flag(argv: list[str]) -> bool:
-        for idx, token in enumerate(argv):
-            text = str(token).strip()
-            lowered = text.lower()
-            if lowered == '--enable=multi_agent':
-                return True
-            if lowered == '--enable':
-                if idx + 1 < len(argv):
-                    value = str(argv[idx + 1]).strip().lower()
-                    if value == 'multi_agent':
-                        return True
-                continue
-            if lowered == '--config':
-                if idx + 1 < len(argv):
-                    if ParticipantRunner._has_codex_multi_agent_config_token(str(argv[idx + 1])):
-                        return True
-                continue
-            if lowered.startswith('--config='):
-                value = text.split('=', 1)[1] if '=' in text else ''
-                if ParticipantRunner._has_codex_multi_agent_config_token(value):
-                    return True
-                continue
-            if lowered == '-c':
-                if idx + 1 < len(argv):
-                    if ParticipantRunner._has_codex_multi_agent_config_token(str(argv[idx + 1])):
-                        return True
-                continue
-        return False
+        return _has_codex_multi_agent_flag(argv)
 
     @staticmethod
     def _has_codex_multi_agent_config_token(value: str) -> bool:
-        text = str(value or '').strip().strip('"').strip("'")
-        lowered = text.lower()
-        if not lowered.startswith('features.multi_agent='):
-            return False
-        return True
+        return _has_codex_multi_agent_config_token(value)
 
     @staticmethod
     def _has_prompt_flag(argv: list[str]) -> bool:
-        for token in argv:
-            text = str(token).strip()
-            if text in {'-p', '--prompt'}:
-                return True
-            if text.startswith('--prompt='):
-                return True
-        return False
+        return _has_prompt_flag(argv)
 
     @staticmethod
     def _normalize_gemini_approval_flags(argv: list[str]) -> list[str]:
-        has_yolo = False
-        has_approval_mode = False
-        for token in argv:
-            text = str(token).strip()
-            if text in {'-y', '--yolo'}:
-                has_yolo = True
-            elif text == '--approval-mode' or text.startswith('--approval-mode='):
-                has_approval_mode = True
-        if not (has_yolo and has_approval_mode):
-            return argv
-
-        # Gemini CLI treats --yolo and --approval-mode as mutually exclusive.
-        out: list[str] = []
-        for token in argv:
-            text = str(token).strip()
-            if text in {'-y', '--yolo'}:
-                continue
-            out.append(str(token))
-        return out
+        return _normalize_gemini_approval_flags(argv)
 
     @staticmethod
     def _resolve_executable(argv: list[str]) -> list[str]:
