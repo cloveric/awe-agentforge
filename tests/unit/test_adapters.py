@@ -7,7 +7,13 @@ from awe_agentcheck.adapters import DEFAULT_COMMANDS, ParticipantRunner, parse_v
 from awe_agentcheck.participants import Participant, parse_participant_id
 
 
-def test_parse_verdict_from_control_line():
+def test_parse_verdict_from_control_line_is_unknown_in_schema_mode():
+    output = "some analysis\nVERDICT: BLOCKER\n"
+    assert parse_verdict(output) == 'unknown'
+
+
+def test_parse_verdict_from_control_line_when_compat_enabled(monkeypatch):
+    monkeypatch.setenv('AWE_CONTROL_SCHEMA_COMPAT', '1')
     output = "some analysis\nVERDICT: BLOCKER\n"
     assert parse_verdict(output) == 'blocker'
 
@@ -18,11 +24,17 @@ def test_parse_verdict_defaults_unknown():
 
 
 def test_parse_verdict_prefers_json_schema_payload():
-    output = '{"verdict":"BLOCKER","next_action":"retry"}\nVERDICT: NO_BLOCKER'
+    output = '{"verdict":"BLOCKER","next_action":"retry"}\n{"verdict":"NO_BLOCKER","next_action":"pass"}'
     assert parse_verdict(output) == 'blocker'
 
 
-def test_parse_next_action_from_control_line():
+def test_parse_next_action_from_control_line_is_none_in_schema_mode():
+    output = "NEXT_ACTION: retry\n"
+    assert parse_next_action(output) is None
+
+
+def test_parse_next_action_from_control_line_when_compat_enabled(monkeypatch):
+    monkeypatch.setenv('AWE_CONTROL_SCHEMA_COMPAT', '1')
     output = "NEXT_ACTION: retry\n"
     assert parse_next_action(output) == 'retry'
 
@@ -78,7 +90,7 @@ def test_participant_runner_retries_once_on_timeout_and_succeeds(tmp_path: Path,
         calls['inputs'].append(kwargs.get('input', ''))
         if calls['n'] == 1:
             raise subprocess.TimeoutExpired(cmd='claude', timeout=1)
-        return subprocess.CompletedProcess(args=['claude'], returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=['claude'], returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False, timeout_retries=1)
@@ -175,7 +187,7 @@ def test_participant_runner_keeps_retry_slice_when_backoff_would_consume_budget(
         if calls['n'] == 1:
             clock['now'] += timeout
             raise subprocess.TimeoutExpired(cmd='claude', timeout=timeout)
-        return subprocess.CompletedProcess(args=['claude'], returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=['claude'], returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.time.monotonic', fake_monotonic)
     monkeypatch.setattr('awe_agentcheck.adapters.time.sleep', fake_sleep)
@@ -241,7 +253,7 @@ def test_participant_runner_appends_model_flag_per_provider(
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     participant = parse_participant_id(participant_id)
@@ -264,7 +276,7 @@ def test_participant_runner_appends_claude_team_agents_flag_when_enabled(tmp_pat
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False)
@@ -285,7 +297,7 @@ def test_participant_runner_appends_codex_multi_agent_flag_when_enabled(tmp_path
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'codex': 'codex exec --skip-git-repo-check'}, dry_run=False)
@@ -307,7 +319,7 @@ def test_participant_runner_appends_provider_model_params_tokens(tmp_path: Path,
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'codex': 'codex exec'}, dry_run=False)
@@ -334,7 +346,7 @@ def test_participant_runner_supports_extra_provider_with_registry_defaults(tmp_p
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'qwen': 'qwen-cli --fast'}, dry_run=False)
@@ -356,7 +368,7 @@ def test_participant_runner_deduplicates_conflicting_gemini_approval_flags(tmp_p
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'gemini': 'gemini --yolo'}, dry_run=False)
@@ -382,7 +394,7 @@ def test_participant_runner_uses_gemini_prompt_flag_when_missing(tmp_path: Path,
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
         captured['input'] = kwargs.get('input')
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'gemini': 'gemini --approval-mode yolo'}, dry_run=False)
@@ -433,7 +445,7 @@ def test_participant_runner_resolves_executable_with_shutil_which(tmp_path: Path
 
     def fake_run(argv, **kwargs):
         captured['argv'] = list(argv)
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.shutil.which', fake_which)
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
@@ -457,7 +469,7 @@ def test_participant_runner_prefers_workspace_src_in_pythonpath(tmp_path: Path, 
 
     def fake_run(argv, **kwargs):
         captured['env'] = dict(kwargs.get('env') or {})
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER', stderr='')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.subprocess.run', fake_run)
     runner = ParticipantRunner(command_overrides={'claude': 'claude -p'}, dry_run=False)
@@ -484,7 +496,7 @@ def test_participant_runner_stream_callback_receives_chunks(tmp_path: Path, monk
         return subprocess.CompletedProcess(
             args=argv,
             returncode=0,
-            stdout='line-1\nVERDICT: NO_BLOCKER\n',
+            stdout='line-1\n{"verdict":"NO_BLOCKER","next_action":"pass"}\n',
             stderr='warn-1\n',
         )
 
@@ -524,8 +536,8 @@ def test_participant_runner_streaming_timeout_retry_shares_budget_and_adds_backo
         if calls['n'] == 1:
             clock['now'] += float(timeout_seconds)
             raise subprocess.TimeoutExpired(cmd='claude', timeout=timeout_seconds)
-        on_stream('stdout', 'VERDICT: NO_BLOCKER\n')
-        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='VERDICT: NO_BLOCKER\n', stderr='')
+        on_stream('stdout', '{"verdict":"NO_BLOCKER","next_action":"pass"}\n')
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout='{"verdict":"NO_BLOCKER","next_action":"pass"}\n', stderr='')
 
     monkeypatch.setattr('awe_agentcheck.adapters.time.monotonic', fake_monotonic)
     monkeypatch.setattr('awe_agentcheck.adapters.time.sleep', fake_sleep)
@@ -547,4 +559,5 @@ def test_participant_runner_streaming_timeout_retry_shares_budget_and_adds_backo
     assert sleeps
     assert 0.05 <= sleeps[0] <= 1.0
     assert len(calls['inputs'][1]) < len(calls['inputs'][0])
-    assert ('stdout', 'VERDICT: NO_BLOCKER\n') in streamed
+    assert ('stdout', '{"verdict":"NO_BLOCKER","next_action":"pass"}\n') in streamed
+

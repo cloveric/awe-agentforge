@@ -4652,8 +4652,8 @@ class OrchestratorService:
             f"{checklist_guidance}\n"
             "Keep output concise but complete enough to justify verdict.\n"
             "Do not include command logs, internal process narration, or tool/skill references.\n"
-            "If evidence is insufficient, return VERDICT: UNKNOWN quickly.\n"
-            "Output one line: VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN.\n"
+            'If evidence is insufficient, set "verdict":"UNKNOWN" quickly.\n'
+            "Output JSON only. No markdown fences. No extra prose before or after the JSON object.\n"
             f"{control_schema_instruction}\n"
             f"{plain_review_format}\n"
             "Reference concrete repo-relative file paths where possible.\n"

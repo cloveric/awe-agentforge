@@ -2238,7 +2238,7 @@ def test_service_proposal_review_prompt_supports_audit_depth_guidance(tmp_path: 
     )
     assert 'repository checks as needed' in prompt
     assert 'Keep output concise but complete enough to justify verdict.' in prompt
-    assert 'VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN' in prompt
+    assert 'Output JSON only.' in prompt
 
 
 

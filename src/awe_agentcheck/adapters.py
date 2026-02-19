@@ -30,6 +30,7 @@ _LIMIT_PATTERNS = (
     'insufficient_quota',
 )
 _MIN_ATTEMPT_TIMEOUT_SECONDS = 0.05
+_CONTROL_SCHEMA_COMPAT_ENV = 'AWE_CONTROL_SCHEMA_COMPAT'
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,13 @@ def _normalize_next_action_value(value: str | None) -> str | None:
     return None
 
 
+def _legacy_control_fallback_enabled(*, allow_legacy: bool | None = None) -> bool:
+    if allow_legacy is not None:
+        return bool(allow_legacy)
+    text = str(os.getenv(_CONTROL_SCHEMA_COMPAT_ENV, '') or '').strip().lower()
+    return text in {'1', 'true', 'yes', 'on'}
+
+
 def _iter_json_candidates(output: str) -> list[str]:
     text = str(output or '').strip()
     if not text:
@@ -145,11 +153,13 @@ def _parse_json_control_payload(output: str) -> dict[str, str | None]:
     }
 
 
-def parse_verdict(output: str) -> str:
+def parse_verdict(output: str, *, allow_legacy: bool | None = None) -> str:
     json_payload = _parse_json_control_payload(output)
     json_verdict = str(json_payload.get('verdict') or '').strip().lower()
     if json_verdict in {'no_blocker', 'blocker', 'unknown'}:
         return json_verdict
+    if not _legacy_control_fallback_enabled(allow_legacy=allow_legacy):
+        return 'unknown'
     for line in (output or '').splitlines():
         m = _VERDICT_RE.match(line)
         if m:
@@ -157,11 +167,13 @@ def parse_verdict(output: str) -> str:
     return 'unknown'
 
 
-def parse_next_action(output: str) -> str | None:
+def parse_next_action(output: str, *, allow_legacy: bool | None = None) -> str | None:
     json_payload = _parse_json_control_payload(output)
     json_action = _normalize_next_action_value(str(json_payload.get('next_action') or '').strip())
     if json_action is not None:
         return json_action
+    if not _legacy_control_fallback_enabled(allow_legacy=allow_legacy):
+        return None
     for line in (output or '').splitlines():
         m = _NEXT_RE.match(line)
         if m:
@@ -227,8 +239,7 @@ class ParticipantRunner:
         if self.dry_run:
             simulated = (
                 f'[dry-run participant={participant.participant_id}]\\n'
-                'VERDICT: NO_BLOCKER\\n'
-                'NEXT_ACTION: pass\\n'
+                '{"verdict":"NO_BLOCKER","next_action":"pass","issue":"n/a","impact":"n/a","next":"n/a"}\\n'
                 'Simulated output for orchestration smoke testing.'
             )
             return AdapterResult(

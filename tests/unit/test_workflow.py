@@ -539,7 +539,7 @@ def test_review_prompt_includes_strict_blocker_criteria(tmp_path: Path):
     assert 'correctness' in prompt
     assert 'security' in prompt
     assert 'style-only' in prompt
-    assert 'VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN' in prompt
+    assert 'Output JSON only.' in prompt
     assert 'Keep output concise but complete enough to justify verdict.' in prompt
 
 
@@ -561,7 +561,7 @@ def test_review_prompt_includes_required_checklist_for_evolution_level_1(tmp_pat
     assert 'Required checklist' in prompt
     assert 'architecture size/responsibility' in prompt
     assert 'cross-platform runtime/scripts' in prompt
-    assert 'Preferred control output schema (JSON' in prompt
+    assert 'Required control output schema (JSON only' in prompt
 
 
 def test_prompts_include_language_instruction_for_chinese(tmp_path: Path):
@@ -582,7 +582,7 @@ def test_prompts_include_language_instruction_for_chinese(tmp_path: Path):
     discussion_prompt = WorkflowEngine._discussion_prompt(cfg, 1, None)
     review_prompt = WorkflowEngine._review_prompt(cfg, 1, 'impl summary')
     assert 'Simplified Chinese' in discussion_prompt
-    assert 'VERDICT' in review_prompt
+    assert 'JSON only' in review_prompt
 
 
 def test_discussion_prompt_includes_evolution_guidance_for_level_2(tmp_path: Path):

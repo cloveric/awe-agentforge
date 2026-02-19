@@ -909,18 +909,27 @@ class WorkflowEngine:
 
         graph = StateGraph(dict)
         graph.add_node('preflight', self._langgraph_preflight_node)
-        graph.add_node('execute', self._langgraph_execute_node)
+        graph.add_node('setup', self._langgraph_setup_node)
+        graph.add_node('round', self._langgraph_round_node)
         graph.add_node('finalize', self._langgraph_finalize_node)
         graph.set_entry_point('preflight')
         graph.add_conditional_edges(
             'preflight',
             self._langgraph_preflight_route,
             {
-                'execute': 'execute',
+                'setup': 'setup',
                 'finalize': 'finalize',
             },
         )
-        graph.add_edge('execute', 'finalize')
+        graph.add_edge('setup', 'round')
+        graph.add_conditional_edges(
+            'round',
+            self._langgraph_round_route,
+            {
+                'round': 'round',
+                'finalize': 'finalize',
+            },
+        )
         graph.add_edge('finalize', END)
         self._langgraph_compiled = graph.compile()
         return self._langgraph_compiled
@@ -960,18 +969,105 @@ class WorkflowEngine:
 
     @staticmethod
     def _langgraph_preflight_route(state: dict) -> str:
-        return 'execute' if bool(state.get('preflight_ok')) else 'finalize'
+        return 'setup' if bool(state.get('preflight_ok')) else 'finalize'
 
-    def _langgraph_execute_node(self, state: dict) -> dict:
+    def _langgraph_setup_node(self, state: dict) -> dict:
         config = state.get('config')
         if not isinstance(config, RunConfig):
-            raise RuntimeError('langgraph_execution_error: invalid config payload')
-        result = self._run_classic(
+            return {
+                'preflight_ok': False,
+                'preflight_error': 'langgraph_execution_error: invalid config payload',
+                'config': state.get('config'),
+                'on_event': state.get('on_event'),
+                'should_cancel': state.get('should_cancel'),
+                'result': RunResult(status='failed_system', rounds=0, gate_reason='langgraph_execution_error: invalid config payload'),
+            }
+        emit = state.get('on_event')
+        if not callable(emit):
+            emit = (lambda event: None)
+        emit({'type': 'task_started', 'task_id': config.task_id})
+        set_task_context(task_id=config.task_id)
+        _log.info('workflow_started task_id=%s max_rounds=%d backend=langgraph', config.task_id, config.max_rounds)
+        return {
+            'preflight_ok': True,
+            'config': config,
+            'on_event': state.get('on_event'),
+            'should_cancel': state.get('should_cancel'),
+            'deadline': self._parse_deadline(config.evolve_until),
+            'round_no': 0,
+            'result': None,
+        }
+
+    def _langgraph_round_node(self, state: dict) -> dict:
+        config = state.get('config')
+        if not isinstance(config, RunConfig):
+            return {
+                'result': RunResult(status='failed_system', rounds=0, gate_reason='langgraph_execution_error: invalid config payload')
+            }
+        emit = state.get('on_event')
+        if not callable(emit):
+            emit = (lambda event: None)
+        check_cancel = state.get('should_cancel')
+        if not callable(check_cancel):
+            check_cancel = (lambda: False)
+        round_offset = 0
+
+        def _emit_with_round_offset(event: dict) -> None:
+            if not isinstance(event, dict):
+                return
+            payload = dict(event)
+            if str(payload.get('type') or '').strip().lower() == 'task_started':
+                return
+            if 'round' in payload:
+                try:
+                    payload['round'] = int(payload.get('round') or 0) + round_offset
+                except Exception:
+                    pass
+            emit(payload)
+
+        # Keep LangGraph orchestration while running the workflow loop to completion
+        # in one execution pass for smoother UX and event continuity.
+        one_round = self._run_classic(
             config,
-            on_event=state.get('on_event'),
-            should_cancel=state.get('should_cancel'),
+            on_event=_emit_with_round_offset,
+            should_cancel=check_cancel,
         )
-        return {'result': result}
+        return {
+            **state,
+            'round_no': int(one_round.rounds or 0),
+            'result': RunResult(
+                status=str(one_round.status or 'failed_system'),
+                rounds=int(one_round.rounds or 0),
+                gate_reason=str(one_round.gate_reason or ''),
+            ),
+            'last_round_result': RunResult(
+                status=str(one_round.status or 'failed_system'),
+                rounds=int(one_round.rounds or 0),
+                gate_reason=str(one_round.gate_reason or ''),
+            ),
+        }
+
+    @staticmethod
+    def _langgraph_should_finish_round(
+        *,
+        result: RunResult,
+        round_no: int,
+        max_rounds: int,
+        deadline: datetime | None,
+    ) -> bool:
+        status = str(result.status or '').strip().lower()
+        if status in {'passed', 'failed_system', 'canceled'}:
+            return True
+        if status != 'failed_gate':
+            return True
+        # When deadline mode is enabled, deadline (not round cap) controls continuation.
+        if deadline is not None:
+            return False
+        return int(round_no) >= max(1, int(max_rounds))
+
+    @staticmethod
+    def _langgraph_round_route(state: dict) -> str:
+        return 'finalize' if isinstance(state.get('result'), RunResult) else 'round'
 
     def _langgraph_finalize_node(self, state: dict) -> dict:
         if ('preflight_ok' in state) and (not bool(state.get('preflight_ok'))):
@@ -980,6 +1076,9 @@ class WorkflowEngine:
         result = state.get('result')
         if isinstance(result, RunResult):
             return {'result': result}
+        last_round = state.get('last_round_result')
+        if isinstance(last_round, RunResult):
+            return {'result': last_round}
         return {'result': RunResult(status='failed_system', rounds=0, gate_reason='langgraph_execution_error: missing RunResult payload')}
 
     @staticmethod
@@ -2023,9 +2122,9 @@ class WorkflowEngine:
             f"{checklist_guidance}\n"
             "Keep output concise but complete enough to justify verdict.\n"
             "Do not include command logs, internal process narration, or tool/skill references.\n"
-            "If evidence is insufficient, return VERDICT: UNKNOWN quickly.\n"
+            'If evidence is insufficient, set "verdict":"UNKNOWN" quickly.\n'
             f"{mode_guidance}"
-            "Output must include one line: VERDICT: NO_BLOCKER or VERDICT: BLOCKER or VERDICT: UNKNOWN.\n"
+            "Output JSON only. No markdown fences. No extra prose before or after the JSON object.\n"
             f"{control_schema_instruction}\n"
             f"{plain_review_format}\n"
             "Reference at least one concrete repo-relative file path when possible.\n"
@@ -2055,7 +2154,10 @@ class WorkflowEngine:
     def _conversation_language_instruction(raw: str | None) -> str:
         lang = str(raw or '').strip().lower()
         if lang == 'zh':
-            return 'Language: respond in Simplified Chinese; keep control keywords (VERDICT/NEXT_ACTION) in English.'
+            return (
+                'Language: respond in Simplified Chinese; keep control field values in English '
+                '(NO_BLOCKER/BLOCKER/UNKNOWN and pass/retry/stop).'
+            )
         return 'Language: respond in English.'
 
     @staticmethod
@@ -2223,23 +2325,23 @@ class WorkflowEngine:
     def _plain_review_format_instruction(*, enabled: bool, language: str | None) -> str:
         if not bool(enabled):
             return (
-                "After VERDICT line, provide concise rationale and critical risks."
+                'Fill JSON fields "issue", "impact", and "next" with concise rationale and critical risks.'
             )
         lang = str(language or '').strip().lower()
         if lang == 'zh':
             return (
-                "After VERDICT line, write exactly 3 short lines:\n"
-                "问题: <一句话>\n"
-                "影响: <一句话>\n"
-                "下一步: <一句话>\n"
-                "Each line should be simple and concrete; no internal workflow terms."
+                'Set JSON fields exactly:\n'
+                '- issue: <一句话>\n'
+                '- impact: <一句话>\n'
+                '- next: <一句话>\n'
+                'Each sentence should be simple and concrete; no internal workflow terms.'
             )
         return (
-            "After VERDICT line, write exactly 3 short lines:\n"
-            "Issue: <one sentence>\n"
-            "Impact: <one sentence>\n"
-            "Next: <one sentence>\n"
-            "Keep wording simple and concrete; no internal workflow terms."
+            'Set JSON fields exactly:\n'
+            '- issue: <one sentence>\n'
+            '- impact: <one sentence>\n'
+            '- next: <one sentence>\n'
+            'Keep wording simple and concrete; no internal workflow terms.'
         )
 
     @staticmethod
@@ -2256,7 +2358,7 @@ class WorkflowEngine:
     @staticmethod
     def _control_output_schema_instruction() -> str:
         return (
-            "Preferred control output schema (JSON, one object): "
+            "Required control output schema (JSON only, one object; no markdown fences): "
             '{"verdict":"NO_BLOCKER|BLOCKER|UNKNOWN","next_action":"pass|retry|stop","issue":"...","impact":"...","next":"..."}'
-            " Keep VERDICT line for backward compatibility."
+            " Do not output legacy VERDICT/NEXT_ACTION lines unless compatibility mode is explicitly enabled."
         )
