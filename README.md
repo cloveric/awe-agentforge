@@ -22,8 +22,8 @@
 <br/>
 
 <p align="center">
-  <b>The control tower for vibe coders: multi-agent review, repair, and evolution in one place.</b><br/>
-  <sub>Coordinate Claude, Codex, Gemini, and other CLI agents in reviewer-first consensus loops to diagnose bugs, implement fixes, cross-review results, and continuously evolve your codebase.</sub>
+  <b>Reviewer-first control tower for vibe coders: multi-agent review, repair, and evolution in one place.</b><br/>
+  <sub>Run Claude, Codex, Gemini, and other CLI agents in auditable consensus loops to find bugs, ship fixes, and continuously evolve your codebase.</sub>
 </p>
 <p align="center">
   <sub><b>Brand mode (low-risk rename):</b> display name = <code>AWE-AgentForge</code>, runtime/package IDs stay <code>awe-agentcheck</code> / <code>awe_agentcheck</code>.</sub>
