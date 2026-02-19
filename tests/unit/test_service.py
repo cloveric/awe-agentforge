@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -54,6 +55,40 @@ class FakeWorkflowEngineWithFileChange:
         target.write_text('hello fusion\n', encoding='utf-8')
         on_event({'type': 'discussion', 'round': 1, 'provider': config.author.provider, 'output': 'plan'})
         on_event({'type': 'implementation', 'round': 1, 'provider': config.author.provider, 'output': 'changed file'})
+        on_event({'type': 'gate_passed', 'round': 1, 'reason': 'passed'})
+        return RunResult(status='passed', rounds=1, gate_reason='passed')
+
+
+class FakeWorkflowEngineWithEvidenceBundle:
+    def run(self, config, *, on_event, should_cancel):
+        on_event({'type': 'discussion', 'round': 1, 'provider': config.author.provider, 'output': 'plan in src/awe_agentcheck/service.py'})
+        on_event({'type': 'implementation', 'round': 1, 'provider': config.author.provider, 'output': 'changed src/awe_agentcheck/service.py'})
+        on_event(
+            {
+                'type': 'review',
+                'round': 1,
+                'participant': config.reviewers[0].participant_id,
+                'verdict': 'no_blocker',
+                'output': 'validated tests/unit/test_service.py',
+            }
+        )
+        on_event(
+            {
+                'type': 'precompletion_checklist',
+                'round': 1,
+                'passed': True,
+                'reason': 'passed',
+                'checks': {
+                    'test_command_configured': True,
+                    'lint_command_configured': True,
+                    'verification_executed': True,
+                    'tests_ok': True,
+                    'lint_ok': True,
+                    'evidence_paths_present': True,
+                },
+                'evidence_paths': ['src/awe_agentcheck/service.py', 'tests/unit/test_service.py'],
+            }
+        )
         on_event({'type': 'gate_passed', 'round': 1, 'reason': 'passed'})
         return RunResult(status='passed', rounds=1, gate_reason='passed')
 
@@ -2574,6 +2609,98 @@ def test_service_auto_merge_fails_when_promotion_guard_blocks(tmp_path: Path, mo
     finished = svc.start_task(created.task_id)
     assert finished.status.value == 'failed_gate'
     assert 'promotion_guard_blocked' in str(finished.last_gate_reason or '')
+
+
+def test_service_create_task_writes_workspace_fingerprint_to_state(tmp_path: Path):
+    svc = build_service(tmp_path)
+    project = tmp_path / 'repo-fingerprint'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Fingerprint state',
+            description='persist workspace fingerprint',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            workspace_path=str(project),
+            sandbox_mode=False,
+            self_loop_mode=1,
+            auto_merge=False,
+        )
+    )
+
+    state_path = tmp_path / '.agents' / 'threads' / task.task_id / 'state.json'
+    payload = json.loads(state_path.read_text(encoding='utf-8'))
+    fingerprint = dict(payload.get('workspace_fingerprint', {}))
+    assert fingerprint.get('schema') == 'workspace_fingerprint.v1'
+    assert str(fingerprint.get('workspace_path') or '').strip()
+    assert str(fingerprint.get('project_path') or '').strip()
+
+
+def test_service_start_task_blocks_on_workspace_resume_guard_mismatch(tmp_path: Path):
+    engine = FakeWorkflowEngine()
+    svc = build_service(tmp_path, workflow_engine=engine)
+    project = tmp_path / 'repo-resume-guard'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Resume guard',
+            description='detect workspace mismatch',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            workspace_path=str(project),
+            sandbox_mode=False,
+            self_loop_mode=1,
+            auto_merge=False,
+        )
+    )
+
+    row = svc.repository.items[task.task_id]
+    row['workspace_fingerprint']['workspace_path'] = 'c:/mismatched/workspace'
+    blocked = svc.start_task(task.task_id)
+
+    assert blocked.status.value == 'waiting_manual'
+    assert blocked.last_gate_reason == 'workspace_resume_guard_mismatch'
+    assert engine.calls == 0
+    events = svc.list_events(task.task_id)
+    assert any(str(item.get('type') or '') == 'workspace_resume_guard_blocked' for item in events)
+    guard_path = tmp_path / '.agents' / 'threads' / task.task_id / 'artifacts' / 'workspace_resume_guard.json'
+    assert guard_path.exists()
+
+
+def test_service_start_task_writes_evidence_bundle_artifact(tmp_path: Path):
+    svc = build_service(tmp_path, workflow_engine=FakeWorkflowEngineWithEvidenceBundle())
+    project = tmp_path / 'repo-evidence-bundle'
+    project.mkdir()
+    (project / 'README.md').write_text('hello\n', encoding='utf-8')
+
+    task = svc.create_task(
+        CreateTaskInput(
+            title='Evidence bundle',
+            description='write precompletion evidence artifact',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            workspace_path=str(project),
+            sandbox_mode=False,
+            self_loop_mode=1,
+            auto_merge=False,
+        )
+    )
+
+    result = svc.start_task(task.task_id)
+    assert result.status.value == 'passed'
+
+    bundle_path = tmp_path / '.agents' / 'threads' / task.task_id / 'artifacts' / 'evidence_bundle_round_1.json'
+    assert bundle_path.exists()
+    bundle_payload = json.loads(bundle_path.read_text(encoding='utf-8'))
+    assert bundle_payload.get('passed') is True
+    assert bundle_payload.get('reason') == 'passed'
+    assert 'src/awe_agentcheck/service.py' in list(bundle_payload.get('evidence_paths') or [])
+    events = svc.list_events(task.task_id)
+    assert any(str(item.get('type') or '') == 'evidence_bundle_ready' for item in events)
 
 
 def test_service_accepts_extra_registered_provider_participants(tmp_path: Path):

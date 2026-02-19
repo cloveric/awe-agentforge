@@ -116,6 +116,11 @@
    - 新脚本：`scripts/benchmark_harness.py`
    - 固定任务集：`ops/benchmark_tasks.json`
    - 对比报告（JSON + Markdown）输出到 `.agents/benchmarks/`。
+25. 新增证据/恢复一致性硬护栏：
+   - 每次 `precompletion_checklist` 都会落盘证据工件：`artifacts/evidence_bundle_round_<n>.json`。
+   - 通过并自动融合前会再次校验证据包（`No evidence, no merge`）。
+   - 任务创建时记录工作区指纹，启动/恢复时校验一致性；漂移会以 `workspace_resume_guard_mismatch` 阻断。
+   - 新增 CLI 包装命令：`py -m awe_agentcheck.cli benchmark ...`（调用 `scripts/benchmark_harness.py`）。
 
 <br/>
 
@@ -626,6 +631,18 @@ py -m awe_agentcheck.cli policy-templates --workspace-path "."
 ```
 
 返回仓库规模/风险画像及推荐控制项组合。
+
+### `benchmark` — 运行固定 A/B 基准回归
+
+```powershell
+py -m awe_agentcheck.cli benchmark `
+  --workspace-path "." `
+  --variant-a-name "baseline" `
+  --variant-b-name "candidate" `
+  --reviewer "claude#review-B"
+```
+
+运行固定基准任务集，并将 JSON/Markdown 报告输出到 `.agents/benchmarks/`。
 
 ### `github-summary` — 生成 PR 可用摘要
 

@@ -124,8 +124,11 @@ Default policy:
    - verification stage executed
    - evidence paths present in implementation/review/verification outputs.
 21. Checklist failures emit explicit reasons (for example `precompletion_evidence_missing`) and block completion.
-22. Repeated no-progress rounds trigger `strategy_shifted` with remediation hints.
-23. Multiple strategy shifts without progress end as `failed_gate` with `loop_no_progress`.
+22. Each checklist result is persisted as `artifacts/evidence_bundle_round_<n>.json` for auditability.
+23. Pass + auto-merge path performs an additional evidence-bundle validation (`No evidence, no merge`).
+24. Task start/resume validates a stored workspace fingerprint; mismatches are blocked as `workspace_resume_guard_mismatch`.
+25. Repeated no-progress rounds trigger `strategy_shifted` with remediation hints.
+26. Multiple strategy shifts without progress end as `failed_gate` with `loop_no_progress`.
 
 ## 4) Inspect status and timeline
 
@@ -136,6 +139,7 @@ py -m awe_agentcheck.cli events <task_id>
 py -m awe_agentcheck.cli stats
 py -m awe_agentcheck.cli analytics --limit 300
 py -m awe_agentcheck.cli policy-templates --workspace-path "C:/Users/hangw/awe-agentcheck"
+py -m awe_agentcheck.cli benchmark --workspace-path "C:/Users/hangw/awe-agentcheck" --variant-a-name "baseline" --variant-b-name "candidate" --reviewer "claude#review-B"
 py -m awe_agentcheck.cli github-summary <task_id>
 py -m awe_agentcheck.cli tree --workspace-path "C:/Users/hangw/awe-agentcheck" --max-depth 3
 ```
@@ -186,6 +190,9 @@ Task outputs are written to:
 - `.agents/threads/<task_id>/state.json`
 - `.agents/threads/<task_id>/artifacts/pending_proposal.json` (manual mode only)
 - `.agents/threads/<task_id>/artifacts/auto_merge_summary.json` (auto-merge on passed)
+- `.agents/threads/<task_id>/artifacts/evidence_bundle_round_<n>.json` (precompletion evidence bundle per round)
+- `.agents/threads/<task_id>/artifacts/workspace_resume_guard.json` (written when resume guard blocks start)
+- `.agents/threads/<task_id>/artifacts/precompletion_guard_failed.json` (written when evidence guard blocks completion)
 - `.agents/threads/<task_id>/artifacts/rounds/round-<n>.patch` (multi-round manual promote mode)
 - `.agents/threads/<task_id>/artifacts/rounds/round-<n>.md` (multi-round manual promote mode)
 - `.agents/threads/<task_id>/artifacts/rounds/round-<nnn>-snapshot/` (per-round workspace snapshot)
@@ -377,3 +384,9 @@ Reports are written to `.agents/benchmarks/` as:
 
 1. `benchmark-<timestamp>.json`
 2. `benchmark-<timestamp>.md`
+
+Shortcut via CLI wrapper:
+
+```powershell
+py -m awe_agentcheck.cli benchmark --workspace-path "C:/Users/hangw/awe-agentcheck" --variant-a-name "baseline" --variant-b-name "candidate" --reviewer "claude#review-B"
+```

@@ -1,5 +1,34 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-19, evidence-bundle hard gate + workspace resume guard + benchmark CLI wrapper)
+
+1. Evidence bundle hardening completed:
+   - `precompletion_checklist` now persists per-round evidence artifacts:
+     - `artifacts/evidence_bundle_round_<n>.json`
+   - service writes `evidence_bundle_ready` events and stores latest bundle in task state.
+2. No-evidence-no-merge enforcement added:
+   - pass + auto-merge path now validates the latest evidence bundle before fusion.
+   - failed validation blocks completion and records `precompletion_guard_failed.json`.
+3. Workspace resume guard added:
+   - task creation stores `workspace_fingerprint` (project/workspace paths + head signatures).
+   - `start_task` checks fingerprint consistency and blocks drift with:
+     - status `waiting_manual`
+     - reason `workspace_resume_guard_mismatch`
+     - artifact `workspace_resume_guard.json`
+4. CLI benchmark wrapper added:
+   - new command: `py -m awe_agentcheck.cli benchmark ...`
+   - wraps `scripts/benchmark_harness.py` and keeps reports under `.agents/benchmarks/`.
+5. Docs synced:
+   - `README.md`
+   - `README.zh-CN.md`
+   - `docs/RUNBOOK.md`
+   - `docs/GITHUB_ABOUT.md`
+   - `CHANGELOG.auto.md`
+6. Verification:
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_repository_meta.py tests/unit/test_cli.py tests/unit/test_service.py`
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_db_timezone.py`
+   - `py -m ruff check src/awe_agentcheck/service.py src/awe_agentcheck/repository.py src/awe_agentcheck/db.py src/awe_agentcheck/cli.py tests/unit/test_service.py tests/unit/test_cli.py tests/unit/test_repository_meta.py`
+
 ## Update (2026-02-19, full v1 hardening for checklist/adaptive-policy/harness)
 
 1. Added hard pre-completion middleware in workflow:

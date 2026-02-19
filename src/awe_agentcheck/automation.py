@@ -82,6 +82,8 @@ def recommend_process_followup_topic(status: str, reason: str | None) -> str | N
         return 'Improve proposal consensus loop clarity and disagreement resolution'
     if 'precompletion_evidence_missing' in r:
         return 'Improve evidence-path reporting quality before task completion'
+    if 'workspace_resume_guard_mismatch' in r:
+        return 'Investigate workspace drift and stabilize sandbox/resume path consistency'
     if 'loop_no_progress' in r:
         return 'Break loop-no-progress stalls with strategy-shifted remediation'
     if s == 'failed_system':
@@ -153,6 +155,15 @@ def derive_policy_adjustment_from_analytics(
             'self_loop_mode': 0,
             'max_rounds': 1,
             'plain_mode': True,
+        }
+    elif top_bucket in {'workspace_resume_guard_mismatch'}:
+        template = 'safe-review'
+        reason = 'workspace_consistency_cluster'
+        overrides = {
+            'sandbox_mode': True,
+            'self_loop_mode': 0,
+            'plain_mode': True,
+            'max_rounds': 1,
         }
     elif top_bucket in {'tests_failed', 'lint_failed'}:
         template = 'balanced-default'

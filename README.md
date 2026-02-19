@@ -116,6 +116,11 @@
    - new script: `scripts/benchmark_harness.py`
    - fixed benchmark suite: `ops/benchmark_tasks.json`
    - outputs JSON + Markdown comparison reports under `.agents/benchmarks/`.
+25. Added hard evidence/resume reliability guards:
+   - each `precompletion_checklist` now emits persisted evidence artifacts: `artifacts/evidence_bundle_round_<n>.json`.
+   - pass + auto-merge path now validates the latest evidence bundle before fusion (`No evidence, no merge`).
+   - tasks now store a workspace fingerprint; start/resume verifies fingerprint consistency and blocks with `workspace_resume_guard_mismatch` on drift.
+   - new CLI wrapper command: `py -m awe_agentcheck.cli benchmark ...` (runs `scripts/benchmark_harness.py`).
 
 <br/>
 
@@ -626,6 +631,18 @@ py -m awe_agentcheck.cli policy-templates --workspace-path "."
 ```
 
 Returns repo profile and suggested task-control presets by size/risk.
+
+### `benchmark` — Run Fixed A/B Benchmark Harness
+
+```powershell
+py -m awe_agentcheck.cli benchmark `
+  --workspace-path "." `
+  --variant-a-name "baseline" `
+  --variant-b-name "candidate" `
+  --reviewer "claude#review-B"
+```
+
+Runs the fixed benchmark pack and writes JSON/Markdown reports under `.agents/benchmarks/`.
 
 ### `github-summary` — Generate PR-Ready Summary
 

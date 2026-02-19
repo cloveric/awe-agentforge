@@ -44,11 +44,12 @@ create task (queued)
             2) discussion (author CLI)
             3) implementation (author CLI)
             4) review (reviewer CLI(s))
-            5) verify (test command + lint command)
-            6) precompletion checklist (verification + evidence-path hard checks)
-            7) gate (medium policy)
-            repeated no-progress signals -> emit `strategy_shifted` with next-round hint
-            repeated strategy shifts without progress -> `failed_gate` (`loop_no_progress`)
+             5) verify (test command + lint command)
+             6) precompletion checklist (verification + evidence-path hard checks)
+             7) persist `evidence_bundle_round_<n>.json`
+             8) gate (medium policy)
+             repeated no-progress signals -> emit `strategy_shifted` with next-round hint
+             repeated strategy shifts without progress -> `failed_gate` (`loop_no_progress`)
          -> terminal: passed | failed_gate | failed_system | canceled
 
 Task-level strategy controls:
@@ -71,6 +72,13 @@ Task-level strategy controls:
 - `auto_merge`:
   - `1` default, auto-fusion on `passed` (merge/changelog/snapshot)
   - `0` disable fusion and keep task outputs in artifacts/sandbox only
+- start/resume guard:
+  - task stores `workspace_fingerprint` at creation
+  - `start_task` validates fingerprint on resume
+  - mismatch -> `waiting_manual` with `workspace_resume_guard_mismatch`
+- precompletion hard gate:
+  - pass/fusion requires latest evidence bundle
+  - missing/invalid bundle blocks completion (`No evidence, no merge`)
 - multi-round candidate mode:
   - when `max_rounds>1` and `auto_merge=0`, service enforces fresh sandbox isolation
   - per-round artifacts are captured at gate events (`round-N.patch`, `round-N.md`, round snapshots)
@@ -157,6 +165,10 @@ start_overnight_until_7.ps1
 - Web console: `http://127.0.0.1:8000/`
 - Artifacts per task: `.agents/threads/<task_id>/`
 - Round artifacts: `.agents/threads/<task_id>/artifacts/rounds/`
+- Evidence bundles: `.agents/threads/<task_id>/artifacts/evidence_bundle_round_<n>.json`
+- Resume/evidence guard artifacts:
+  - `.agents/threads/<task_id>/artifacts/workspace_resume_guard.json`
+  - `.agents/threads/<task_id>/artifacts/precompletion_guard_failed.json`
 - Overnight logs: `.agents/overnight/`
 - Benchmark harness reports: `.agents/benchmarks/` (A/B regression runs over fixed tasks in `ops/benchmark_tasks.json`)
 

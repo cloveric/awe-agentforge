@@ -42,6 +42,7 @@ class TaskRepository(Protocol):
         project_path: str,
         self_loop_mode: int,
         workspace_path: str,
+        workspace_fingerprint: dict[str, object] | None = None,
         max_rounds: int,
         test_command: str,
         lint_command: str,
@@ -140,6 +141,7 @@ class InMemoryTaskRepository:
         project_path: str,
         self_loop_mode: int,
         workspace_path: str,
+        workspace_fingerprint: dict[str, object] | None = None,
         max_rounds: int,
         test_command: str,
         lint_command: str,
@@ -175,6 +177,11 @@ class InMemoryTaskRepository:
             'project_path': str(project_path).strip() or workspace_path,
             'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
             'workspace_path': workspace_path,
+            'workspace_fingerprint': (
+                {str(k).strip(): v for k, v in dict(workspace_fingerprint or {}).items() if str(k).strip()}
+                if isinstance(workspace_fingerprint, dict)
+                else {}
+            ),
             'status': 'queued',
             'last_gate_reason': None,
             'max_rounds': int(max_rounds),
@@ -323,6 +330,7 @@ def encode_reviewer_meta(
         sandbox_cleanup_on_pass=False,
         project_path='.',
         self_loop_mode=1,
+        workspace_fingerprint=None,
     )
 
 
@@ -352,6 +360,7 @@ def encode_task_meta(
     sandbox_cleanup_on_pass: bool,
     project_path: str,
     self_loop_mode: int,
+    workspace_fingerprint: dict[str, object] | None = None,
 ) -> str:
     payload = {
         'participants': [str(v) for v in reviewer_participants],
@@ -378,6 +387,11 @@ def encode_task_meta(
         'sandbox_cleanup_on_pass': bool(sandbox_cleanup_on_pass),
         'project_path': (str(project_path).strip() if project_path else '.'),
         'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
+        'workspace_fingerprint': (
+            {str(k).strip(): v for k, v in dict(workspace_fingerprint or {}).items() if str(k).strip()}
+            if isinstance(workspace_fingerprint, dict)
+            else {}
+        ),
     }
     return json.dumps(payload, ensure_ascii=True)
 
@@ -417,6 +431,7 @@ def decode_task_meta(raw: str) -> dict:
         'sandbox_cleanup_on_pass': False,
         'project_path': '.',
         'self_loop_mode': 1,
+        'workspace_fingerprint': {},
     }
     try:
         parsed = json.loads(raw)
@@ -514,6 +529,15 @@ def decode_task_meta(raw: str) -> dict:
         sandbox_cleanup_on_pass = bool(parsed.get('sandbox_cleanup_on_pass', False))
         project_path = parsed.get('project_path')
         project_path_text = (str(project_path).strip() if project_path else '.')
+        workspace_fingerprint_raw = parsed.get('workspace_fingerprint', {})
+        if not isinstance(workspace_fingerprint_raw, dict):
+            workspace_fingerprint_raw = {}
+        workspace_fingerprint: dict[str, object] = {}
+        for key, value in workspace_fingerprint_raw.items():
+            label = str(key or '').strip()
+            if not label:
+                continue
+            workspace_fingerprint[label] = value
         self_loop_mode = parsed.get('self_loop_mode', 1)
         try:
             self_loop_mode_int = int(self_loop_mode)
@@ -545,6 +569,7 @@ def decode_task_meta(raw: str) -> dict:
         out['sandbox_cleanup_on_pass'] = sandbox_cleanup_on_pass
         out['project_path'] = project_path_text
         out['self_loop_mode'] = self_loop_mode_int
+        out['workspace_fingerprint'] = workspace_fingerprint
         return out
     return dict(default)
 

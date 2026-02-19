@@ -193,6 +193,12 @@ def test_recommend_process_followup_topic_for_precompletion_evidence_missing():
     assert 'evidence-path' in topic.lower()
 
 
+def test_recommend_process_followup_topic_for_workspace_resume_guard_mismatch():
+    topic = recommend_process_followup_topic('waiting_manual', 'workspace_resume_guard_mismatch')
+    assert topic is not None
+    assert 'workspace drift' in topic.lower()
+
+
 def test_derive_policy_adjustment_from_analytics_timeout_cluster():
     analytics_payload = {
         'failure_taxonomy': [
@@ -225,6 +231,21 @@ def test_derive_policy_adjustment_from_analytics_review_cluster_with_drift():
     assert adjustment['high_drift_participant'] == 'claude#review-B'
     overrides = adjustment.get('task_overrides') or {}
     assert overrides.get('plain_mode') is True
+
+
+def test_derive_policy_adjustment_from_analytics_workspace_consistency_cluster():
+    analytics_payload = {
+        'failure_taxonomy': [
+            {'bucket': 'workspace_resume_guard_mismatch', 'count': 3, 'share': 0.3},
+        ],
+        'reviewer_drift': [],
+    }
+    adjustment = derive_policy_adjustment_from_analytics(analytics_payload, fallback_template='balanced-default')
+    assert adjustment['recommended_template'] == 'safe-review'
+    assert adjustment['reason'] == 'workspace_consistency_cluster'
+    overrides = adjustment.get('task_overrides') or {}
+    assert overrides.get('sandbox_mode') is True
+    assert overrides.get('self_loop_mode') == 0
 
 
 def test_acquire_single_instance_creates_and_releases_lock(tmp_path):

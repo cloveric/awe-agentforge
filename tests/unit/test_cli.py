@@ -139,6 +139,30 @@ def test_cli_parser_supports_policy_templates_command():
     assert args.workspace_path == 'C:/repo'
 
 
+def test_cli_parser_supports_benchmark_command():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            'benchmark',
+            '--workspace-path',
+            'C:/repo',
+            '--variant-a-name',
+            'baseline',
+            '--variant-b-name',
+            'candidate',
+            '--reviewer',
+            'claude#review-B',
+            '--reviewer',
+            'codex#review-C',
+        ]
+    )
+    assert args.command == 'benchmark'
+    assert args.workspace_path == 'C:/repo'
+    assert args.variant_a_name == 'baseline'
+    assert args.variant_b_name == 'candidate'
+    assert args.reviewer == ['claude#review-B', 'codex#review-C']
+
+
 def test_cli_parser_supports_force_fail_command():
     parser = build_parser()
     args = parser.parse_args(['force-fail', 'task-1', '--reason', 'watchdog_timeout'])

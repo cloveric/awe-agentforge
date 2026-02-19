@@ -56,3 +56,23 @@ def test_decode_task_meta_parses_agent_override_maps() -> None:
 
     assert parsed['claude_team_agents_overrides']['claude#review-A'] is True
     assert parsed['codex_multi_agents_overrides']['codex#review-B'] is False
+
+
+def test_decode_task_meta_parses_workspace_fingerprint_map() -> None:
+    raw = json.dumps(
+        {
+            'participants': ['codex#review-A'],
+            'workspace_fingerprint': {
+                'schema': 'workspace_fingerprint.v1',
+                'workspace_path': 'c:/repo',
+                'sandbox_mode': False,
+            },
+        }
+    )
+
+    parsed = decode_task_meta(raw)
+
+    fingerprint = dict(parsed['workspace_fingerprint'])
+    assert fingerprint['schema'] == 'workspace_fingerprint.v1'
+    assert fingerprint['workspace_path'] == 'c:/repo'
+    assert fingerprint['sandbox_mode'] is False

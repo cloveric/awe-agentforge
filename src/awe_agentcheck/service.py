@@ -271,6 +271,8 @@ def _reason_bucket(reason: str | None) -> str | None:
         return 'concurrency_limit'
     if 'author_confirmation_required' in text:
         return 'author_confirmation_required'
+    if 'workspace_resume_guard_mismatch' in text:
+        return 'workspace_resume_guard_mismatch'
     if 'author_rejected' in text:
         return 'author_rejected'
     if 'workflow_error' in text:
@@ -382,6 +384,7 @@ class OrchestratorService:
 
         workspace_root = project_root
         sandbox_root: Path | None = None
+        workspace_fingerprint: dict[str, object] = {}
         try:
             if sandbox_mode:
                 if not sandbox_workspace_path:
@@ -399,6 +402,14 @@ class OrchestratorService:
             else:
                 sandbox_workspace_path = None
                 sandbox_generated = False
+
+            workspace_fingerprint = self._build_workspace_fingerprint(
+                project_root=project_root,
+                workspace_root=Path(workspace_root),
+                sandbox_mode=sandbox_mode,
+                sandbox_workspace_path=sandbox_workspace_path,
+                merge_target_path=merge_target_path,
+            )
 
             row = self.repository.create_task(
                 title=payload.title,
@@ -429,6 +440,7 @@ class OrchestratorService:
                 auto_merge=auto_merge,
                 merge_target_path=merge_target_path,
                 workspace_path=str(workspace_root),
+                workspace_fingerprint=workspace_fingerprint,
                 max_rounds=max_rounds,
                 test_command=payload.test_command,
                 lint_command=payload.lint_command,
@@ -461,6 +473,7 @@ class OrchestratorService:
                     'project_path': row.get('project_path'),
                     'auto_merge': bool(row.get('auto_merge', True)),
                     'merge_target_path': row.get('merge_target_path'),
+                    'workspace_fingerprint': dict(row.get('workspace_fingerprint', workspace_fingerprint)),
                 },
             )
         except Exception:
@@ -1439,10 +1452,16 @@ class OrchestratorService:
             ('final_report', root / 'final_report.md'),
             ('auto_merge_summary', root / 'artifacts' / 'auto_merge_summary.json'),
             ('pending_proposal', root / 'artifacts' / 'pending_proposal.json'),
+            ('workspace_resume_guard', root / 'artifacts' / 'workspace_resume_guard.json'),
+            ('precompletion_guard_failed', root / 'artifacts' / 'precompletion_guard_failed.json'),
         ]
         for name, path in wanted:
             if path.exists() and path.is_file():
                 out.append({'name': name, 'path': str(path)})
+        artifacts_root = root / 'artifacts'
+        if artifacts_root.exists() and artifacts_root.is_dir():
+            for candidate in sorted(artifacts_root.glob('evidence_bundle_round_*.json')):
+                out.append({'name': candidate.stem, 'path': str(candidate)})
         return out
 
     @staticmethod
@@ -1738,6 +1757,41 @@ class OrchestratorService:
         if row['status'] == TaskStatus.WAITING_MANUAL.value:
             return self._to_view(row)
 
+        resume_guard = self._evaluate_workspace_resume_guard(row)
+        if not bool(resume_guard.get('ok', False)):
+            blocked_reason = 'workspace_resume_guard_mismatch'
+            payload = {
+                'reason': blocked_reason,
+                **resume_guard,
+            }
+            updated = self.repository.update_task_status(
+                task_id,
+                status=TaskStatus.WAITING_MANUAL.value,
+                reason=blocked_reason,
+                rounds_completed=row.get('rounds_completed', 0),
+            )
+            self.repository.append_event(
+                task_id,
+                event_type='workspace_resume_guard_blocked',
+                payload=payload,
+                round_number=None,
+            )
+            self.artifact_store.append_event(task_id, {'type': 'workspace_resume_guard_blocked', **payload})
+            self.artifact_store.write_artifact_json(
+                task_id,
+                name='workspace_resume_guard',
+                payload=payload,
+            )
+            self.artifact_store.update_state(
+                task_id,
+                {
+                    'status': TaskStatus.WAITING_MANUAL.value,
+                    'last_gate_reason': blocked_reason,
+                    'workspace_resume_guard_last': payload,
+                },
+            )
+            return self._to_view(updated)
+
         if self.max_concurrent_running_tasks > 0:
             running_now = self._count_running_tasks(exclude_task_id=task_id)
             if running_now >= self.max_concurrent_running_tasks:
@@ -1801,6 +1855,7 @@ class OrchestratorService:
         workspace_root = Path(str(row.get('workspace_path') or Path.cwd()))
         round_artifacts_enabled = int(row.get('max_rounds', 1)) > 1 and not bool(row.get('auto_merge', True))
         round_snapshot_holder: list[Path | None] = [None]
+        latest_evidence_bundle: list[dict | None] = [None]
         if round_artifacts_enabled:
             round_snapshot_holder[0] = self._initialize_round_artifact_baseline(
                 task_id=task_id,
@@ -1828,6 +1883,35 @@ class OrchestratorService:
                     round_number=max(round_no, 1),
                     content=content,
                 )
+            if event_type == 'precompletion_checklist' and round_no > 0:
+                evidence_payload = {
+                    'task_id': task_id,
+                    'round': round_no,
+                    'passed': bool(event.get('passed', False)),
+                    'reason': str(event.get('reason') or '').strip() or 'unknown',
+                    'checks': dict(event.get('checks') or {}),
+                    'evidence_paths': [str(item) for item in list(event.get('evidence_paths') or []) if str(item).strip()],
+                    'workspace_path': str(workspace_root),
+                    'generated_at': datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    artifact_path = self.artifact_store.write_artifact_json(
+                        task_id,
+                        name=f'evidence_bundle_round_{int(round_no)}',
+                        payload=evidence_payload,
+                    )
+                    evidence_payload['artifact_path'] = str(artifact_path)
+                except Exception as exc:
+                    evidence_payload['artifact_error'] = str(exc)
+                latest_evidence_bundle[0] = dict(evidence_payload)
+                self.repository.append_event(
+                    task_id,
+                    event_type='evidence_bundle_ready',
+                    payload=evidence_payload,
+                    round_number=round_no,
+                )
+                self.artifact_store.append_event(task_id, {'type': 'evidence_bundle_ready', **evidence_payload})
+                self.artifact_store.update_state(task_id, {'evidence_bundle_last': evidence_payload})
             if round_artifacts_enabled and event_type in {'gate_passed', 'gate_failed'} and round_no > 0:
                 previous_snapshot = round_snapshot_holder[0]
                 if previous_snapshot is not None:
@@ -1904,8 +1988,35 @@ class OrchestratorService:
             return self.mark_failed_system(task_id, reason=f'workflow_error: {exc}')
 
         final_status = self._map_run_status(result.status)
+        final_reason = result.gate_reason
+        if final_status == TaskStatus.PASSED and isinstance(self.workflow_engine, WorkflowEngine):
+            evidence_guard = self._validate_evidence_bundle(
+                evidence_bundle=latest_evidence_bundle[0],
+                expected_round=max(1, int(result.rounds)),
+            )
+            if not bool(evidence_guard.get('ok', False)):
+                final_status = TaskStatus.FAILED_GATE
+                final_reason = str(evidence_guard.get('reason') or 'precompletion_evidence_missing')
+                evidence_payload = {
+                    'type': 'precompletion_guard_failed',
+                    'reason': final_reason,
+                    'expected_round': max(1, int(result.rounds)),
+                    'evidence_bundle': dict(latest_evidence_bundle[0] or {}),
+                }
+                self.repository.append_event(
+                    task_id,
+                    event_type='precompletion_guard_failed',
+                    payload=evidence_payload,
+                    round_number=max(1, int(result.rounds)),
+                )
+                self.artifact_store.append_event(task_id, evidence_payload)
+                self.artifact_store.write_artifact_json(
+                    task_id,
+                    name='precompletion_guard_failed',
+                    payload=evidence_payload,
+                )
         _log.info('task_finished task_id=%s status=%s rounds=%d reason=%s',
-                  task_id, final_status.value, result.rounds, result.gate_reason)
+                  task_id, final_status.value, result.rounds, final_reason)
 
         # Atomic conditional update: only write the final status if the task
         # is still RUNNING.  If an external force_fail already transitioned it,
@@ -1914,7 +2025,7 @@ class OrchestratorService:
             task_id,
             expected_status=TaskStatus.RUNNING.value,
             status=final_status.value,
-            reason=result.gate_reason,
+            reason=final_reason,
             rounds_completed=result.rounds,
             set_cancel_requested=False,
         )
@@ -1928,14 +2039,14 @@ class OrchestratorService:
             task_id,
             {
                 'status': final_status.value,
-                'last_gate_reason': result.gate_reason,
+                'last_gate_reason': final_reason,
                 'rounds_completed': result.rounds,
                 'cancel_requested': False,
             },
         )
         self.artifact_store.write_final_report(
             task_id,
-            f"status={final_status.value}\nrounds={result.rounds}\nreason={result.gate_reason}",
+            f"status={final_status.value}\nrounds={result.rounds}\nreason={final_reason}",
         )
 
         if final_status == TaskStatus.PASSED and bool(row.get('auto_merge', True)):
@@ -3432,6 +3543,145 @@ class OrchestratorService:
                 return lowered
         provider_map = dict(provider_model_params or {})
         return str(provider_map.get(str(provider or '').strip().lower()) or '').strip() or None
+
+    @staticmethod
+    def _normalize_fingerprint_path(path_text: str | None) -> str:
+        text = str(path_text or '').strip()
+        if not text:
+            return ''
+        try:
+            resolved = Path(text).resolve(strict=False)
+        except Exception:
+            resolved = Path(text)
+        normalized = str(resolved).replace('\\', '/')
+        if os.name == 'nt':
+            normalized = normalized.lower()
+        return normalized
+
+    @staticmethod
+    def _workspace_head_signature(root: Path, *, max_entries: int = 128) -> str:
+        target = Path(root)
+        if not target.exists() or not target.is_dir():
+            return 'missing'
+        parts: list[str] = []
+        try:
+            children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        except OSError:
+            return 'unreadable'
+        for child in children:
+            name = str(child.name or '').strip()
+            if not name:
+                continue
+            if OrchestratorService._is_sandbox_ignored(name):
+                continue
+            kind = 'd' if child.is_dir() else 'f'
+            label = name.lower() if os.name == 'nt' else name
+            parts.append(f'{kind}:{label}')
+            if len(parts) >= max_entries:
+                break
+        payload = '\n'.join(parts)
+        if not payload:
+            return 'empty'
+        return hashlib.sha1(payload.encode('utf-8')).hexdigest()[:20]
+
+    def _build_workspace_fingerprint(
+        self,
+        *,
+        project_root: Path,
+        workspace_root: Path,
+        sandbox_mode: bool,
+        sandbox_workspace_path: str | None,
+        merge_target_path: str | None,
+    ) -> dict[str, object]:
+        project_resolved = Path(project_root).resolve(strict=False)
+        workspace_resolved = Path(workspace_root).resolve(strict=False)
+        return {
+            'schema': 'workspace_fingerprint.v1',
+            'project_path': self._normalize_fingerprint_path(str(project_resolved)),
+            'workspace_path': self._normalize_fingerprint_path(str(workspace_resolved)),
+            'sandbox_mode': bool(sandbox_mode),
+            'sandbox_workspace_path': self._normalize_fingerprint_path(sandbox_workspace_path),
+            'merge_target_path': self._normalize_fingerprint_path(merge_target_path),
+            'project_has_git': bool((project_resolved / '.git').exists()),
+            'workspace_head_signature': self._workspace_head_signature(workspace_resolved),
+            'project_head_signature': self._workspace_head_signature(project_resolved),
+        }
+
+    def _evaluate_workspace_resume_guard(self, row: dict) -> dict[str, object]:
+        expected_raw = row.get('workspace_fingerprint')
+        expected = dict(expected_raw) if isinstance(expected_raw, dict) else {}
+        if not expected:
+            return {
+                'ok': True,
+                'reason': 'workspace_resume_guard_unavailable',
+            }
+
+        project_root = Path(str(row.get('project_path') or row.get('workspace_path') or Path.cwd()))
+        workspace_root = Path(str(row.get('workspace_path') or Path.cwd()))
+        actual = self._build_workspace_fingerprint(
+            project_root=project_root,
+            workspace_root=workspace_root,
+            sandbox_mode=bool(row.get('sandbox_mode', False)),
+            sandbox_workspace_path=(str(row.get('sandbox_workspace_path')).strip() if row.get('sandbox_workspace_path') else None),
+            merge_target_path=(str(row.get('merge_target_path')).strip() if row.get('merge_target_path') else None),
+        )
+
+        compare_fields = [
+            'schema',
+            'project_path',
+            'workspace_path',
+            'sandbox_mode',
+            'sandbox_workspace_path',
+            'merge_target_path',
+            'workspace_head_signature',
+            'project_head_signature',
+            'project_has_git',
+        ]
+        mismatches: list[str] = []
+        for field in compare_fields:
+            if expected.get(field) != actual.get(field):
+                mismatches.append(field)
+
+        if not workspace_root.exists() or not workspace_root.is_dir():
+            mismatches.append('workspace_exists')
+
+        if mismatches:
+            return {
+                'ok': False,
+                'reason': 'workspace_resume_guard_mismatch',
+                'mismatch_fields': sorted(set(mismatches)),
+                'expected': expected,
+                'actual': actual,
+            }
+        return {
+            'ok': True,
+            'reason': 'workspace_resume_guard_passed',
+            'mismatch_fields': [],
+            'expected': expected,
+            'actual': actual,
+        }
+
+    @staticmethod
+    def _validate_evidence_bundle(*, evidence_bundle: dict | None, expected_round: int) -> dict[str, object]:
+        bundle = dict(evidence_bundle or {})
+        if not bundle:
+            return {'ok': False, 'reason': 'precompletion_evidence_missing'}
+        try:
+            bundle_round = int(bundle.get('round') or 0)
+        except Exception:
+            bundle_round = 0
+        if bundle_round != int(expected_round):
+            return {'ok': False, 'reason': 'precompletion_evidence_missing'}
+        if not bool(bundle.get('passed', False)):
+            reason = str(bundle.get('reason') or '').strip() or 'precompletion_evidence_missing'
+            return {'ok': False, 'reason': reason}
+        evidence_paths = [str(item).strip() for item in list(bundle.get('evidence_paths') or []) if str(item).strip()]
+        if not evidence_paths:
+            return {'ok': False, 'reason': 'precompletion_evidence_missing'}
+        checks = dict(bundle.get('checks') or {})
+        if checks and (not bool(checks.get('tests_ok', True)) or not bool(checks.get('lint_ok', True))):
+            return {'ok': False, 'reason': 'precompletion_verification_missing'}
+        return {'ok': True, 'reason': 'passed'}
 
     @staticmethod
     def _default_sandbox_path(project_root: Path) -> str:

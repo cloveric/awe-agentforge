@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
+import subprocess
 import sys
 
 import httpx
@@ -77,6 +79,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     policy = sub.add_parser('policy-templates', help='List policy templates and recommended profile')
     policy.add_argument('--workspace-path', default='.', help='Workspace path')
+
+    benchmark = sub.add_parser('benchmark', help='Run fixed benchmark A/B harness')
+    benchmark.add_argument('--workspace-path', default='.', help='Workspace path')
+    benchmark.add_argument('--tasks-file', default='ops/benchmark_tasks.json', help='Benchmark tasks JSON file')
+    benchmark.add_argument('--report-dir', default='.agents/benchmarks', help='Benchmark report directory')
+    benchmark.add_argument('--variant-a-name', default='A')
+    benchmark.add_argument('--variant-b-name', default='B')
+    benchmark.add_argument('--variant-a-template', default='balanced-default')
+    benchmark.add_argument('--variant-b-template', default='safe-review')
+    benchmark.add_argument('--variant-a-overrides', default='{}', help='JSON map for variant A overrides')
+    benchmark.add_argument('--variant-b-overrides', default='{}', help='JSON map for variant B overrides')
+    benchmark.add_argument('--author', default='codex#author-A')
+    benchmark.add_argument('--reviewer', action='append', default=[], help='Reviewer participant id (repeatable)')
+    benchmark.add_argument('--poll-seconds', type=int, default=5)
+    benchmark.add_argument('--task-timeout-seconds', type=int, default=3600)
+    benchmark.add_argument('--test-command', default='py -m pytest -q')
+    benchmark.add_argument('--lint-command', default='py -m ruff check .')
 
     start = sub.add_parser('start', help='Start an existing task')
     start.add_argument('task_id', help='Task id')
@@ -192,6 +211,53 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     base = args.api_base.rstrip('/')
+
+    if args.command == 'benchmark':
+        repo_root = Path(__file__).resolve().parents[2]
+        harness = repo_root / 'scripts' / 'benchmark_harness.py'
+        if not harness.exists():
+            print(f'benchmark harness script not found: {harness}', file=sys.stderr)
+            return 2
+        cmd = [
+            sys.executable,
+            str(harness),
+            '--api-base',
+            base,
+            '--workspace-path',
+            args.workspace_path,
+            '--tasks-file',
+            args.tasks_file,
+            '--report-dir',
+            args.report_dir,
+            '--variant-a-name',
+            args.variant_a_name,
+            '--variant-b-name',
+            args.variant_b_name,
+            '--variant-a-template',
+            args.variant_a_template,
+            '--variant-b-template',
+            args.variant_b_template,
+            '--variant-a-overrides',
+            args.variant_a_overrides,
+            '--variant-b-overrides',
+            args.variant_b_overrides,
+            '--author',
+            args.author,
+            '--poll-seconds',
+            str(max(1, int(args.poll_seconds))),
+            '--task-timeout-seconds',
+            str(max(60, int(args.task_timeout_seconds))),
+            '--test-command',
+            args.test_command,
+            '--lint-command',
+            args.lint_command,
+        ]
+        for reviewer in list(args.reviewer or []):
+            text = str(reviewer or '').strip()
+            if text:
+                cmd.extend(['--reviewer', text])
+        completed = subprocess.run(cmd, cwd=str(repo_root))
+        return int(completed.returncode or 0)
 
     with httpx.Client(timeout=60) as client:
         if args.command == 'run':
