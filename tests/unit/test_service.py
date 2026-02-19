@@ -236,6 +236,84 @@ class ProposalRetryThenPassWorkflowEngine:
         self.participant_timeout_seconds = 60
 
 
+class ProposalRunnerAlwaysBlocker:
+    def __init__(self):
+        self.calls: list[str] = []
+        self.review_attempts = 0
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            return AdapterResult(
+                output=f'Author proposal iteration {self.review_attempts + 1}.',
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: proposal review.' in str(prompt):
+            self.review_attempts += 1
+            return AdapterResult(
+                output='VERDICT: BLOCKER\nIssue: unresolved auth validation gap persists.',
+                verdict='blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        return AdapterResult(
+            output='VERDICT: NO_BLOCKER\nPrecheck scope established.',
+            verdict='no_blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalAlwaysBlockerWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerAlwaysBlocker()
+        self.participant_timeout_seconds = 60
+
+
+class ProposalRunnerRepeatedRoundIssue:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            return AdapterResult(
+                output='Author proposal revision focused on auth validation coverage.',
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: proposal review.' in str(prompt):
+            return AdapterResult(
+                output='VERDICT: NO_BLOCKER\nIssue focus remains unchanged: auth validation coverage.',
+                verdict='no_blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        return AdapterResult(
+            output='VERDICT: NO_BLOCKER\nPrecheck scope established.',
+            verdict='no_blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalRepeatedRoundIssueWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerRepeatedRoundIssue()
+        self.participant_timeout_seconds = 60
+
+
 class FailingArtifactStore(ArtifactStore):
     def create_task_workspace(self, task_id: str):  # type: ignore[override]
         raise RuntimeError('artifact store failure')
@@ -1814,6 +1892,83 @@ def test_service_manual_mode_keeps_retrying_same_round_until_proposal_consensus(
     assert retries
     assert reached
     assert int(reached[-1].get('payload', {}).get('attempt', 0)) >= 2
+
+
+def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_round(tmp_path: Path):
+    engine = ProposalAlwaysBlockerWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Stall in same round',
+            description='reviewer keeps finding same blocking issue',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'proposal_consensus_stalled_in_round'
+
+    events = svc.list_events(created.task_id)
+    stall_events = [e for e in events if e['type'] == 'proposal_consensus_stalled']
+    assert stall_events
+    payload = stall_events[-1].get('payload', {})
+    assert str(payload.get('stall_kind')) == 'in_round'
+    assert int(payload.get('attempt') or 0) >= 10
+    assert int(payload.get('retry_limit') or 0) == 10
+    assert any(e['type'] == 'author_confirmation_required' for e in events)
+
+    stall_artifact = (
+        tmp_path
+        / '.agents'
+        / 'threads'
+        / created.task_id
+        / 'artifacts'
+        / 'consensus_stall.json'
+    )
+    assert stall_artifact.exists()
+
+
+def test_service_manual_mode_marks_pending_when_same_issue_repeats_across_rounds(tmp_path: Path):
+    engine = ProposalRepeatedRoundIssueWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Repeated issue across rounds',
+            description='same issue should not loop forever across rounds',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=5,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'proposal_consensus_stalled_across_rounds'
+    assert int(started.rounds_completed) >= 4
+
+    events = svc.list_events(created.task_id)
+    stall_events = [e for e in events if e['type'] == 'proposal_consensus_stalled']
+    assert stall_events
+    payload = stall_events[-1].get('payload', {})
+    assert str(payload.get('stall_kind')) == 'across_rounds'
+    assert int(payload.get('repeated_rounds') or 0) >= 4
+    assert str(payload.get('round_signature') or '').strip()
+    assert any(e['type'] == 'author_confirmation_required' for e in events)
 
 
 def test_service_manual_mode_proposal_reviewer_timeout_follows_participant_timeout(tmp_path: Path):

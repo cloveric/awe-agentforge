@@ -78,7 +78,7 @@ def recommend_process_followup_topic(status: str, reason: str | None) -> str | N
         return 'Harden CLI executable detection and command bootstrapping'
     if 'auto_merge_error' in r:
         return 'Improve auto-merge failure recovery and snapshot/changelog safety'
-    if s == 'failed_gate' and 'proposal_consensus_not_reached' in r:
+    if 'proposal_consensus_stalled' in r or ('proposal_consensus_not_reached' in r):
         return 'Improve proposal consensus loop clarity and disagreement resolution'
     if s == 'failed_system':
         return 'Stabilize workflow system-failure handling and recovery'

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import difflib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -158,6 +159,8 @@ _SUPPORTED_CONVERSATION_LANGUAGES = {'en', 'zh'}
 _SUPPORTED_REPAIR_MODES = {'minimal', 'balanced', 'structural'}
 _ARTIFACT_TASK_ID_RE = re.compile(r'^[A-Za-z0-9._-]+$')
 _DEFAULT_POLICY_TEMPLATE = 'balanced-default'
+_PROPOSAL_STALL_RETRY_LIMIT = 10
+_PROPOSAL_REPEAT_ROUNDS_LIMIT = 4
 _POLICY_TEMPLATE_CATALOG: dict[str, dict] = {
     'balanced-default': {
         'id': 'balanced-default',
@@ -1213,6 +1216,8 @@ class OrchestratorService:
         s = str(status or '').strip().lower()
         r = str(reason or '').strip()
         if s == TaskStatus.WAITING_MANUAL.value:
+            if r.startswith('proposal_consensus_stalled'):
+                return ['Proposal discussion stalled. Use Custom Reply + Re-run to provide specific direction, then continue.']
             return ['Approve + Start to continue, or Reject to cancel this proposal.']
         if s == TaskStatus.RUNNING.value:
             return ['Task is still executing. Watch latest stage events or worker logs for progress.']
@@ -2228,6 +2233,8 @@ class OrchestratorService:
         review_payload: list[dict] = []
         consensus_rounds = 0
         target_rounds = max(1, int(row.get('max_rounds', 1)))
+        retry_limit = self._proposal_stall_retry_limit()
+        repeat_round_limit = self._proposal_repeat_rounds_limit()
 
         try:
             runner = getattr(self.workflow_engine, 'runner', None)
@@ -2418,6 +2425,78 @@ class OrchestratorService:
                         f"status={status.value}\nreason={reason}",
                     )
                     return self._to_view(updated)
+
+                def finish_proposal_stalled(
+                    *,
+                    reason: str,
+                    summary_text: str,
+                    rounds_completed: int,
+                    round_number: int | None,
+                    stall_payload: dict,
+                    latest_reviews: list[dict],
+                ) -> TaskView:
+                    waiting = self.repository.update_task_status(
+                        task_id,
+                        status=TaskStatus.WAITING_MANUAL.value,
+                        reason=reason,
+                        rounds_completed=rounds_completed,
+                    )
+                    self.repository.append_event(
+                        task_id,
+                        event_type='proposal_consensus_stalled',
+                        payload=stall_payload,
+                        round_number=round_number,
+                    )
+                    self.artifact_store.append_event(
+                        task_id,
+                        {'type': 'proposal_consensus_stalled', **stall_payload},
+                    )
+                    pending_payload = {
+                        'summary': summary_text,
+                        'self_loop_mode': int(row.get('self_loop_mode', 0)),
+                        'consensus_rounds': rounds_completed,
+                        'target_rounds': target_rounds,
+                        'review_payload': list(latest_reviews),
+                        'author_feedback_note': author_feedback_note,
+                        'stall': stall_payload,
+                    }
+                    self.repository.append_event(
+                        task_id,
+                        event_type='author_confirmation_required',
+                        payload=pending_payload,
+                        round_number=None,
+                    )
+                    self.artifact_store.append_event(
+                        task_id,
+                        {'type': 'author_confirmation_required', **pending_payload},
+                    )
+                    self.artifact_store.write_artifact_json(
+                        task_id,
+                        name='pending_proposal',
+                        payload=pending_payload,
+                    )
+                    self.artifact_store.write_artifact_json(
+                        task_id,
+                        name='consensus_stall',
+                        payload={'reason': reason, **stall_payload},
+                    )
+                    self.artifact_store.update_state(
+                        task_id,
+                        {
+                            'status': TaskStatus.WAITING_MANUAL.value,
+                            'last_gate_reason': reason,
+                            'rounds_completed': rounds_completed,
+                            'pending_proposal': pending_payload,
+                        },
+                    )
+                    self.artifact_store.write_final_report(
+                        task_id,
+                        f"status={TaskStatus.WAITING_MANUAL.value}\nreason={reason}",
+                    )
+                    return self._to_view(waiting)
+
+                last_round_signature = ''
+                repeated_signature_rounds = 0
 
                 while consensus_rounds < target_rounds:
                     round_no = consensus_rounds + 1
@@ -2672,6 +2751,45 @@ class OrchestratorService:
                                 round_number=round_no,
                             )
                             self.artifact_store.append_event(task_id, {'type': 'proposal_consensus_reached', **ok_payload})
+                            round_signature = self._proposal_round_signature(
+                                actionable_reviews,
+                                proposal_text=round_latest_proposal,
+                            )
+                            if round_signature:
+                                if round_signature == last_round_signature:
+                                    repeated_signature_rounds += 1
+                                else:
+                                    last_round_signature = round_signature
+                                    repeated_signature_rounds = 1
+                            else:
+                                last_round_signature = ''
+                                repeated_signature_rounds = 0
+                            if target_rounds > 1 and round_signature and repeated_signature_rounds >= repeat_round_limit:
+                                proposal_preview = WorkflowEngine._clip_text(round_latest_proposal, max_chars=800).strip()
+                                stall_summary = (
+                                    f"Task: {str(row.get('title') or '')}\n"
+                                    f"Consensus stalled across rounds: repeated issue signature for {repeated_signature_rounds} rounds.\n"
+                                    f"Consensus rounds completed: {consensus_rounds}/{target_rounds}\n"
+                                    f"Latest proposal preview:\n{proposal_preview}"
+                                )
+                                stall_payload = {
+                                    'stall_kind': 'across_rounds',
+                                    'round': round_no,
+                                    'attempt': attempt,
+                                    'repeated_rounds': repeated_signature_rounds,
+                                    'repeat_round_limit': repeat_round_limit,
+                                    'round_signature': round_signature,
+                                    'latest_reviews': list(actionable_reviews),
+                                }
+                                review_payload = list(actionable_reviews)
+                                return finish_proposal_stalled(
+                                    reason='proposal_consensus_stalled_across_rounds',
+                                    summary_text=stall_summary,
+                                    rounds_completed=consensus_rounds,
+                                    round_number=round_no,
+                                    stall_payload=stall_payload,
+                                    latest_reviews=list(actionable_reviews),
+                                )
                         else:
                             retry_payload = {
                                 'round': round_no,
@@ -2694,6 +2812,35 @@ class OrchestratorService:
                                 reviewer_id='consensus',
                                 review_text=f'unresolved blockers={blocker}, unknown={unknown}',
                             )
+                            if attempt >= retry_limit:
+                                proposal_preview = WorkflowEngine._clip_text(round_latest_proposal, max_chars=800).strip()
+                                stall_summary = (
+                                    f"Task: {str(row.get('title') or '')}\n"
+                                    f"Consensus stalled in round {round_no}: reached retry limit ({retry_limit}).\n"
+                                    f"Consensus rounds completed: {consensus_rounds}/{target_rounds}\n"
+                                    f"Latest proposal preview:\n{proposal_preview}"
+                                )
+                                stall_payload = {
+                                    'stall_kind': 'in_round',
+                                    'round': round_no,
+                                    'attempt': attempt,
+                                    'retry_limit': retry_limit,
+                                    'verdicts': {
+                                        'no_blocker': no_blocker,
+                                        'blocker': blocker,
+                                        'unknown': unknown,
+                                    },
+                                    'latest_reviews': list(actionable_reviews),
+                                }
+                                review_payload = list(actionable_reviews)
+                                return finish_proposal_stalled(
+                                    reason='proposal_consensus_stalled_in_round',
+                                    summary_text=stall_summary,
+                                    rounds_completed=consensus_rounds,
+                                    round_number=round_no,
+                                    stall_payload=stall_payload,
+                                    latest_reviews=list(actionable_reviews),
+                                )
 
                 discussion_text = current_seed
 
@@ -3519,6 +3666,34 @@ class OrchestratorService:
             if OrchestratorService._is_actionable_proposal_review_text(str(item.get('output') or '')):
                 usable += 1
         return usable
+
+    @staticmethod
+    def _proposal_stall_retry_limit() -> int:
+        return _PROPOSAL_STALL_RETRY_LIMIT
+
+    @staticmethod
+    def _proposal_repeat_rounds_limit() -> int:
+        return _PROPOSAL_REPEAT_ROUNDS_LIMIT
+
+    @staticmethod
+    def _proposal_round_signature(review_payload: list[dict], *, proposal_text: str) -> str:
+        parts: list[str] = []
+        for item in review_payload:
+            participant = str(item.get('participant') or '').strip().lower()
+            verdict = str(item.get('verdict') or '').strip().lower()
+            text = str(item.get('output') or '').strip().lower()
+            text = re.sub(r'\s+', ' ', text)
+            if len(text) > 300:
+                text = text[:300]
+            parts.append(f'{participant}|{verdict}|{text}')
+
+        proposal = re.sub(r'\s+', ' ', str(proposal_text or '').strip().lower())
+        if len(proposal) > 200:
+            proposal = proposal[:200]
+        payload = '\n'.join(sorted(parts) + [f'proposal|{proposal}'])
+        if not payload.strip():
+            return ''
+        return hashlib.sha1(payload.encode('utf-8')).hexdigest()[:16]
 
     @staticmethod
     def _is_actionable_proposal_review_text(text: str) -> bool:

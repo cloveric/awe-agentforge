@@ -1,5 +1,28 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-19, consensus stall safeguards + docs/homepage refresh)
+
+1. Proposal consensus loop now has explicit pending/stall exits instead of open-ended retries:
+   - same-round unresolved retries >= 10 -> `waiting_manual` with `last_gate_reason=proposal_consensus_stalled_in_round`
+   - repeated same-issue signature across consensus rounds >= 4 -> `waiting_manual` with `last_gate_reason=proposal_consensus_stalled_across_rounds`
+2. Added explicit observability + artifacts for stalled consensus:
+   - event: `proposal_consensus_stalled`
+   - artifact: `artifacts/consensus_stall.json`
+   - pending payload includes `stall` details and is still written to `pending_proposal.json`.
+3. Manual-mode operator guidance improved:
+   - `waiting_manual + proposal_consensus_stalled*` now maps to actionable next step text (`Custom Reply + Re-run`).
+4. Follow-up recommendation logic updated:
+   - automation now recognizes `proposal_consensus_stalled*` reasons for process hardening topics.
+5. Test coverage added:
+   - same-round stall guard test
+   - cross-round repeated-issue stall guard test.
+6. Documentation and homepage sync:
+   - README EN/CN latest update moved to 2026-02-19.
+   - RUNBOOK/ARCHITECTURE updated with new stall semantics and operator recovery path.
+7. Verification:
+   - `py -m pytest -q tests/unit/test_service.py tests/unit/test_automation.py`
+   - `py -m ruff check src/awe_agentcheck/service.py src/awe_agentcheck/automation.py tests/unit/test_service.py`
+
 ## Update (2026-02-19, manual custom reply path + create-help sync)
 
 1. Added third manual decision path for `waiting_manual` tasks:

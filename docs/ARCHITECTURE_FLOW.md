@@ -1,6 +1,6 @@
 # Architecture Flow
 
-Date: 2026-02-18
+Date: 2026-02-19
 
 ## 1) Control Plane
 
@@ -29,7 +29,10 @@ create task (queued)
            2) author proposal/reply
            3) reviewer proposal review
         round counted only on reviewer consensus
-        same-round retry until consensus; early stop only on cancel/deadline or reviewer outputs fully unavailable
+        same-round retry until consensus, with stall guards:
+          - 10+ retries in one round -> waiting_manual (proposal_consensus_stalled_in_round)
+          - same issue signature repeated across 4+ consensus rounds -> waiting_manual (proposal_consensus_stalled_across_rounds)
+          - reviewer outputs fully unavailable still fail fast (proposal_precheck_unavailable / proposal_review_unavailable)
        after target consensus rounds -> waiting_manual
        author decision:
          approve -> queued -> start task (running, full workflow)

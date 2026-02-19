@@ -44,7 +44,7 @@
 
 <br/>
 
-## Latest Update (2026-02-18)
+## Latest Update (2026-02-19)
 
 1. Default model profiles are now stronger and explicit:
    - Claude default command pins `claude-opus-4-6`
@@ -80,9 +80,10 @@
 14. Reviewer-first alignment is now explicit:
    - when `debate_mode=1`, reviewers precheck first and author responds with a revised plan.
    - author remains the implementation owner; reviewers do not write final code changes.
-15. Manual mode semantics were tightened:
+15. Manual mode consensus now has explicit stall safeguards:
    - in `self_loop_mode=0`, `max_rounds` means required proposal consensus rounds (not just one discussion pass).
-   - one consensus round keeps iterating inside the same round until reviewers align; it stops early only on cancel/deadline or when reviewer outputs are fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
+   - if one round keeps bouncing for 10+ retries without alignment, task is paused at `waiting_manual` with reason `proposal_consensus_stalled_in_round`, and a `consensus_stall` artifact is written.
+   - if the same issue signature repeats across 4+ consensus rounds, task is paused at `waiting_manual` with reason `proposal_consensus_stalled_across_rounds`, with highlighted stall logs/artifacts.
 16. Added richer proposal-stage events for observability:
    - `proposal_precheck_review*`
    - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_review_partial`
@@ -857,7 +858,8 @@ This is the recommended mode for most use cases:
    - reviewers evaluate proposal quality/alignment (`proposal_review`)
 3. **Consensus rule**:
    - one round is counted only when all required reviewers return pass-level consensus
-   - same-round retries continue until alignment; task exits early only on cancel/deadline or reviewer outputs fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`)
+   - same-round retries continue until alignment, but now have a 10-retry stall guard (`proposal_consensus_stalled_in_round`)
+   - repeated same-issue consensus across rounds has a 4-round stall guard (`proposal_consensus_stalled_across_rounds`)
 4. **Wait for human** → after required consensus rounds are complete, status becomes `waiting_manual`
 5. **Author decides**:
    - **Approve** → status becomes `queued` (with `author_approved` reason), then immediately re-starts into the full workflow

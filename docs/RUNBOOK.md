@@ -1,6 +1,6 @@
 # Runbook (Operator)
 
-Date: 2026-02-18
+Date: 2026-02-19
 
 ## Purpose
 
@@ -104,7 +104,10 @@ Default policy:
 4. User-specified sandbox path is preserved by default.
 5. `self_loop_mode=0` runs proposal-consensus rounds first, then enters `waiting_manual`.
 6. With `debate_mode=1`, proposal stage is reviewer-first (`proposal_precheck_review` -> author revision -> `proposal_review`).
-7. One consensus round is counted only when required reviewers align; same-round retries continue until alignment, cancellation/deadline, or reviewer outputs are fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
+7. One consensus round is counted only when required reviewers align; same-round retries now include a stall guard:
+   - 10+ unresolved retries in one round -> `waiting_manual` (`proposal_consensus_stalled_in_round`)
+   - repeated same-issue signature across 4+ consensus rounds -> `waiting_manual` (`proposal_consensus_stalled_across_rounds`)
+   - reviewer outputs fully unavailable still fail fast (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
 8. Author must approve before full implementation loop starts.
 9. In full loop, author is still the implementation actor and reviewers remain evaluators.
 10. `repair_mode` defaults to `balanced`; choose `minimal` or `structural` per risk appetite.
@@ -164,6 +167,7 @@ Capabilities:
 14. `GitHub / PR Summary` card provides PR-ready markdown and artifact links for selected task.
 15. `Advanced Analytics` card visualizes failure taxonomy trends and reviewer drift signals.
 16. `Promote Round` control is enabled only for terminal tasks with `max_rounds>1` and `auto_merge=0`.
+17. When proposal consensus stalls, `Custom Reply + Re-run` is the intended recovery path; stall details are saved in `artifacts/consensus_stall.json`.
 
 ## 7) Artifacts
 

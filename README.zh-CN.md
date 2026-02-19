@@ -44,7 +44,7 @@
 
 <br/>
 
-## 最新更新（2026-02-18）
+## 最新更新（2026-02-19）
 
 1. 默认模型策略升级并显式化：
    - Claude 默认命令固定 `claude-opus-4-6`
@@ -80,9 +80,10 @@
 14. 明确 reviewer-first 语义：
    - 当 `debate_mode=1` 时，先由审阅者做预审，再由作者基于反馈修订方案。
    - 最终代码实现仍由作者执行，审阅者不直接写入最终改动。
-15. 手动模式语义收紧：
+15. 手动模式共识加入明确“卡住保护”：
    - 在 `self_loop_mode=0` 下，`max_rounds` 表示“提案共识轮次目标”，不再是单次讨论上限。
-   - 单轮会在同一轮内持续重试直到达成共识；仅在取消/截止时间到达，或审阅输出全部不可用（`proposal_precheck_unavailable` / `proposal_review_unavailable`）时提前结束。
+   - 若同一轮重试达到 10 次仍未对齐，任务会以 `proposal_consensus_stalled_in_round` 进入 `waiting_manual`，并写入 `consensus_stall` 工件。
+   - 若跨轮出现同一问题签名连续 4 轮以上重复，任务会以 `proposal_consensus_stalled_across_rounds` 进入 `waiting_manual`，并记录高亮停滞日志/工件。
 16. 新增提案阶段可观测事件：
    - `proposal_precheck_review*`
    - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_review_partial`
@@ -857,7 +858,8 @@ POST /api/tasks
    - 审阅者进行提案评审（`proposal_review`）
 3. **共识规则**：
    - 仅当所有必需审阅者都给出通过级结论时，才计为一轮共识完成
-   - 在同一轮内持续重试直到对齐；仅在取消/到达截止时间，或审阅输出全部不可用（`proposal_precheck_unavailable` / `proposal_review_unavailable`）时提前结束
+   - 同一轮内会持续重试直到对齐，但现在有 10 次重试停滞保护（`proposal_consensus_stalled_in_round`）
+   - 若跨轮反复围绕同一问题，则有 4 轮重复停滞保护（`proposal_consensus_stalled_across_rounds`）
 4. **等待人工** → 达到目标共识轮后，状态变为 `waiting_manual`
 5. **作者决定**：
    - **批准** → 状态变为 `queued`（原因为 `author_approved`），然后立即重新启动进入完整工作流
