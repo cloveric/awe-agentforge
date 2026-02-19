@@ -50,6 +50,8 @@ class CreateTaskInput:
     participant_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
     codex_multi_agents: bool = False
+    claude_team_agents_overrides: dict[str, bool] | None = None
+    codex_multi_agents_overrides: dict[str, bool] | None = None
     repair_mode: str = 'balanced'
     plain_mode: bool = True
     stream_mode: bool = True
@@ -89,6 +91,8 @@ class TaskView:
     participant_model_params: dict[str, str]
     claude_team_agents: bool
     codex_multi_agents: bool
+    claude_team_agents_overrides: dict[str, bool]
+    codex_multi_agents_overrides: dict[str, bool]
     repair_mode: str
     plain_mode: bool
     stream_mode: bool
@@ -337,6 +341,18 @@ class OrchestratorService:
         )
         claude_team_agents = bool(payload.claude_team_agents)
         codex_multi_agents = bool(payload.codex_multi_agents)
+        claude_team_agents_overrides = self._normalize_participant_agent_overrides(
+            payload.claude_team_agents_overrides,
+            known_participants=known_participants,
+            required_provider='claude',
+            field='claude_team_agents_overrides',
+        )
+        codex_multi_agents_overrides = self._normalize_participant_agent_overrides(
+            payload.codex_multi_agents_overrides,
+            known_participants=known_participants,
+            required_provider='codex',
+            field='codex_multi_agents_overrides',
+        )
         repair_mode = self._normalize_repair_mode(payload.repair_mode, strict=True)
         plain_mode = self._normalize_plain_mode(payload.plain_mode)
         stream_mode = self._normalize_bool_flag(payload.stream_mode, default=True)
@@ -398,6 +414,8 @@ class OrchestratorService:
                 participant_model_params=participant_model_params,
                 claude_team_agents=claude_team_agents,
                 codex_multi_agents=codex_multi_agents,
+                claude_team_agents_overrides=claude_team_agents_overrides,
+                codex_multi_agents_overrides=codex_multi_agents_overrides,
                 repair_mode=repair_mode,
                 plain_mode=plain_mode,
                 stream_mode=stream_mode,
@@ -429,6 +447,8 @@ class OrchestratorService:
                     'participant_model_params': dict(row.get('participant_model_params', {})),
                     'claude_team_agents': bool(row.get('claude_team_agents', False)),
                     'codex_multi_agents': bool(row.get('codex_multi_agents', False)),
+                    'claude_team_agents_overrides': dict(row.get('claude_team_agents_overrides', {})),
+                    'codex_multi_agents_overrides': dict(row.get('codex_multi_agents_overrides', {})),
                     'repair_mode': str(row.get('repair_mode') or 'balanced'),
                     'plain_mode': bool(row.get('plain_mode', True)),
                     'stream_mode': bool(row.get('stream_mode', True)),
@@ -1865,6 +1885,8 @@ class OrchestratorService:
                     participant_model_params=dict(row.get('participant_model_params', {})),
                     claude_team_agents=bool(row.get('claude_team_agents', False)),
                     codex_multi_agents=bool(row.get('codex_multi_agents', False)),
+                    claude_team_agents_overrides=dict(row.get('claude_team_agents_overrides', {})),
+                    codex_multi_agents_overrides=dict(row.get('codex_multi_agents_overrides', {})),
                     repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
                     plain_mode=self._normalize_plain_mode(row.get('plain_mode')),
                     stream_mode=self._normalize_bool_flag(row.get('stream_mode', True), default=True),
@@ -2303,6 +2325,8 @@ class OrchestratorService:
                 participant_model_params=dict(row.get('participant_model_params', {})),
                 claude_team_agents=bool(row.get('claude_team_agents', False)),
                 codex_multi_agents=bool(row.get('codex_multi_agents', False)),
+                claude_team_agents_overrides=dict(row.get('claude_team_agents_overrides', {})),
+                codex_multi_agents_overrides=dict(row.get('codex_multi_agents_overrides', {})),
                 repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
                 plain_mode=self._normalize_plain_mode(row.get('plain_mode')),
                 stream_mode=self._normalize_bool_flag(row.get('stream_mode', True), default=True),
@@ -2313,6 +2337,12 @@ class OrchestratorService:
                 lint_command=str(row.get('lint_command', 'py -m ruff check .')),
             )
             proposal_environment_context = WorkflowEngine._environment_context(config)
+            claude_team_agents_overrides = self._normalize_participant_agent_overrides_runtime(
+                config.claude_team_agents_overrides
+            )
+            codex_multi_agents_overrides = self._normalize_participant_agent_overrides_runtime(
+                config.codex_multi_agents_overrides
+            )
 
             discussion_text = str(row.get('description') or '').strip()
             author_feedback_note = self._latest_author_feedback_note(task_id)
@@ -2378,8 +2408,16 @@ class OrchestratorService:
                                     provider_model_params=config.provider_model_params,
                                     participant_model_params=config.participant_model_params,
                                 ),
-                                claude_team_agents=bool(config.claude_team_agents),
-                                codex_multi_agents=bool(config.codex_multi_agents),
+                                claude_team_agents=self._resolve_agent_toggle_for_participant(
+                                    participant_id=reviewer.participant_id,
+                                    global_enabled=bool(config.claude_team_agents),
+                                    overrides=claude_team_agents_overrides,
+                                ),
+                                codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                                    participant_id=reviewer.participant_id,
+                                    global_enabled=bool(config.codex_multi_agents),
+                                    overrides=codex_multi_agents_overrides,
+                                ),
                                 on_stream=(
                                     WorkflowEngine._stream_emitter(
                                         emit=emit_runtime_event,
@@ -2696,8 +2734,16 @@ class OrchestratorService:
                                     provider_model_params=config.provider_model_params,
                                     participant_model_params=config.participant_model_params,
                                 ),
-                                claude_team_agents=bool(config.claude_team_agents),
-                                codex_multi_agents=bool(config.codex_multi_agents),
+                                claude_team_agents=self._resolve_agent_toggle_for_participant(
+                                    participant_id=author.participant_id,
+                                    global_enabled=bool(config.claude_team_agents),
+                                    overrides=claude_team_agents_overrides,
+                                ),
+                                codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                                    participant_id=author.participant_id,
+                                    global_enabled=bool(config.codex_multi_agents),
+                                    overrides=codex_multi_agents_overrides,
+                                ),
                                 on_stream=(
                                     WorkflowEngine._stream_emitter(
                                         emit=emit_runtime_event,
@@ -3260,6 +3306,92 @@ class OrchestratorService:
                 )
             out[participant] = params
         return out
+
+    @staticmethod
+    def _normalize_participant_agent_overrides(
+        value: dict[str, bool] | None,
+        *,
+        known_participants: set[str],
+        required_provider: str,
+        field: str,
+    ) -> dict[str, bool]:
+        if not value:
+            return {}
+        if not isinstance(value, dict):
+            raise InputValidationError(f'{field} must be an object', field=field)
+
+        known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+        known_map = {v.lower(): v for v in known}
+        provider_required = str(required_provider or '').strip().lower()
+        out: dict[str, bool] = {}
+        for raw_participant, raw_enabled in value.items():
+            participant = str(raw_participant or '').strip()
+            if not participant:
+                raise InputValidationError(
+                    f'{field} key cannot be empty',
+                    field=field,
+                )
+            canonical = known_map.get(participant.lower())
+            if not canonical:
+                raise InputValidationError(
+                    f'{field} key is not in task participants: {participant}',
+                    field=field,
+                )
+            provider = str(canonical.split('#', 1)[0] if '#' in canonical else '').strip().lower()
+            if provider != provider_required:
+                raise InputValidationError(
+                    f'{field}[{canonical}] must target provider={provider_required}',
+                    field=f'{field}[{canonical}]',
+                )
+            enabled = OrchestratorService._coerce_bool_override_value(
+                raw_enabled,
+                field=f'{field}[{canonical}]',
+            )
+            out[canonical] = enabled
+        return out
+
+    @staticmethod
+    def _coerce_bool_override_value(value, *, field: str) -> bool:
+        if isinstance(value, bool):
+            return value
+        text = str(value or '').strip().lower()
+        if text in {'1', 'true', 'yes', 'on'}:
+            return True
+        if text in {'0', 'false', 'no', 'off'}:
+            return False
+        raise InputValidationError(
+            f'{field} must be boolean',
+            field=field,
+        )
+
+    @staticmethod
+    def _normalize_participant_agent_overrides_runtime(value: dict[str, bool] | None) -> dict[str, bool]:
+        out: dict[str, bool] = {}
+        for raw_participant, raw_enabled in (value or {}).items():
+            participant = str(raw_participant or '').strip()
+            if not participant:
+                continue
+            lowered = participant.lower()
+            enabled = bool(raw_enabled)
+            out[participant] = enabled
+            out[lowered] = enabled
+        return out
+
+    @staticmethod
+    def _resolve_agent_toggle_for_participant(
+        *,
+        participant_id: str,
+        global_enabled: bool,
+        overrides: dict[str, bool],
+    ) -> bool:
+        participant = str(participant_id or '').strip()
+        if participant:
+            if participant in overrides:
+                return bool(overrides[participant])
+            lowered = participant.lower()
+            if lowered in overrides:
+                return bool(overrides[lowered])
+        return bool(global_enabled)
 
     @staticmethod
     def _resolve_model_for_participant(
@@ -3955,6 +4087,8 @@ class OrchestratorService:
             participant_model_params={str(k): str(v) for k, v in dict(row.get('participant_model_params', {})).items()},
             claude_team_agents=bool(row.get('claude_team_agents', False)),
             codex_multi_agents=bool(row.get('codex_multi_agents', False)),
+            claude_team_agents_overrides={str(k): bool(v) for k, v in dict(row.get('claude_team_agents_overrides', {})).items()},
+            codex_multi_agents_overrides={str(k): bool(v) for k, v in dict(row.get('codex_multi_agents_overrides', {})).items()},
             repair_mode=OrchestratorService._normalize_repair_mode(row.get('repair_mode')),
             plain_mode=OrchestratorService._normalize_plain_mode(row.get('plain_mode', True)),
             stream_mode=OrchestratorService._normalize_bool_flag(row.get('stream_mode', True), default=True),

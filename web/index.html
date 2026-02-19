@@ -795,6 +795,40 @@
       word-break: break-word;
     }
 
+    .reviewer-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .reviewer-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .reviewer-tools {
+      margin-top: 8px;
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .reviewer-remove-btn {
+      border: 1px solid rgba(252, 101, 101, 0.45);
+      background: rgba(36, 10, 10, 0.78);
+      color: #ff9b9b;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .reviewer-remove-btn:hover {
+      background: rgba(54, 12, 12, 0.9);
+      color: #ffd0d0;
+    }
+
     .participant-matrix {
       display: grid;
       gap: 8px;
@@ -2345,8 +2379,13 @@
               <input id="author" value="codex#author-A" />
             </div>
             <div style="flex:1; min-width:220px;">
-              <label for="reviewers">Reviewers (comma-separated: claude/codex/gemini)</label>
-              <input id="reviewers" value="claude#review-B,gemini#review-C" />
+              <label for="reviewers">Reviewers</label>
+              <input id="reviewers" value="claude#review-B,gemini#review-C" type="hidden" />
+              <div id="reviewerList" class="reviewer-list"></div>
+              <div class="reviewer-tools">
+                <button id="addReviewerBtn" type="button">+ Add Reviewer</button>
+              </div>
+              <div class="mini-status">Add one or more reviewer participants (example: claude#review-B).</div>
             </div>
           </div>
           <div class="controls-row">
@@ -2645,6 +2684,8 @@
       workspacePath: document.getElementById('workspacePath'),
       author: document.getElementById('author'),
       reviewers: document.getElementById('reviewers'),
+      reviewerList: document.getElementById('reviewerList'),
+      addReviewerBtn: document.getElementById('addReviewerBtn'),
       selfLoopMode: document.getElementById('selfLoopMode'),
       claudeModel: document.getElementById('claudeModel'),
       codexModel: document.getElementById('codexModel'),
@@ -2656,6 +2697,7 @@
       codexModelParams: document.getElementById('codexModelParams'),
       geminiModelParams: document.getElementById('geminiModelParams'),
       participantCapabilityMatrix: document.getElementById('participantCapabilityMatrix'),
+      claudeTeamAgents: document.getElementById('claudeTeamAgents'),
       codexMultiAgents: document.getElementById('codexMultiAgents'),
       sandboxMode: document.getElementById('sandboxMode'),
       autoMerge: document.getElementById('autoMerge'),
@@ -2702,8 +2744,8 @@
       },
       {
         field: 'Reviewers',
-        en: 'One or more review roles, comma-separated. They challenge and evaluate the author output.',
-        zh: '一个或多个审阅角色，逗号分隔。用于质疑与评估作者输出。',
+        en: 'One or more review roles. Use "+ Add Reviewer" to append rows. They challenge and evaluate the author output.',
+        zh: '一个或多个审阅角色。点击“+ Add Reviewer”增加行，用于质疑与评估作者输出。',
       },
       {
         field: 'Policy Template',
@@ -2722,8 +2764,8 @@
       },
       {
         field: 'Bot Capability Matrix',
-        en: 'Role-level override matrix. Configure model/params per participant (author or each reviewer). Participant values override provider defaults.',
-        zh: '角色级覆盖矩阵。可为 Author 或每个 Reviewer 单独配置 model/params。角色配置优先于提供者默认值。',
+        en: 'Role-level override matrix. Configure model/params per participant and set Claude/Codex multi-agent toggles per bot (inherit/on/off). Participant values override provider defaults.',
+        zh: '角色级覆盖矩阵。可按参与者配置 model/params，并可为每个 bot 设置 Claude/Codex 多智能体开关（继承/开启/关闭）。参与者配置优先于提供者默认值。',
       },
       {
         field: 'Claude Team Agents',
@@ -3071,6 +3113,76 @@
       return out;
     }
 
+    function normalizeParticipantIdList(values) {
+      const out = [];
+      const seen = new Set();
+      for (const raw of values || []) {
+        const value = String(raw || '').trim();
+        if (!value) continue;
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(value);
+      }
+      return out;
+    }
+
+    function parseReviewerIdsFromHiddenField() {
+      const text = String((el.reviewers && el.reviewers.value) || '');
+      return normalizeParticipantIdList(text.split(',').map((v) => String(v || '').trim()));
+    }
+
+    function reviewerInputsFromEditor() {
+      if (!el.reviewerList) return [];
+      return Array.from(el.reviewerList.querySelectorAll('[data-reviewer-input]'));
+    }
+
+    function readReviewerParticipantsFromEditor() {
+      const values = reviewerInputsFromEditor()
+        .map((node) => String(node.value || '').trim());
+      return normalizeParticipantIdList(values);
+    }
+
+    function syncReviewersHiddenInputFromEditor() {
+      if (!el.reviewers) return [];
+      const reviewers = readReviewerParticipantsFromEditor();
+      el.reviewers.value = reviewers.join(',');
+      return reviewers;
+    }
+
+    function renderReviewerEditor(values, options = {}) {
+      if (!el.reviewerList) return;
+      const addBlankRow = !!options.addBlankRow;
+      const normalized = normalizeParticipantIdList(values);
+      const rows = (addBlankRow || !normalized.length)
+        ? [...normalized, '']
+        : normalized;
+      el.reviewerList.innerHTML = rows.map((reviewerId, idx) => `
+        <div class="reviewer-row" data-reviewer-row="${idx}">
+          <input
+            data-reviewer-input="1"
+            value="${escapeHtml(String(reviewerId || ''))}"
+            placeholder="provider#review-X (e.g. claude#review-B)"
+          />
+          <button class="reviewer-remove-btn" data-reviewer-remove="${idx}" type="button">Remove</button>
+        </div>
+      `).join('');
+      if (el.reviewers) {
+        el.reviewers.value = normalizeParticipantIdList(rows).join(',');
+      }
+    }
+
+    function readReviewerParticipantsFromForm() {
+      const editorValues = readReviewerParticipantsFromEditor();
+      if (editorValues.length) {
+        if (el.reviewers) {
+          el.reviewers.value = editorValues.join(',');
+        }
+        return editorValues;
+      }
+      return parseReviewerIdsFromHiddenField();
+    }
+
     function parseTaskParticipantsFromForm() {
       const out = [];
       const seen = new Set();
@@ -3079,10 +3191,7 @@
         seen.add(author);
         out.push(author);
       }
-      const reviewers = String((el.reviewers && el.reviewers.value) || '')
-        .split(',')
-        .map((v) => String(v || '').trim())
-        .filter(Boolean);
+      const reviewers = readReviewerParticipantsFromForm();
       for (const reviewer of reviewers) {
         if (seen.has(reviewer)) continue;
         seen.add(reviewer);
@@ -3137,6 +3246,8 @@
           model: String((payload && payload.model) || '').trim(),
           customModel: String((payload && payload.customModel) || '').trim(),
           params: String((payload && payload.params) || '').trim(),
+          claudeAgentsMode: String((payload && payload.claudeAgentsMode) || 'inherit').trim().toLowerCase() || 'inherit',
+          codexMultiAgentsMode: String((payload && payload.codexMultiAgentsMode) || 'inherit').trim().toLowerCase() || 'inherit',
         };
       }
       state.participantCapabilityDraft = next;
@@ -3163,6 +3274,18 @@
             ? draft.params
             : defaults.params
         ).trim();
+        const globalClaudeAgents = Number((el.claudeTeamAgents && el.claudeTeamAgents.value) || 0) === 1;
+        const globalCodexMultiAgents = Number((el.codexMultiAgents && el.codexMultiAgents.value) || 0) === 1;
+        const claudeToggleDisabled = provider !== 'claude';
+        const codexToggleDisabled = provider !== 'codex';
+        const claudeAgentsModeRaw = String(draft.claudeAgentsMode || 'inherit').trim().toLowerCase();
+        const codexMultiAgentsModeRaw = String(draft.codexMultiAgentsMode || 'inherit').trim().toLowerCase();
+        const claudeAgentsMode = claudeToggleDisabled
+          ? 'inherit'
+          : (['inherit', '1', '0'].includes(claudeAgentsModeRaw) ? claudeAgentsModeRaw : 'inherit');
+        const codexMultiAgentsMode = codexToggleDisabled
+          ? 'inherit'
+          : (['inherit', '1', '0'].includes(codexMultiAgentsModeRaw) ? codexMultiAgentsModeRaw : 'inherit');
         const options = participantModelOptions(provider, selectedModel);
         const optionHtml = options
           .map((model) => `<option value="${escapeHtml(model)}"${model === selectedModel ? ' selected' : ''}>${escapeHtml(model)}</option>`)
@@ -3196,6 +3319,30 @@
                   value="${escapeHtml(params)}"
                   placeholder="optional CLI params"
                 />
+              </div>
+              <div>
+                <label>Claude Team Agents</label>
+                <select
+                  data-participant="${escapeHtml(participantId)}"
+                  data-field="claudeAgentsMode"
+                  ${claudeToggleDisabled ? 'disabled' : ''}
+                >
+                  <option value="inherit"${claudeAgentsMode === 'inherit' ? ' selected' : ''}>inherit (${globalClaudeAgents ? 1 : 0})</option>
+                  <option value="1"${claudeAgentsMode === '1' ? ' selected' : ''}>1 | on</option>
+                  <option value="0"${claudeAgentsMode === '0' ? ' selected' : ''}>0 | off</option>
+                </select>
+              </div>
+              <div>
+                <label>Codex Multi Agents</label>
+                <select
+                  data-participant="${escapeHtml(participantId)}"
+                  data-field="codexMultiAgentsMode"
+                  ${codexToggleDisabled ? 'disabled' : ''}
+                >
+                  <option value="inherit"${codexMultiAgentsMode === 'inherit' ? ' selected' : ''}>inherit (${globalCodexMultiAgents ? 1 : 0})</option>
+                  <option value="1"${codexMultiAgentsMode === '1' ? ' selected' : ''}>1 | on</option>
+                  <option value="0"${codexMultiAgentsMode === '0' ? ' selected' : ''}>0 | off</option>
+                </select>
               </div>
             </div>
           </div>
@@ -3233,6 +3380,25 @@
         const params = String(node.value || '').trim();
         if (participant && params) {
           out[participant] = params;
+        }
+      }
+      return out;
+    }
+
+    function readParticipantAgentOverridesFromForm(field) {
+      const out = {};
+      if (!el.participantCapabilityMatrix) return out;
+      const rows = el.participantCapabilityMatrix.querySelectorAll(`[data-participant][data-field="${field}"]`);
+      for (const node of rows) {
+        const participant = String(node.getAttribute('data-participant') || '').trim();
+        const mode = String(node.value || '').trim().toLowerCase();
+        if (!participant) continue;
+        if (mode === '1') {
+          out[participant] = true;
+          continue;
+        }
+        if (mode === '0') {
+          out[participant] = false;
         }
       }
       return out;
@@ -3328,6 +3494,15 @@
         .filter(([participant, params]) => participant && params);
       if (!entries.length) return 'n/a';
       return entries.map(([participant, params]) => `${participant}=${params}`).join(' | ');
+    }
+
+    function formatParticipantBoolOverrides(value) {
+      const obj = value && typeof value === 'object' ? value : {};
+      const entries = Object.entries(obj)
+        .map(([participant, enabled]) => [String(participant || '').trim(), !!enabled])
+        .filter(([participant]) => participant);
+      if (!entries.length) return 'n/a';
+      return entries.map(([participant, enabled]) => `${participant}=${enabled ? 1 : 0}`).join(' | ');
     }
 
     function hashText(text) {
@@ -4358,6 +4533,8 @@
         participant_model_params: {},
         claude_team_agents: false,
         codex_multi_agents: false,
+        claude_team_agents_overrides: {},
+        codex_multi_agents_overrides: {},
         repair_mode: 'balanced',
         plain_mode: true,
         stream_mode: true,
@@ -4799,6 +4976,8 @@
         { label: 'ParticipantModelParams', value: formatParticipantModelParams(task.participant_model_params) },
         { label: 'ClaudeAgents', value: String(task.claude_team_agents ? 1 : 0) },
         { label: 'CodexMultiAgents', value: String(task.codex_multi_agents ? 1 : 0) },
+        { label: 'ClaudeAgentsOverrides', value: formatParticipantBoolOverrides(task.claude_team_agents_overrides) },
+        { label: 'CodexMultiOverrides', value: formatParticipantBoolOverrides(task.codex_multi_agents_overrides) },
         { label: 'AutoMerge', value: String(task.auto_merge !== false ? 1 : 0) },
         { label: 'MergeTarget', value: task.merge_target_path || 'in-place' },
         { label: 'Author', value: task.author_participant },
@@ -5905,7 +6084,7 @@
         title: document.getElementById('title').value,
         description: document.getElementById('description').value,
         author_participant: document.getElementById('author').value,
-        reviewer_participants: document.getElementById('reviewers').value.split(',').map((v) => v.trim()).filter(Boolean),
+        reviewer_participants: readReviewerParticipantsFromForm(),
         evolution_level: Number(document.getElementById('evolutionLevel').value || 0),
         evolve_until: (evolveUntilRaw || null),
         conversation_language: String(document.getElementById('conversationLanguage').value || 'en').trim().toLowerCase() || 'en',
@@ -5915,6 +6094,8 @@
         participant_model_params: readParticipantModelParamsFromForm(),
         claude_team_agents: Number(document.getElementById('claudeTeamAgents').value || 0) === 1,
         codex_multi_agents: Number(document.getElementById('codexMultiAgents').value || 0) === 1,
+        claude_team_agents_overrides: readParticipantAgentOverridesFromForm('claudeAgentsMode'),
+        codex_multi_agents_overrides: readParticipantAgentOverridesFromForm('codexMultiAgentsMode'),
         repair_mode: String(document.getElementById('repairMode').value || 'balanced').trim().toLowerCase() || 'balanced',
         plain_mode: Number(document.getElementById('plainMode').value || 1) === 1,
         stream_mode: Number(document.getElementById('streamMode').value || 1) === 1,
@@ -5958,6 +6139,8 @@
         model: String(current.model || '').trim(),
         customModel: String(current.customModel || '').trim(),
         params: String(current.params || '').trim(),
+        claudeAgentsMode: String(current.claudeAgentsMode || 'inherit').trim().toLowerCase() || 'inherit',
+        codexMultiAgentsMode: String(current.codexMultiAgentsMode || 'inherit').trim().toLowerCase() || 'inherit',
       };
       state.participantCapabilityDraft[participant][field] = value;
     }
@@ -6126,6 +6309,55 @@
       el.author.addEventListener('input', () => renderParticipantCapabilityMatrix());
       el.author.addEventListener('change', () => renderParticipantCapabilityMatrix());
     }
+    if (el.addReviewerBtn) {
+      el.addReviewerBtn.addEventListener('click', () => {
+        const current = readReviewerParticipantsFromEditor();
+        renderReviewerEditor(current, { addBlankRow: true });
+        const inputs = reviewerInputsFromEditor();
+        if (inputs.length) {
+          const target = inputs[inputs.length - 1];
+          if (target && typeof target.focus === 'function') {
+            target.focus();
+          }
+        }
+        syncReviewersHiddenInputFromEditor();
+        renderParticipantCapabilityMatrix();
+      });
+    }
+    if (el.reviewerList) {
+      el.reviewerList.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.hasAttribute('data-reviewer-input')) return;
+        syncReviewersHiddenInputFromEditor();
+        renderParticipantCapabilityMatrix();
+      });
+      el.reviewerList.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.hasAttribute('data-reviewer-input')) return;
+        syncReviewersHiddenInputFromEditor();
+        renderParticipantCapabilityMatrix();
+      });
+      el.reviewerList.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const raw = String(target.getAttribute('data-reviewer-remove') || '').trim();
+        if (!raw) return;
+        const index = Number(raw);
+        if (!Number.isFinite(index) || index < 0) return;
+        const current = reviewerInputsFromEditor().map((node) => String(node.value || '').trim());
+        const next = [];
+        for (let i = 0; i < current.length; i += 1) {
+          if (i === index) continue;
+          next.push(current[i]);
+        }
+        const hasAnyNonEmpty = next.some((value) => String(value || '').trim());
+        renderReviewerEditor(next, { addBlankRow: !hasAnyNonEmpty });
+        syncReviewersHiddenInputFromEditor();
+        renderParticipantCapabilityMatrix();
+      });
+    }
     if (el.reviewers) {
       el.reviewers.addEventListener('input', () => renderParticipantCapabilityMatrix());
       el.reviewers.addEventListener('change', () => renderParticipantCapabilityMatrix());
@@ -6140,6 +6372,8 @@
       el.claudeModelParams,
       el.codexModelParams,
       el.geminiModelParams,
+      el.claudeTeamAgents,
+      el.codexMultiAgents,
     ]) {
       if (!field) continue;
       field.addEventListener('input', () => renderParticipantCapabilityMatrix());
@@ -6165,6 +6399,7 @@
     if (el.evolveUntil && !String(el.evolveUntil.value || '').trim()) {
       el.evolveUntil.value = computeDefaultEvolveUntil();
     }
+    renderReviewerEditor(parseReviewerIdsFromHiddenField(), { addBlankRow: false });
     if (el.sandboxMode) {
       el.sandboxMode.addEventListener('change', () => syncCreateTaskPolicyControls('sandboxMode'));
     }

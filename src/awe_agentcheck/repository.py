@@ -27,6 +27,8 @@ class TaskRepository(Protocol):
         participant_model_params: dict[str, str] | None = None,
         claude_team_agents: bool,
         codex_multi_agents: bool,
+        claude_team_agents_overrides: dict[str, bool] | None = None,
+        codex_multi_agents_overrides: dict[str, bool] | None = None,
         repair_mode: str,
         plain_mode: bool,
         stream_mode: bool,
@@ -123,6 +125,8 @@ class InMemoryTaskRepository:
         participant_model_params: dict[str, str] | None = None,
         claude_team_agents: bool,
         codex_multi_agents: bool,
+        claude_team_agents_overrides: dict[str, bool] | None = None,
+        codex_multi_agents_overrides: dict[str, bool] | None = None,
         repair_mode: str,
         plain_mode: bool,
         stream_mode: bool,
@@ -156,6 +160,8 @@ class InMemoryTaskRepository:
             'participant_model_params': {str(k).strip(): str(v).strip() for k, v in (participant_model_params or {}).items() if str(k).strip() and str(v).strip()},
             'claude_team_agents': bool(claude_team_agents),
             'codex_multi_agents': bool(codex_multi_agents),
+            'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (claude_team_agents_overrides or {}).items() if str(k).strip()},
+            'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (codex_multi_agents_overrides or {}).items() if str(k).strip()},
             'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
             'plain_mode': bool(plain_mode),
             'stream_mode': bool(stream_mode),
@@ -332,6 +338,8 @@ def encode_task_meta(
     conversation_language: str,
     claude_team_agents: bool,
     codex_multi_agents: bool,
+    claude_team_agents_overrides: dict[str, bool] | None = None,
+    codex_multi_agents_overrides: dict[str, bool] | None = None,
     repair_mode: str,
     plain_mode: bool,
     stream_mode: bool,
@@ -356,6 +364,8 @@ def encode_task_meta(
         'participant_model_params': {str(k).strip(): str(v).strip() for k, v in (participant_model_params or {}).items() if str(k).strip() and str(v).strip()},
         'claude_team_agents': bool(claude_team_agents),
         'codex_multi_agents': bool(codex_multi_agents),
+        'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (claude_team_agents_overrides or {}).items() if str(k).strip()},
+        'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (codex_multi_agents_overrides or {}).items() if str(k).strip()},
         'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
         'plain_mode': bool(plain_mode),
         'stream_mode': bool(stream_mode),
@@ -393,6 +403,8 @@ def decode_task_meta(raw: str) -> dict:
         'participant_model_params': {},
         'claude_team_agents': False,
         'codex_multi_agents': False,
+        'claude_team_agents_overrides': {},
+        'codex_multi_agents_overrides': {},
         'repair_mode': 'balanced',
         'plain_mode': True,
         'stream_mode': True,
@@ -469,6 +481,24 @@ def decode_task_meta(raw: str) -> dict:
                 participant_model_params_out[participant] = params
         claude_team_agents = _coerce_meta_bool(parsed.get('claude_team_agents', False), default=False)
         codex_multi_agents = _coerce_meta_bool(parsed.get('codex_multi_agents', False), default=False)
+        claude_team_agents_overrides_raw = parsed.get('claude_team_agents_overrides', {})
+        if not isinstance(claude_team_agents_overrides_raw, dict):
+            claude_team_agents_overrides_raw = {}
+        claude_team_agents_overrides: dict[str, bool] = {}
+        for key, raw in claude_team_agents_overrides_raw.items():
+            participant = str(key or '').strip()
+            if not participant:
+                continue
+            claude_team_agents_overrides[participant] = _coerce_meta_bool(raw, default=False)
+        codex_multi_agents_overrides_raw = parsed.get('codex_multi_agents_overrides', {})
+        if not isinstance(codex_multi_agents_overrides_raw, dict):
+            codex_multi_agents_overrides_raw = {}
+        codex_multi_agents_overrides: dict[str, bool] = {}
+        for key, raw in codex_multi_agents_overrides_raw.items():
+            participant = str(key or '').strip()
+            if not participant:
+                continue
+            codex_multi_agents_overrides[participant] = _coerce_meta_bool(raw, default=False)
         repair_mode = str(parsed.get('repair_mode') or 'balanced').strip().lower() or 'balanced'
         if repair_mode not in {'minimal', 'balanced', 'structural'}:
             repair_mode = 'balanced'
@@ -501,6 +531,8 @@ def decode_task_meta(raw: str) -> dict:
         out['participant_model_params'] = participant_model_params_out
         out['claude_team_agents'] = claude_team_agents
         out['codex_multi_agents'] = codex_multi_agents
+        out['claude_team_agents_overrides'] = claude_team_agents_overrides
+        out['codex_multi_agents_overrides'] = codex_multi_agents_overrides
         out['repair_mode'] = repair_mode
         out['plain_mode'] = plain_mode
         out['stream_mode'] = stream_mode

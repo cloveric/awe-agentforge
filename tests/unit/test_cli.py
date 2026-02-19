@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from awe_agentcheck.cli import _parse_provider_model_params, _parse_provider_models, build_parser
+from awe_agentcheck.cli import (
+    _parse_participant_agent_overrides,
+    _parse_provider_model_params,
+    _parse_provider_models,
+    build_parser,
+)
 
 
 def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
@@ -38,6 +43,10 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
             '1',
             '--codex-multi-agents',
             '1',
+            '--claude-team-agent-override',
+            'claude#author-A=1',
+            '--codex-multi-agent-override',
+            'codex#review-B=0',
             '--no-plain-mode',
             '--merge-target-path',
             'C:/Users/hangw/awe-agentcheck',
@@ -57,6 +66,8 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
     assert args.provider_model_param == ['codex=-c model_reasoning_effort=high']
     assert args.claude_team_agents == 1
     assert args.codex_multi_agents == 1
+    assert args.claude_team_agent_override == ['claude#author-A=1']
+    assert args.codex_multi_agent_override == ['codex#review-B=0']
     assert args.plain_mode is False
     assert args.stream_mode is True
     assert args.debate_mode is True
@@ -181,3 +192,12 @@ def test_cli_parse_provider_model_params_supports_extra_provider_from_env(monkey
     monkeypatch.setenv('AWE_PROVIDER_ADAPTERS_JSON', '{"qwen":"qwen-cli --yolo"}')
     parsed = _parse_provider_model_params(['qwen=--temperature 0.2'])
     assert parsed['qwen'] == '--temperature 0.2'
+
+
+def test_cli_parse_participant_agent_overrides_accepts_boolean_values():
+    parsed = _parse_participant_agent_overrides(
+        ['claude#author-A=true', 'codex#review-B=0'],
+        flag_name='--claude-team-agent-override',
+    )
+    assert parsed['claude#author-A'] is True
+    assert parsed['codex#review-B'] is False

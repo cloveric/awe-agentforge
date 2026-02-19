@@ -40,6 +40,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument('--provider-model-param', action='append', default=[], help='Provider model params in provider=args format (repeatable)')
     run.add_argument('--claude-team-agents', type=int, default=0, choices=[0, 1], help='Enable Claude --agents mode for Claude participants')
     run.add_argument('--codex-multi-agents', type=int, default=0, choices=[0, 1], help='Enable Codex --enable multi_agent mode for Codex participants')
+    run.add_argument(
+        '--claude-team-agent-override',
+        action='append',
+        default=[],
+        help='Participant override in participant=0|1 format (repeatable)',
+    )
+    run.add_argument(
+        '--codex-multi-agent-override',
+        action='append',
+        default=[],
+        help='Participant override in participant=0|1 format (repeatable)',
+    )
     run.add_argument('--repair-mode', default='balanced', choices=['minimal', 'balanced', 'structural'], help='Repair policy: minimal, balanced, structural')
     run.add_argument('--plain-mode', action=argparse.BooleanOptionalAction, default=True, help='Enable beginner-friendly plain output formatting (default: on)')
     run.add_argument('--stream-mode', action=argparse.BooleanOptionalAction, default=True, help='Enable streaming conversation events (default: on)')
@@ -153,6 +165,29 @@ def _parse_provider_model_params(values: list[str] | None) -> dict[str, str]:
     return out
 
 
+def _parse_participant_agent_overrides(values: list[str] | None, *, flag_name: str) -> dict[str, bool]:
+    out: dict[str, bool] = {}
+    for raw in values or []:
+        text = str(raw or '').strip()
+        if not text:
+            continue
+        if '=' not in text:
+            raise ValueError(f'invalid {flag_name} value: {text} (expected participant=0|1)')
+        participant_raw, enabled_raw = text.split('=', 1)
+        participant = participant_raw.strip()
+        enabled_text = enabled_raw.strip().lower()
+        if not participant:
+            raise ValueError(f'invalid {flag_name} participant: {text}')
+        if enabled_text in {'1', 'true', 'yes', 'on'}:
+            enabled = True
+        elif enabled_text in {'0', 'false', 'no', 'off'}:
+            enabled = False
+        else:
+            raise ValueError(f'invalid {flag_name} enabled value for {participant}: {enabled_raw}')
+        out[participant] = enabled
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -163,6 +198,14 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 provider_models = _parse_provider_models(args.provider_model)
                 provider_model_params = _parse_provider_model_params(args.provider_model_param)
+                claude_team_agents_overrides = _parse_participant_agent_overrides(
+                    args.claude_team_agent_override,
+                    flag_name='--claude-team-agent-override',
+                )
+                codex_multi_agents_overrides = _parse_participant_agent_overrides(
+                    args.codex_multi_agent_override,
+                    flag_name='--codex-multi-agent-override',
+                )
             except ValueError as exc:
                 parser.error(str(exc))
                 return 2
@@ -180,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
                     'provider_model_params': provider_model_params,
                     'claude_team_agents': int(args.claude_team_agents) == 1,
                     'codex_multi_agents': int(args.codex_multi_agents) == 1,
+                    'claude_team_agents_overrides': claude_team_agents_overrides,
+                    'codex_multi_agents_overrides': codex_multi_agents_overrides,
                     'repair_mode': str(args.repair_mode).strip().lower() or 'balanced',
                     'plain_mode': bool(args.plain_mode),
                     'stream_mode': bool(args.stream_mode),

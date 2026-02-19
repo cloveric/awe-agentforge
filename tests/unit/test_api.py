@@ -478,6 +478,12 @@ def test_api_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path
             },
             'claude_team_agents': True,
             'codex_multi_agents': True,
+            'claude_team_agents_overrides': {
+                'claude#author-A': True,
+            },
+            'codex_multi_agents_overrides': {
+                'codex#review-B': False,
+            },
             'sandbox_mode': False,
             'self_loop_mode': 1,
             'auto_start': False,
@@ -496,6 +502,8 @@ def test_api_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path
     assert body['conversation_language'] == 'zh'
     assert body['claude_team_agents'] is True
     assert body['codex_multi_agents'] is True
+    assert body['claude_team_agents_overrides']['claude#author-A'] is True
+    assert body['codex_multi_agents_overrides']['codex#review-B'] is False
 
 
 def test_api_create_task_accepts_repair_mode(tmp_path: Path):

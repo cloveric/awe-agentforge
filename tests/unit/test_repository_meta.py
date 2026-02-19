@@ -37,3 +37,22 @@ def test_decode_task_meta_defaults_booleans_for_null_values() -> None:
     assert parsed['plain_mode'] is True
     assert parsed['stream_mode'] is True
     assert parsed['debate_mode'] is True
+
+
+def test_decode_task_meta_parses_agent_override_maps() -> None:
+    raw = json.dumps(
+        {
+            'participants': ['claude#review-A', 'codex#review-B'],
+            'claude_team_agents_overrides': {
+                'claude#review-A': 'true',
+            },
+            'codex_multi_agents_overrides': {
+                'codex#review-B': '0',
+            },
+        }
+    )
+
+    parsed = decode_task_meta(raw)
+
+    assert parsed['claude_team_agents_overrides']['claude#review-A'] is True
+    assert parsed['codex_multi_agents_overrides']['codex#review-B'] is False

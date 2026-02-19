@@ -35,6 +35,8 @@ class CreateTaskRequest(BaseModel):
     participant_model_params: dict[str, str] = Field(default_factory=dict)
     claude_team_agents: bool = Field(default=False)
     codex_multi_agents: bool = Field(default=False)
+    claude_team_agents_overrides: dict[str, bool] = Field(default_factory=dict)
+    codex_multi_agents_overrides: dict[str, bool] = Field(default_factory=dict)
     repair_mode: str = Field(default='balanced', min_length=3, max_length=32)
     plain_mode: bool = Field(default=True)
     stream_mode: bool = Field(default=True)
@@ -107,6 +109,8 @@ class TaskResponse(BaseModel):
     participant_model_params: dict[str, str]
     claude_team_agents: bool
     codex_multi_agents: bool
+    claude_team_agents_overrides: dict[str, bool]
+    codex_multi_agents_overrides: dict[str, bool]
     repair_mode: str
     plain_mode: bool
     stream_mode: bool
@@ -350,6 +354,8 @@ def _to_task_response(task) -> TaskResponse:
         participant_model_params=task.participant_model_params,
         claude_team_agents=task.claude_team_agents,
         codex_multi_agents=task.codex_multi_agents,
+        claude_team_agents_overrides=task.claude_team_agents_overrides,
+        codex_multi_agents_overrides=task.codex_multi_agents_overrides,
         repair_mode=task.repair_mode,
         plain_mode=task.plain_mode,
         stream_mode=task.stream_mode,
@@ -539,6 +545,8 @@ def create_app(
                 participant_model_params=payload.participant_model_params,
                 claude_team_agents=payload.claude_team_agents,
                 codex_multi_agents=payload.codex_multi_agents,
+                claude_team_agents_overrides=payload.claude_team_agents_overrides,
+                codex_multi_agents_overrides=payload.codex_multi_agents_overrides,
                 repair_mode=payload.repair_mode,
                 plain_mode=payload.plain_mode,
                 stream_mode=payload.stream_mode,

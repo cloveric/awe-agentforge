@@ -416,6 +416,8 @@ def test_service_create_task_accepts_provider_models_and_team_agent_toggles(tmp_
             provider_models={'claude': 'claude-sonnet-4-5', 'codex': 'gpt-5-codex', 'gemini': 'gemini-2.5-pro'},
             claude_team_agents=True,
             codex_multi_agents=True,
+            claude_team_agents_overrides={'claude#author-A': True},
+            codex_multi_agents_overrides={'codex#review-B': False},
         )
     )
     assert task.provider_models.get('claude') == 'claude-sonnet-4-5'
@@ -423,6 +425,8 @@ def test_service_create_task_accepts_provider_models_and_team_agent_toggles(tmp_
     assert task.provider_models.get('gemini') == 'gemini-2.5-pro'
     assert task.claude_team_agents is True
     assert task.codex_multi_agents is True
+    assert task.claude_team_agents_overrides.get('claude#author-A') is True
+    assert task.codex_multi_agents_overrides.get('codex#review-B') is False
 
 
 def test_service_create_task_accepts_provider_model_params(tmp_path: Path):
@@ -647,6 +651,21 @@ def test_service_create_task_rejects_participant_model_param_for_non_task_partic
                 author_participant='claude#author-A',
                 reviewer_participants=['codex#review-B'],
                 participant_model_params={'codex#review-Z': '-c model_reasoning_effort=xhigh'},
+            )
+        )
+
+def test_service_create_task_rejects_agent_override_for_non_matching_provider(tmp_path: Path):
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match='must target provider=claude'):
+        svc.create_task(
+            CreateTaskInput(
+                sandbox_mode=False,
+                self_loop_mode=1,
+                title='Bad claude override provider',
+                description='claude override should only target claude participants',
+                author_participant='codex#author-A',
+                reviewer_participants=['codex#review-B'],
+                claude_team_agents_overrides={'codex#review-B': True},
             )
         )
 

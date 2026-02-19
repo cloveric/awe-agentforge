@@ -144,6 +144,8 @@ class RunConfig:
     participant_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
     codex_multi_agents: bool = False
+    claude_team_agents_overrides: dict[str, bool] | None = None
+    codex_multi_agents_overrides: dict[str, bool] | None = None
     repair_mode: str = 'balanced'
     plain_mode: bool = True
     stream_mode: bool = False
@@ -233,6 +235,12 @@ class WorkflowEngine:
         provider_model_params = self._normalize_provider_model_params(config.provider_model_params)
         participant_models = self._normalize_participant_models(config.participant_models)
         participant_model_params = self._normalize_participant_model_params(config.participant_model_params)
+        claude_team_agents_overrides = self._normalize_participant_agent_overrides(
+            config.claude_team_agents_overrides
+        )
+        codex_multi_agents_overrides = self._normalize_participant_agent_overrides(
+            config.codex_multi_agents_overrides
+        )
         environment_context = self._environment_context(config)
         loop_tracker = self._new_loop_tracker()
         strategy_hint: str | None = None
@@ -309,8 +317,16 @@ class WorkflowEngine:
                                 provider_model_params=provider_model_params,
                                 participant_model_params=participant_model_params,
                             ),
-                            claude_team_agents=bool(config.claude_team_agents),
-                            codex_multi_agents=bool(config.codex_multi_agents),
+                            claude_team_agents=self._resolve_agent_toggle_for_participant(
+                                participant=reviewer,
+                                global_enabled=bool(config.claude_team_agents),
+                                overrides=claude_team_agents_overrides,
+                            ),
+                            codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                                participant=reviewer,
+                                global_enabled=bool(config.codex_multi_agents),
+                                overrides=codex_multi_agents_overrides,
+                            ),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,
@@ -425,8 +441,16 @@ class WorkflowEngine:
                         provider_model_params=provider_model_params,
                         participant_model_params=participant_model_params,
                     ),
-                    claude_team_agents=bool(config.claude_team_agents),
-                    codex_multi_agents=bool(config.codex_multi_agents),
+                    claude_team_agents=self._resolve_agent_toggle_for_participant(
+                        participant=config.author,
+                        global_enabled=bool(config.claude_team_agents),
+                        overrides=claude_team_agents_overrides,
+                    ),
+                    codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                        participant=config.author,
+                        global_enabled=bool(config.codex_multi_agents),
+                        overrides=codex_multi_agents_overrides,
+                    ),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -488,8 +512,16 @@ class WorkflowEngine:
                         provider_model_params=provider_model_params,
                         participant_model_params=participant_model_params,
                     ),
-                    claude_team_agents=bool(config.claude_team_agents),
-                    codex_multi_agents=bool(config.codex_multi_agents),
+                    claude_team_agents=self._resolve_agent_toggle_for_participant(
+                        participant=config.author,
+                        global_enabled=bool(config.claude_team_agents),
+                        overrides=claude_team_agents_overrides,
+                    ),
+                    codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                        participant=config.author,
+                        global_enabled=bool(config.codex_multi_agents),
+                        overrides=codex_multi_agents_overrides,
+                    ),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -551,8 +583,16 @@ class WorkflowEngine:
                                 provider_model_params=provider_model_params,
                                 participant_model_params=participant_model_params,
                             ),
-                            claude_team_agents=bool(config.claude_team_agents),
-                            codex_multi_agents=bool(config.codex_multi_agents),
+                            claude_team_agents=self._resolve_agent_toggle_for_participant(
+                                participant=reviewer,
+                                global_enabled=bool(config.claude_team_agents),
+                                overrides=claude_team_agents_overrides,
+                            ),
+                            codex_multi_agents=self._resolve_agent_toggle_for_participant(
+                                participant=reviewer,
+                                global_enabled=bool(config.codex_multi_agents),
+                                overrides=codex_multi_agents_overrides,
+                            ),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,
@@ -1579,6 +1619,38 @@ class WorkflowEngine:
             out[participant] = params
             out.setdefault(participant.lower(), params)
         return out
+
+    @staticmethod
+    def _normalize_participant_agent_overrides(value: dict[str, bool] | None) -> dict[str, bool]:
+        out: dict[str, bool] = {}
+        for key, raw in (value or {}).items():
+            participant = str(key or '').strip()
+            if not participant:
+                continue
+            if isinstance(raw, bool):
+                enabled = raw
+            else:
+                text = str(raw or '').strip().lower()
+                enabled = text in {'1', 'true', 'yes', 'on'}
+            out[participant] = enabled
+            out[participant.lower()] = enabled
+        return out
+
+    @staticmethod
+    def _resolve_agent_toggle_for_participant(
+        *,
+        participant: Participant,
+        global_enabled: bool,
+        overrides: dict[str, bool],
+    ) -> bool:
+        participant_id = str(participant.participant_id or '').strip()
+        if participant_id:
+            if participant_id in overrides:
+                return bool(overrides[participant_id])
+            lowered = participant_id.lower()
+            if lowered in overrides:
+                return bool(overrides[lowered])
+        return bool(global_enabled)
 
     @staticmethod
     def _resolve_model_for_participant(
