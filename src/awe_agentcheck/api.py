@@ -31,6 +31,8 @@ class CreateTaskRequest(BaseModel):
     conversation_language: str = Field(default='en', min_length=2, max_length=16)
     provider_models: dict[str, str] = Field(default_factory=dict)
     provider_model_params: dict[str, str] = Field(default_factory=dict)
+    participant_models: dict[str, str] = Field(default_factory=dict)
+    participant_model_params: dict[str, str] = Field(default_factory=dict)
     claude_team_agents: bool = Field(default=False)
     codex_multi_agents: bool = Field(default=False)
     repair_mode: str = Field(default='balanced', min_length=3, max_length=32)
@@ -101,6 +103,8 @@ class TaskResponse(BaseModel):
     conversation_language: str
     provider_models: dict[str, str]
     provider_model_params: dict[str, str]
+    participant_models: dict[str, str]
+    participant_model_params: dict[str, str]
     claude_team_agents: bool
     codex_multi_agents: bool
     repair_mode: str
@@ -342,6 +346,8 @@ def _to_task_response(task) -> TaskResponse:
         conversation_language=task.conversation_language,
         provider_models=task.provider_models,
         provider_model_params=task.provider_model_params,
+        participant_models=task.participant_models,
+        participant_model_params=task.participant_model_params,
         claude_team_agents=task.claude_team_agents,
         codex_multi_agents=task.codex_multi_agents,
         repair_mode=task.repair_mode,
@@ -529,6 +535,8 @@ def create_app(
                 conversation_language=payload.conversation_language,
                 provider_models=payload.provider_models,
                 provider_model_params=payload.provider_model_params,
+                participant_models=payload.participant_models,
+                participant_model_params=payload.participant_model_params,
                 claude_team_agents=payload.claude_team_agents,
                 codex_multi_agents=payload.codex_multi_agents,
                 repair_mode=payload.repair_mode,

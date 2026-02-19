@@ -467,6 +467,15 @@ def test_api_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path
                 'codex': '-c model_reasoning_effort=high',
                 'gemini': '--approval-mode yolo',
             },
+            'participant_models': {
+                'claude#author-A': 'claude-sonnet-4-5',
+                'codex#review-B': 'gpt-5.3-codex',
+                'gemini#review-C': 'gemini-3-pro-preview',
+            },
+            'participant_model_params': {
+                'claude#author-A': '--temperature 0.1',
+                'codex#review-B': '-c model_reasoning_effort=xhigh',
+            },
             'claude_team_agents': True,
             'codex_multi_agents': True,
             'sandbox_mode': False,
@@ -481,6 +490,9 @@ def test_api_create_task_accepts_provider_models_and_team_agent_toggles(tmp_path
     assert body['provider_models']['gemini'] == 'gemini-2.5-pro'
     assert body['provider_model_params']['codex'] == '-c model_reasoning_effort=high'
     assert body['provider_model_params']['gemini'] == '--approval-mode yolo'
+    assert body['participant_models']['claude#author-A'] == 'claude-sonnet-4-5'
+    assert body['participant_models']['codex#review-B'] == 'gpt-5.3-codex'
+    assert body['participant_model_params']['codex#review-B'] == '-c model_reasoning_effort=xhigh'
     assert body['conversation_language'] == 'zh'
     assert body['claude_team_agents'] is True
     assert body['codex_multi_agents'] is True
@@ -592,6 +604,24 @@ def test_api_create_task_rejects_unknown_provider_model_param_key(tmp_path: Path
             'author_participant': 'claude#author-A',
             'reviewer_participants': ['codex#review-B'],
             'provider_model_params': {'unknown': '--foo bar'},
+            'sandbox_mode': False,
+            'self_loop_mode': 1,
+            'auto_start': False,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_api_create_task_rejects_participant_model_key_not_in_task(tmp_path: Path):
+    client = build_client(tmp_path)
+    resp = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Task bad participant model key',
+            'description': 'participant model validation',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'participant_models': {'gemini#review-C': 'gemini-3-pro-preview'},
             'sandbox_mode': False,
             'self_loop_mode': 1,
             'auto_start': False,

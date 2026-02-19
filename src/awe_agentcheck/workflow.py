@@ -138,6 +138,8 @@ class RunConfig:
     conversation_language: str = 'en'
     provider_models: dict[str, str] | None = None
     provider_model_params: dict[str, str] | None = None
+    participant_models: dict[str, str] | None = None
+    participant_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
     codex_multi_agents: bool = False
     repair_mode: str = 'balanced'
@@ -219,6 +221,8 @@ class WorkflowEngine:
         deadline = self._parse_deadline(config.evolve_until)
         provider_models = self._normalize_provider_models(config.provider_models)
         provider_model_params = self._normalize_provider_model_params(config.provider_model_params)
+        participant_models = self._normalize_participant_models(config.participant_models)
+        participant_model_params = self._normalize_participant_model_params(config.participant_model_params)
         stream_mode = bool(config.stream_mode)
         debate_mode = bool(config.debate_mode) and bool(config.reviewers)
         review_timeout_seconds = self._review_timeout_seconds(self.participant_timeout_seconds)
@@ -269,8 +273,16 @@ class WorkflowEngine:
                             prompt=self._debate_review_prompt(config, round_no, implementation_context, reviewer.participant_id),
                             cwd=config.cwd,
                             timeout_seconds=review_timeout_seconds,
-                            model=provider_models.get(reviewer.provider),
-                            model_params=provider_model_params.get(reviewer.provider),
+                            model=self._resolve_model_for_participant(
+                                participant=reviewer,
+                                provider_models=provider_models,
+                                participant_models=participant_models,
+                            ),
+                            model_params=self._resolve_model_params_for_participant(
+                                participant=reviewer,
+                                provider_model_params=provider_model_params,
+                                participant_model_params=participant_model_params,
+                            ),
                             claude_team_agents=bool(config.claude_team_agents),
                             codex_multi_agents=bool(config.codex_multi_agents),
                             on_stream=(
@@ -365,8 +377,16 @@ class WorkflowEngine:
                     prompt=discussion_prompt,
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
-                    model=provider_models.get(config.author.provider),
-                    model_params=provider_model_params.get(config.author.provider),
+                    model=self._resolve_model_for_participant(
+                        participant=config.author,
+                        provider_models=provider_models,
+                        participant_models=participant_models,
+                    ),
+                    model_params=self._resolve_model_params_for_participant(
+                        participant=config.author,
+                        provider_model_params=provider_model_params,
+                        participant_model_params=participant_model_params,
+                    ),
                     claude_team_agents=bool(config.claude_team_agents),
                     codex_multi_agents=bool(config.codex_multi_agents),
                     on_stream=(
@@ -414,8 +434,16 @@ class WorkflowEngine:
                     prompt=self._implementation_prompt(config, round_no, implementation_context),
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
-                    model=provider_models.get(config.author.provider),
-                    model_params=provider_model_params.get(config.author.provider),
+                    model=self._resolve_model_for_participant(
+                        participant=config.author,
+                        provider_models=provider_models,
+                        participant_models=participant_models,
+                    ),
+                    model_params=self._resolve_model_params_for_participant(
+                        participant=config.author,
+                        provider_model_params=provider_model_params,
+                        participant_model_params=participant_model_params,
+                    ),
                     claude_team_agents=bool(config.claude_team_agents),
                     codex_multi_agents=bool(config.codex_multi_agents),
                     on_stream=(
@@ -462,8 +490,16 @@ class WorkflowEngine:
                             prompt=self._review_prompt(config, round_no, implementation.output),
                             cwd=config.cwd,
                             timeout_seconds=review_timeout_seconds,
-                            model=provider_models.get(reviewer.provider),
-                            model_params=provider_model_params.get(reviewer.provider),
+                            model=self._resolve_model_for_participant(
+                                participant=reviewer,
+                                provider_models=provider_models,
+                                participant_models=participant_models,
+                            ),
+                            model_params=self._resolve_model_params_for_participant(
+                                participant=reviewer,
+                                provider_model_params=provider_model_params,
+                                participant_model_params=participant_model_params,
+                            ),
                             claude_team_agents=bool(config.claude_team_agents),
                             codex_multi_agents=bool(config.codex_multi_agents),
                             on_stream=(
@@ -998,6 +1034,64 @@ class WorkflowEngine:
                 continue
             out[provider] = params
         return out
+
+    @staticmethod
+    def _normalize_participant_models(value: dict[str, str] | None) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for key, raw in (value or {}).items():
+            participant = str(key or '').strip()
+            model = str(raw or '').strip()
+            if not participant or not model:
+                continue
+            out[participant] = model
+            out.setdefault(participant.lower(), model)
+        return out
+
+    @staticmethod
+    def _normalize_participant_model_params(value: dict[str, str] | None) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for key, raw in (value or {}).items():
+            participant = str(key or '').strip()
+            params = str(raw or '').strip()
+            if not participant or not params:
+                continue
+            out[participant] = params
+            out.setdefault(participant.lower(), params)
+        return out
+
+    @staticmethod
+    def _resolve_model_for_participant(
+        *,
+        participant: Participant,
+        provider_models: dict[str, str],
+        participant_models: dict[str, str],
+    ) -> str | None:
+        participant_id = str(participant.participant_id or '').strip()
+        if participant_id:
+            exact = str(participant_models.get(participant_id) or '').strip()
+            if exact:
+                return exact
+            lowered = str(participant_models.get(participant_id.lower()) or '').strip()
+            if lowered:
+                return lowered
+        return str(provider_models.get(participant.provider) or '').strip() or None
+
+    @staticmethod
+    def _resolve_model_params_for_participant(
+        *,
+        participant: Participant,
+        provider_model_params: dict[str, str],
+        participant_model_params: dict[str, str],
+    ) -> str | None:
+        participant_id = str(participant.participant_id or '').strip()
+        if participant_id:
+            exact = str(participant_model_params.get(participant_id) or '').strip()
+            if exact:
+                return exact
+            lowered = str(participant_model_params.get(participant_id.lower()) or '').strip()
+            if lowered:
+                return lowered
+        return str(provider_model_params.get(participant.provider) or '').strip() or None
 
     @staticmethod
     def _normalize_repair_mode(value: str | None) -> str:

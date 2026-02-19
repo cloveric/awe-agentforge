@@ -97,6 +97,10 @@
    - Pluggable participant adapters: `AWE_PROVIDER_ADAPTERS_JSON` supports extra providers beyond built-in Claude/Codex/Gemini.
    - Branch-aware promotion guard: auto-merge and round-promote now run branch/worktree guard checks before fusion.
    - Advanced visual analytics: `GET /api/analytics` and dashboard panel for failure taxonomy trends + reviewer drift signals.
+19. Added participant-level capability overrides end-to-end:
+   - new API/UI fields: `participant_models` and `participant_model_params` (`participant_id -> value`).
+   - workflow now resolves runtime model/params by participant first, then provider fallback.
+   - Create Task now includes a **Bot Capability Matrix** so author and each reviewer can use different settings even under the same provider (for example Codex author `high` vs Codex reviewer `xhigh`).
 
 <br/>
 

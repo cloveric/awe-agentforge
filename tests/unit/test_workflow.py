@@ -667,6 +667,45 @@ def test_workflow_passes_provider_model_params_to_runner(tmp_path: Path):
     assert runner.call_options[2].get('model_params') == '--approval-mode yolo'
 
 
+def test_workflow_prefers_participant_model_overrides_over_provider_defaults(tmp_path: Path):
+    runner = FakeRunner([_ok_result(), _ok_result(), _ok_result()])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-participant-models',
+            title='Participant model overrides',
+            description='author/reviewer should be independently configurable',
+            author=parse_participant_id('codex#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+            provider_models={'codex': 'gpt-5.3-codex'},
+            provider_model_params={'codex': '-c model_reasoning_effort=high'},
+            participant_models={
+                'codex#author-A': 'gpt-5.3-codex',
+                'codex#review-B': 'gpt-5.3-codex',
+            },
+            participant_model_params={
+                'codex#author-A': '-c model_reasoning_effort=high',
+                'codex#review-B': '-c model_reasoning_effort=xhigh',
+            },
+        )
+    )
+
+    assert result.status == 'passed'
+    assert len(runner.call_options) == 3
+    assert runner.participants == ['codex#author-A', 'codex#author-A', 'codex#review-B']
+    assert runner.call_options[0].get('model_params') == '-c model_reasoning_effort=high'
+    assert runner.call_options[1].get('model_params') == '-c model_reasoning_effort=high'
+    assert runner.call_options[2].get('model_params') == '-c model_reasoning_effort=xhigh'
+
+
 def test_workflow_degrades_reviewer_exception_to_unknown_instead_of_crashing(tmp_path: Path):
     runner = ReviewerFailureRunner()
     executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)

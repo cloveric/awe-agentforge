@@ -446,6 +446,35 @@ def test_service_create_task_accepts_provider_model_params(tmp_path: Path):
     assert task.provider_model_params.get('gemini') == '--approval-mode yolo'
 
 
+def test_service_create_task_accepts_participant_model_overrides(tmp_path: Path):
+    svc = build_service(tmp_path)
+    task = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Participant model config',
+            description='participant-level model routing',
+            author_participant='codex#author-A',
+            reviewer_participants=['codex#review-B', 'claude#review-C'],
+            provider_models={'codex': 'gpt-5.3-codex', 'claude': 'claude-opus-4-6'},
+            provider_model_params={'codex': '-c model_reasoning_effort=high'},
+            participant_models={
+                'codex#author-A': 'gpt-5.3-codex',
+                'codex#review-B': 'gpt-5.3-codex',
+                'claude#review-C': 'claude-sonnet-4-6',
+            },
+            participant_model_params={
+                'codex#author-A': '-c model_reasoning_effort=high',
+                'codex#review-B': '-c model_reasoning_effort=xhigh',
+            },
+        )
+    )
+    assert task.participant_models.get('codex#author-A') == 'gpt-5.3-codex'
+    assert task.participant_models.get('claude#review-C') == 'claude-sonnet-4-6'
+    assert task.participant_model_params.get('codex#author-A') == '-c model_reasoning_effort=high'
+    assert task.participant_model_params.get('codex#review-B') == '-c model_reasoning_effort=xhigh'
+
+
 def test_service_create_task_accepts_conversation_language(tmp_path: Path):
     svc = build_service(tmp_path)
     task = svc.create_task(
@@ -586,6 +615,38 @@ def test_service_create_task_rejects_unknown_provider_model_param_key(tmp_path: 
                 author_participant='claude#author-A',
                 reviewer_participants=['codex#review-B'],
                 provider_model_params={'unknown': '--foo bar'},
+            )
+        )
+
+
+def test_service_create_task_rejects_participant_model_for_non_task_participant(tmp_path: Path):
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match='participant_models key is not in task participants'):
+        svc.create_task(
+            CreateTaskInput(
+                sandbox_mode=False,
+                self_loop_mode=1,
+                title='Bad participant model key',
+                description='participant model validation',
+                author_participant='claude#author-A',
+                reviewer_participants=['codex#review-B'],
+                participant_models={'codex#review-Z': 'gpt-5.3-codex'},
+            )
+        )
+
+
+def test_service_create_task_rejects_participant_model_param_for_non_task_participant(tmp_path: Path):
+    svc = build_service(tmp_path)
+    with pytest.raises(ValueError, match='participant_model_params key is not in task participants'):
+        svc.create_task(
+            CreateTaskInput(
+                sandbox_mode=False,
+                self_loop_mode=1,
+                title='Bad participant param key',
+                description='participant param validation',
+                author_participant='claude#author-A',
+                reviewer_participants=['codex#review-B'],
+                participant_model_params={'codex#review-Z': '-c model_reasoning_effort=xhigh'},
             )
         )
 

@@ -46,6 +46,8 @@ class CreateTaskInput:
     conversation_language: str = 'en'
     provider_models: dict[str, str] | None = None
     provider_model_params: dict[str, str] | None = None
+    participant_models: dict[str, str] | None = None
+    participant_model_params: dict[str, str] | None = None
     claude_team_agents: bool = False
     codex_multi_agents: bool = False
     repair_mode: str = 'balanced'
@@ -83,6 +85,8 @@ class TaskView:
     conversation_language: str
     provider_models: dict[str, str]
     provider_model_params: dict[str, str]
+    participant_models: dict[str, str]
+    participant_model_params: dict[str, str]
     claude_team_agents: bool
     codex_multi_agents: bool
     repair_mode: str
@@ -286,15 +290,16 @@ class OrchestratorService:
         # Validate participant IDs early so callers get a clear 400 error
         # instead of a delayed workflow_error at start time.
         try:
-            parse_participant_id(payload.author_participant)
+            author_participant = parse_participant_id(payload.author_participant)
         except ValueError as exc:
             raise InputValidationError(
                 f'invalid author_participant: {exc}',
                 field='author_participant',
             ) from exc
+        reviewer_participants: list[str] = []
         for i, rp in enumerate(payload.reviewer_participants):
             try:
-                parse_participant_id(rp)
+                reviewer_participants.append(parse_participant_id(rp).participant_id)
             except ValueError as exc:
                 raise InputValidationError(
                     f'invalid reviewer_participants[{i}]: {exc}',
@@ -315,6 +320,15 @@ class OrchestratorService:
         )
         provider_models = self._normalize_provider_models(payload.provider_models)
         provider_model_params = self._normalize_provider_model_params(payload.provider_model_params)
+        known_participants = {author_participant.participant_id, *reviewer_participants}
+        participant_models = self._normalize_participant_models(
+            payload.participant_models,
+            known_participants=known_participants,
+        )
+        participant_model_params = self._normalize_participant_model_params(
+            payload.participant_model_params,
+            known_participants=known_participants,
+        )
         claude_team_agents = bool(payload.claude_team_agents)
         codex_multi_agents = bool(payload.codex_multi_agents)
         repair_mode = self._normalize_repair_mode(payload.repair_mode, strict=True)
@@ -367,13 +381,15 @@ class OrchestratorService:
             row = self.repository.create_task(
                 title=payload.title,
                 description=payload.description,
-                author_participant=payload.author_participant,
-                reviewer_participants=payload.reviewer_participants,
+                author_participant=author_participant.participant_id,
+                reviewer_participants=reviewer_participants,
                 evolution_level=evolution_level,
                 evolve_until=evolve_until,
                 conversation_language=conversation_language,
                 provider_models=provider_models,
                 provider_model_params=provider_model_params,
+                participant_models=participant_models,
+                participant_model_params=participant_model_params,
                 claude_team_agents=claude_team_agents,
                 codex_multi_agents=codex_multi_agents,
                 repair_mode=repair_mode,
@@ -403,6 +419,8 @@ class OrchestratorService:
                     'conversation_language': str(row.get('conversation_language') or 'en'),
                     'provider_models': dict(row.get('provider_models', {})),
                     'provider_model_params': dict(row.get('provider_model_params', {})),
+                    'participant_models': dict(row.get('participant_models', {})),
+                    'participant_model_params': dict(row.get('participant_model_params', {})),
                     'claude_team_agents': bool(row.get('claude_team_agents', False)),
                     'codex_multi_agents': bool(row.get('codex_multi_agents', False)),
                     'repair_mode': str(row.get('repair_mode') or 'balanced'),
@@ -1837,6 +1855,8 @@ class OrchestratorService:
                     conversation_language=self._normalize_conversation_language(row.get('conversation_language')),
                     provider_models=dict(row.get('provider_models', {})),
                     provider_model_params=dict(row.get('provider_model_params', {})),
+                    participant_models=dict(row.get('participant_models', {})),
+                    participant_model_params=dict(row.get('participant_model_params', {})),
                     claude_team_agents=bool(row.get('claude_team_agents', False)),
                     codex_multi_agents=bool(row.get('codex_multi_agents', False)),
                     repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
@@ -2273,6 +2293,8 @@ class OrchestratorService:
                 conversation_language=self._normalize_conversation_language(row.get('conversation_language')),
                 provider_models=dict(row.get('provider_models', {})),
                 provider_model_params=dict(row.get('provider_model_params', {})),
+                participant_models=dict(row.get('participant_models', {})),
+                participant_model_params=dict(row.get('participant_model_params', {})),
                 claude_team_agents=bool(row.get('claude_team_agents', False)),
                 codex_multi_agents=bool(row.get('codex_multi_agents', False)),
                 repair_mode=self._normalize_repair_mode(row.get('repair_mode')),
@@ -2332,8 +2354,18 @@ class OrchestratorService:
                                 prompt=self._proposal_review_prompt(config, merged_context, stage=stage),
                                 cwd=config.cwd,
                                 timeout_seconds=review_timeout,
-                                model=(config.provider_models or {}).get(reviewer.provider),
-                                model_params=(config.provider_model_params or {}).get(reviewer.provider),
+                                model=self._resolve_model_for_participant(
+                                    participant_id=reviewer.participant_id,
+                                    provider=reviewer.provider,
+                                    provider_models=config.provider_models,
+                                    participant_models=config.participant_models,
+                                ),
+                                model_params=self._resolve_model_params_for_participant(
+                                    participant_id=reviewer.participant_id,
+                                    provider=reviewer.provider,
+                                    provider_model_params=config.provider_model_params,
+                                    participant_model_params=config.participant_model_params,
+                                ),
                                 claude_team_agents=bool(config.claude_team_agents),
                                 codex_multi_agents=bool(config.codex_multi_agents),
                                 on_stream=(
@@ -2630,8 +2662,18 @@ class OrchestratorService:
                                 prompt=discussion_prompt,
                                 cwd=config.cwd,
                                 timeout_seconds=timeout,
-                                model=(config.provider_models or {}).get(author.provider),
-                                model_params=(config.provider_model_params or {}).get(author.provider),
+                                model=self._resolve_model_for_participant(
+                                    participant_id=author.participant_id,
+                                    provider=author.provider,
+                                    provider_models=config.provider_models,
+                                    participant_models=config.participant_models,
+                                ),
+                                model_params=self._resolve_model_params_for_participant(
+                                    participant_id=author.participant_id,
+                                    provider=author.provider,
+                                    provider_model_params=config.provider_model_params,
+                                    participant_model_params=config.participant_model_params,
+                                ),
                                 claude_team_agents=bool(config.claude_team_agents),
                                 codex_multi_agents=bool(config.codex_multi_agents),
                                 on_stream=(
@@ -3126,6 +3168,116 @@ class OrchestratorService:
                 )
             out[provider] = params
         return out
+
+    @staticmethod
+    def _normalize_participant_models(
+        value: dict[str, str] | None,
+        *,
+        known_participants: set[str],
+    ) -> dict[str, str]:
+        if not value:
+            return {}
+        if not isinstance(value, dict):
+            raise InputValidationError('participant_models must be an object', field='participant_models')
+
+        known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+        known_lower = {v.lower() for v in known}
+        out: dict[str, str] = {}
+        for raw_participant, raw_model in value.items():
+            participant = str(raw_participant or '').strip()
+            model = str(raw_model or '').strip()
+            if not participant:
+                raise InputValidationError(
+                    'participant_models key cannot be empty',
+                    field='participant_models',
+                )
+            if participant.lower() not in known_lower:
+                raise InputValidationError(
+                    f'participant_models key is not in task participants: {participant}',
+                    field='participant_models',
+                )
+            if not model:
+                raise InputValidationError(
+                    f'participant_models[{participant}] cannot be empty',
+                    field=f'participant_models[{participant}]',
+                )
+            out[participant] = model
+        return out
+
+    @staticmethod
+    def _normalize_participant_model_params(
+        value: dict[str, str] | None,
+        *,
+        known_participants: set[str],
+    ) -> dict[str, str]:
+        if not value:
+            return {}
+        if not isinstance(value, dict):
+            raise InputValidationError('participant_model_params must be an object', field='participant_model_params')
+
+        known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+        known_lower = {v.lower() for v in known}
+        out: dict[str, str] = {}
+        for raw_participant, raw_params in value.items():
+            participant = str(raw_participant or '').strip()
+            params = str(raw_params or '').strip()
+            if not participant:
+                raise InputValidationError(
+                    'participant_model_params key cannot be empty',
+                    field='participant_model_params',
+                )
+            if participant.lower() not in known_lower:
+                raise InputValidationError(
+                    f'participant_model_params key is not in task participants: {participant}',
+                    field='participant_model_params',
+                )
+            if not params:
+                raise InputValidationError(
+                    f'participant_model_params[{participant}] cannot be empty',
+                    field=f'participant_model_params[{participant}]',
+                )
+            out[participant] = params
+        return out
+
+    @staticmethod
+    def _resolve_model_for_participant(
+        *,
+        participant_id: str,
+        provider: str,
+        provider_models: dict[str, str] | None,
+        participant_models: dict[str, str] | None,
+    ) -> str | None:
+        participant_text = str(participant_id or '').strip()
+        participant_map = dict(participant_models or {})
+        if participant_text:
+            exact = str(participant_map.get(participant_text) or '').strip()
+            if exact:
+                return exact
+            lowered = str(participant_map.get(participant_text.lower()) or '').strip()
+            if lowered:
+                return lowered
+        provider_map = dict(provider_models or {})
+        return str(provider_map.get(str(provider or '').strip().lower()) or '').strip() or None
+
+    @staticmethod
+    def _resolve_model_params_for_participant(
+        *,
+        participant_id: str,
+        provider: str,
+        provider_model_params: dict[str, str] | None,
+        participant_model_params: dict[str, str] | None,
+    ) -> str | None:
+        participant_text = str(participant_id or '').strip()
+        participant_map = dict(participant_model_params or {})
+        if participant_text:
+            exact = str(participant_map.get(participant_text) or '').strip()
+            if exact:
+                return exact
+            lowered = str(participant_map.get(participant_text.lower()) or '').strip()
+            if lowered:
+                return lowered
+        provider_map = dict(provider_model_params or {})
+        return str(provider_map.get(str(provider or '').strip().lower()) or '').strip() or None
 
     @staticmethod
     def _default_sandbox_path(project_root: Path) -> str:
@@ -3753,6 +3905,8 @@ class OrchestratorService:
             conversation_language=OrchestratorService._normalize_conversation_language(row.get('conversation_language')),
             provider_models={str(k): str(v) for k, v in dict(row.get('provider_models', {})).items()},
             provider_model_params={str(k): str(v) for k, v in dict(row.get('provider_model_params', {})).items()},
+            participant_models={str(k): str(v) for k, v in dict(row.get('participant_models', {})).items()},
+            participant_model_params={str(k): str(v) for k, v in dict(row.get('participant_model_params', {})).items()},
             claude_team_agents=bool(row.get('claude_team_agents', False)),
             codex_multi_agents=bool(row.get('codex_multi_agents', False)),
             repair_mode=OrchestratorService._normalize_repair_mode(row.get('repair_mode')),

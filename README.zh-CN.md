@@ -97,6 +97,10 @@
    - 可插拔参与者适配器：通过 `AWE_PROVIDER_ADAPTERS_JSON` 扩展内置 Claude/Codex/Gemini 之外的 provider。
    - 分支感知晋升防护：自动融合与轮次晋升前执行 branch/worktree guard。
    - 高级可视化分析：`GET /api/analytics` 与面板中的失败分类趋势 + reviewer 偏移信号。
+19. 新增“按参与者”能力覆盖（全链路）：
+   - 新增 API/UI 字段：`participant_models` 与 `participant_model_params`（`participant_id -> value`）。
+   - 工作流执行时优先按参与者解析 model/params，缺省再回落到 provider 级配置。
+   - Create Task 新增 **Bot Capability Matrix**，可让同一 provider 下的不同角色使用不同配置（例如 Codex author 用 `high`，Codex reviewer 用 `xhigh`）。
 
 <br/>
 

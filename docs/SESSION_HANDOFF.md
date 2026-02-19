@@ -1,5 +1,33 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-19, participant-level bot capability overrides)
+
+1. Added participant-level model controls end-to-end:
+   - new task payload/meta fields:
+     - `participant_models` (`participant_id -> model`)
+     - `participant_model_params` (`participant_id -> params`)
+   - API models and task responses now include both fields.
+2. Runtime resolution order is now explicit:
+   - participant override first
+   - provider default fallback second.
+   - applies to proposal precheck, proposal discussion, implementation, and review phases.
+3. Dashboard `Create Task` now includes **Bot Capability Matrix**:
+   - one row per author/reviewer
+   - each row supports model + custom model override + params
+   - supports same-provider different-role configs (for example `codex#author-A=high`, `codex#review-B=xhigh`).
+4. Role/session model display now respects participant-level overrides before provider-level defaults.
+5. Docs synced:
+   - `README.md`
+   - `README.zh-CN.md`
+   - `docs/RUNBOOK.md`
+6. Verification:
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_workflow.py`
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_api.py`
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_service.py`
+   - `PYTHONPATH=src py -m pytest -q tests/unit/test_db_timezone.py`
+   - `PYTHONPATH=src py -m pytest -q tests/unit`
+   - `PYTHONPATH=src py -m ruff check src/awe_agentcheck/api.py src/awe_agentcheck/db.py src/awe_agentcheck/repository.py src/awe_agentcheck/service.py src/awe_agentcheck/workflow.py tests/unit/test_api.py tests/unit/test_service.py tests/unit/test_workflow.py`
+
 ## Update (2026-02-19, consensus stall safeguards + docs/homepage refresh)
 
 1. Proposal consensus loop now has explicit pending/stall exits instead of open-ended retries:

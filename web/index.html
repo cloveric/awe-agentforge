@@ -795,6 +795,51 @@
       word-break: break-word;
     }
 
+    .participant-matrix {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(31, 232, 137, 0.24);
+      border-radius: 10px;
+      background: rgba(7, 16, 22, 0.86);
+      padding: 8px;
+    }
+
+    .participant-matrix .empty {
+      padding: 10px;
+      font-size: 12px;
+      background: rgba(8, 19, 24, 0.7);
+    }
+
+    .participant-matrix-row {
+      border: 1px solid rgba(136, 229, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(7, 14, 21, 0.9);
+      padding: 8px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .participant-matrix-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #d5fff0;
+    }
+
+    .participant-matrix-meta {
+      font-size: 11px;
+      color: #8ec3ad;
+    }
+
+    .participant-matrix-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+    }
+
     .history-body.is-collapsed {
       display: none;
     }
@@ -2350,6 +2395,13 @@
             </div>
           </div>
           <div class="controls-row">
+            <div style="flex:1; min-width:520px;">
+              <label for="participantCapabilityMatrix">Bot Capability Matrix (per role, optional)</label>
+              <div id="participantCapabilityMatrix" class="participant-matrix"></div>
+              <div class="mini-status">Per-role overrides win over provider defaults above. Empty row values fall back to provider defaults.</div>
+            </div>
+          </div>
+          <div class="controls-row">
             <div style="flex:1; min-width:220px;">
               <label for="claudeTeamAgents">Claude Team Agents</label>
               <select id="claudeTeamAgents">
@@ -2537,6 +2589,7 @@
       avatarVariantCache: new Map(),
       avatarSessionSalt: `${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
       selectionNeedsValidation: false,
+      participantCapabilityDraft: {},
     };
 
     const SELECTION_PREF_KEY = 'awe-agentcheck-selection';
@@ -2590,6 +2643,8 @@
       applyPolicyTemplateBtn: document.getElementById('applyPolicyTemplateBtn'),
       policyProfileHint: document.getElementById('policyProfileHint'),
       workspacePath: document.getElementById('workspacePath'),
+      author: document.getElementById('author'),
+      reviewers: document.getElementById('reviewers'),
       selfLoopMode: document.getElementById('selfLoopMode'),
       claudeModel: document.getElementById('claudeModel'),
       codexModel: document.getElementById('codexModel'),
@@ -2600,6 +2655,7 @@
       claudeModelParams: document.getElementById('claudeModelParams'),
       codexModelParams: document.getElementById('codexModelParams'),
       geminiModelParams: document.getElementById('geminiModelParams'),
+      participantCapabilityMatrix: document.getElementById('participantCapabilityMatrix'),
       codexMultiAgents: document.getElementById('codexMultiAgents'),
       sandboxMode: document.getElementById('sandboxMode'),
       autoMerge: document.getElementById('autoMerge'),
@@ -2663,6 +2719,11 @@
         field: 'Model Params',
         en: 'Extra provider-specific CLI args (advanced). Keep empty unless you know what you need.',
         zh: '提供者额外参数（进阶）。不确定时建议留空。',
+      },
+      {
+        field: 'Bot Capability Matrix',
+        en: 'Role-level override matrix. Configure model/params per participant (author or each reviewer). Participant values override provider defaults.',
+        zh: '角色级覆盖矩阵。可为 Author 或每个 Reviewer 单独配置 model/params。角色配置优先于提供者默认值。',
       },
       {
         field: 'Claude Team Agents',
@@ -3010,6 +3071,173 @@
       return out;
     }
 
+    function parseTaskParticipantsFromForm() {
+      const out = [];
+      const seen = new Set();
+      const author = String((el.author && el.author.value) || '').trim();
+      if (author && !seen.has(author)) {
+        seen.add(author);
+        out.push(author);
+      }
+      const reviewers = String((el.reviewers && el.reviewers.value) || '')
+        .split(',')
+        .map((v) => String(v || '').trim())
+        .filter(Boolean);
+      for (const reviewer of reviewers) {
+        if (seen.has(reviewer)) continue;
+        seen.add(reviewer);
+        out.push(reviewer);
+      }
+      return out;
+    }
+
+    function providerDefaultsFromForm(provider) {
+      const key = String(provider || '').trim().toLowerCase();
+      const map = {
+        claude: [el.claudeModel, el.claudeModelCustom, el.claudeModelParams],
+        codex: [el.codexModel, el.codexModelCustom, el.codexModelParams],
+        gemini: [el.geminiModel, el.geminiModelCustom, el.geminiModelParams],
+      };
+      const tuple = map[key];
+      if (!tuple) return { model: '', params: '' };
+      const [selectElm, customElm, paramsElm] = tuple;
+      const custom = String((customElm && customElm.value) || '').trim();
+      const model = custom || String((selectElm && selectElm.value) || '').trim();
+      const params = String((paramsElm && paramsElm.value) || '').trim();
+      return { model, params };
+    }
+
+    function participantModelOptions(provider, selectedModel) {
+      const key = String(provider || '').trim().toLowerCase();
+      const list = Array.isArray((state.providerModelCatalog || {})[key]) ? (state.providerModelCatalog || {})[key] : [];
+      const seen = new Set();
+      const out = [];
+      const selected = String(selectedModel || '').trim();
+      if (selected) {
+        seen.add(selected.toLowerCase());
+        out.push(selected);
+      }
+      for (const raw of list) {
+        const value = String(raw || '').trim();
+        const norm = value.toLowerCase();
+        if (!value || seen.has(norm)) continue;
+        seen.add(norm);
+        out.push(value);
+      }
+      return out;
+    }
+
+    function pruneParticipantCapabilityDraft(activeParticipants) {
+      const active = new Set((activeParticipants || []).map((v) => String(v || '').trim()).filter(Boolean));
+      const next = {};
+      for (const [participant, payload] of Object.entries(state.participantCapabilityDraft || {})) {
+        const key = String(participant || '').trim();
+        if (!key || !active.has(key)) continue;
+        next[key] = {
+          model: String((payload && payload.model) || '').trim(),
+          customModel: String((payload && payload.customModel) || '').trim(),
+          params: String((payload && payload.params) || '').trim(),
+        };
+      }
+      state.participantCapabilityDraft = next;
+    }
+
+    function renderParticipantCapabilityMatrix() {
+      const host = el.participantCapabilityMatrix;
+      if (!host) return;
+      const participants = parseTaskParticipantsFromForm();
+      pruneParticipantCapabilityDraft(participants);
+      if (!participants.length) {
+        host.innerHTML = '<div class="empty">Add Author/Reviewers first to configure per-bot capabilities.</div>';
+        return;
+      }
+
+      const rows = participants.map((participantId) => {
+        const provider = parseProvider(participantId);
+        const defaults = providerDefaultsFromForm(provider);
+        const draft = state.participantCapabilityDraft[participantId] || {};
+        const selectedModel = String(draft.model || defaults.model || '').trim();
+        const customModel = String(draft.customModel || '').trim();
+        const params = String(
+          draft.params !== undefined && draft.params !== null
+            ? draft.params
+            : defaults.params
+        ).trim();
+        const options = participantModelOptions(provider, selectedModel);
+        const optionHtml = options
+          .map((model) => `<option value="${escapeHtml(model)}"${model === selectedModel ? ' selected' : ''}>${escapeHtml(model)}</option>`)
+          .join('');
+
+        return `
+          <div class="participant-matrix-row">
+            <div class="participant-matrix-head">
+              <span>${escapeHtml(participantId)}</span>
+              <span class="participant-matrix-meta">provider=${escapeHtml(provider || 'unknown')}</span>
+            </div>
+            <div class="participant-matrix-fields">
+              <div>
+                <label>Model</label>
+                <select data-participant="${escapeHtml(participantId)}" data-field="model">${optionHtml}</select>
+              </div>
+              <div>
+                <label>Custom Model (override)</label>
+                <input
+                  data-participant="${escapeHtml(participantId)}"
+                  data-field="customModel"
+                  value="${escapeHtml(customModel)}"
+                  placeholder="optional custom model id"
+                />
+              </div>
+              <div>
+                <label>Model Params</label>
+                <input
+                  data-participant="${escapeHtml(participantId)}"
+                  data-field="params"
+                  value="${escapeHtml(params)}"
+                  placeholder="optional CLI params"
+                />
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      host.innerHTML = rows;
+    }
+
+    function readParticipantModelsFromForm() {
+      const out = {};
+      if (!el.participantCapabilityMatrix) return out;
+      const rows = el.participantCapabilityMatrix.querySelectorAll('[data-participant][data-field]');
+      const buckets = {};
+      for (const node of rows) {
+        const participant = String(node.getAttribute('data-participant') || '').trim();
+        const field = String(node.getAttribute('data-field') || '').trim();
+        if (!participant || !field) continue;
+        if (!buckets[participant]) buckets[participant] = {};
+        buckets[participant][field] = String(node.value || '').trim();
+      }
+      for (const [participant, payload] of Object.entries(buckets)) {
+        const custom = String((payload && payload.customModel) || '').trim();
+        const model = custom || String((payload && payload.model) || '').trim();
+        if (model) out[participant] = model;
+      }
+      return out;
+    }
+
+    function readParticipantModelParamsFromForm() {
+      const out = {};
+      if (!el.participantCapabilityMatrix) return out;
+      const rows = el.participantCapabilityMatrix.querySelectorAll('[data-participant][data-field="params"]');
+      for (const node of rows) {
+        const participant = String(node.getAttribute('data-participant') || '').trim();
+        const params = String(node.value || '').trim();
+        if (participant && params) {
+          out[participant] = params;
+        }
+      }
+      return out;
+    }
+
     function renderModelSelect(elm, values) {
       if (!elm) return;
       const current = String(elm.value || '').trim();
@@ -3043,6 +3271,7 @@
       renderModelSelect(el.claudeModel, catalog.claude || []);
       renderModelSelect(el.codexModel, catalog.codex || []);
       renderModelSelect(el.geminiModel, catalog.gemini || []);
+      renderParticipantCapabilityMatrix();
     }
 
     function normalizeProviderModelCatalog(rawCatalog) {
@@ -3081,6 +3310,24 @@
         .filter(([provider, params]) => provider && params);
       if (!entries.length) return 'n/a';
       return entries.map(([provider, params]) => `${provider}=${params}`).join(' | ');
+    }
+
+    function formatParticipantModels(value) {
+      const obj = value && typeof value === 'object' ? value : {};
+      const entries = Object.entries(obj)
+        .map(([participant, model]) => [String(participant || '').trim(), String(model || '').trim()])
+        .filter(([participant, model]) => participant && model);
+      if (!entries.length) return 'n/a';
+      return entries.map(([participant, model]) => `${participant}=${model}`).join(' | ');
+    }
+
+    function formatParticipantModelParams(value) {
+      const obj = value && typeof value === 'object' ? value : {};
+      const entries = Object.entries(obj)
+        .map(([participant, params]) => [String(participant || '').trim(), String(params || '').trim()])
+        .filter(([participant, params]) => participant && params);
+      if (!entries.length) return 'n/a';
+      return entries.map(([participant, params]) => `${participant}=${params}`).join(' | ');
     }
 
     function hashText(text) {
@@ -3990,14 +4237,27 @@
       return reviewers.some((v) => String(v || '').trim() === id);
     }
 
+    function participantOverrideLookup(map, roleId) {
+      const source = map && typeof map === 'object' ? map : {};
+      const key = String(roleId || '').trim();
+      if (!key) return '';
+      const exact = String(source[key] || '').trim();
+      if (exact) return exact;
+      const lowered = String(source[key.toLowerCase()] || '').trim();
+      if (lowered) return lowered;
+      return '';
+    }
+
     function resolveRoleModelInfo(roleId, provider) {
       const providerKey = String(provider || '').trim().toLowerCase();
       const selected = selectedTask();
       if (selected && participantInTask(selected, roleId)) {
+        const selectedParticipantModels = selected.participant_models || {};
+        const selectedParticipantParams = selected.participant_model_params || {};
         const selectedModels = selected.provider_models || {};
         const selectedParams = selected.provider_model_params || {};
-        const model = String(selectedModels[providerKey] || '').trim();
-        const params = String(selectedParams[providerKey] || '').trim();
+        const model = participantOverrideLookup(selectedParticipantModels, roleId) || String(selectedModels[providerKey] || '').trim();
+        const params = participantOverrideLookup(selectedParticipantParams, roleId) || String(selectedParams[providerKey] || '').trim();
         if (model || params) {
           return { model, params };
         }
@@ -4005,10 +4265,12 @@
 
       for (const task of state.tasks) {
         if (!participantInTask(task, roleId)) continue;
+        const participantModels = task.participant_models || {};
+        const participantParams = task.participant_model_params || {};
         const models = task.provider_models || {};
         const paramsMap = task.provider_model_params || {};
-        const model = String(models[providerKey] || '').trim();
-        const params = String(paramsMap[providerKey] || '').trim();
+        const model = participantOverrideLookup(participantModels, roleId) || String(models[providerKey] || '').trim();
+        const params = participantOverrideLookup(participantParams, roleId) || String(paramsMap[providerKey] || '').trim();
         if (model || params) {
           return { model, params };
         }
@@ -4092,6 +4354,8 @@
         conversation_language: 'en',
         provider_models: {},
         provider_model_params: {},
+        participant_models: {},
+        participant_model_params: {},
         claude_team_agents: false,
         codex_multi_agents: false,
         repair_mode: 'balanced',
@@ -4531,6 +4795,8 @@
         { label: 'EvolveUntil', value: task.evolve_until || 'n/a' },
         { label: 'ProviderModels', value: formatProviderModels(task.provider_models) },
         { label: 'ProviderModelParams', value: formatProviderModelParams(task.provider_model_params) },
+        { label: 'ParticipantModels', value: formatParticipantModels(task.participant_models) },
+        { label: 'ParticipantModelParams', value: formatParticipantModelParams(task.participant_model_params) },
         { label: 'ClaudeAgents', value: String(task.claude_team_agents ? 1 : 0) },
         { label: 'CodexMultiAgents', value: String(task.codex_multi_agents ? 1 : 0) },
         { label: 'AutoMerge', value: String(task.auto_merge !== false ? 1 : 0) },
@@ -5645,6 +5911,8 @@
         conversation_language: String(document.getElementById('conversationLanguage').value || 'en').trim().toLowerCase() || 'en',
         provider_models: readProviderModelsFromForm(),
         provider_model_params: readProviderModelParamsFromForm(),
+        participant_models: readParticipantModelsFromForm(),
+        participant_model_params: readParticipantModelParamsFromForm(),
         claude_team_agents: Number(document.getElementById('claudeTeamAgents').value || 0) === 1,
         codex_multi_agents: Number(document.getElementById('codexMultiAgents').value || 0) === 1,
         repair_mode: String(document.getElementById('repairMode').value || 'balanced').trim().toLowerCase() || 'balanced',
@@ -5676,6 +5944,22 @@
       } catch (err) {
         el.createStatus.textContent = `Create failed: ${String(err)}`;
       }
+    }
+
+    function updateParticipantCapabilityDraftFromEvent(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const participant = String(target.getAttribute('data-participant') || '').trim();
+      const field = String(target.getAttribute('data-field') || '').trim();
+      if (!participant || !field) return;
+      const value = String(target.value || '').trim();
+      const current = state.participantCapabilityDraft[participant] || {};
+      state.participantCapabilityDraft[participant] = {
+        model: String(current.model || '').trim(),
+        customModel: String(current.customModel || '').trim(),
+        params: String(current.params || '').trim(),
+      };
+      state.participantCapabilityDraft[participant][field] = value;
     }
 
     function syncCreateTaskPolicyControls(trigger = 'auto') {
@@ -5837,6 +6121,33 @@
       el.workspacePath.addEventListener('change', async () => {
         await refreshPolicyTemplates();
       });
+    }
+    if (el.author) {
+      el.author.addEventListener('input', () => renderParticipantCapabilityMatrix());
+      el.author.addEventListener('change', () => renderParticipantCapabilityMatrix());
+    }
+    if (el.reviewers) {
+      el.reviewers.addEventListener('input', () => renderParticipantCapabilityMatrix());
+      el.reviewers.addEventListener('change', () => renderParticipantCapabilityMatrix());
+    }
+    for (const field of [
+      el.claudeModel,
+      el.codexModel,
+      el.geminiModel,
+      el.claudeModelCustom,
+      el.codexModelCustom,
+      el.geminiModelCustom,
+      el.claudeModelParams,
+      el.codexModelParams,
+      el.geminiModelParams,
+    ]) {
+      if (!field) continue;
+      field.addEventListener('input', () => renderParticipantCapabilityMatrix());
+      field.addEventListener('change', () => renderParticipantCapabilityMatrix());
+    }
+    if (el.participantCapabilityMatrix) {
+      el.participantCapabilityMatrix.addEventListener('input', (event) => updateParticipantCapabilityDraftFromEvent(event));
+      el.participantCapabilityMatrix.addEventListener('change', (event) => updateParticipantCapabilityDraftFromEvent(event));
     }
     if (el.openCreateHelpBtn) {
       el.openCreateHelpBtn.addEventListener('click', () => setCreateHelpCollapsed(!state.createHelpCollapsed));
