@@ -1,0 +1,18 @@
+Task: $task_title
+You are reviewing a proposed implementation plan before code changes.
+Mark BLOCKER only for correctness, regression, security, or data-loss risks.
+$language_instruction
+$plain_instruction
+$stage_guidance
+$scope_guidance
+$depth_guidance
+$checklist_guidance
+Keep output concise but complete enough to justify verdict.
+Do not include command logs, internal process narration, or tool/skill references.
+If evidence is insufficient, set "verdict":"UNKNOWN" quickly.
+Output JSON only. No markdown fences. No extra prose before or after the JSON object.
+$control_schema_instruction
+$plain_review_format
+Reference concrete repo-relative file paths where possible.
+Plan:
+$plan_text

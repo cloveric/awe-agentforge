@@ -1,12 +1,46 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-20, service package split + prompt templates + langgraph per-round)
+
+1. `service_layers` monolith was replaced by a package:
+   - removed `src/awe_agentcheck/service_layers.py`
+   - added:
+     - `src/awe_agentcheck/service_layers/analytics.py`
+     - `src/awe_agentcheck/service_layers/history.py`
+     - `src/awe_agentcheck/service_layers/task_management.py`
+     - `src/awe_agentcheck/service_layers/__init__.py`
+2. History dependency wiring is now consolidated:
+   - introduced `HistoryDeps` dataclass in `src/awe_agentcheck/service_layers/history.py`
+   - `OrchestratorService` now passes one dependency object instead of 5+ callback parameters.
+3. Workspace fingerprint/sandbox helper duplication was removed:
+   - `OrchestratorService` helper methods now delegate to `TaskManagementService` implementations.
+   - this keeps one source of truth for:
+     - sandbox path generation
+     - sandbox bootstrap ignore rules
+     - workspace fingerprint signatures
+4. Prompt assembly was externalized into template files:
+   - added `src/awe_agentcheck/prompt_templates/*.txt`
+   - workflow/service prompt builders now render from template files via shared loader (`WorkflowEngine._render_prompt_template`).
+5. LangGraph flow is now true per-round progression:
+   - round node runs exactly one round (`max_rounds=1` override + `force_single_round`)
+   - graph loops between `round -> round` until finish criteria are met, instead of single-node full classic execution.
+   - loop-tracker state is persisted across LangGraph rounds to preserve strategy-shift detection behavior.
+6. Frontend maintainability updates:
+   - added grouped panel structure in `initElements()` (`project`, `summary`, `history`, `controls`, `create`, `providers`) with backward-compatible flat aliases.
+   - moved Create Task help content to `web/assets/modules/create_task_help.js`.
+   - provider model dropdown state is now backend-driven first (`/api/provider-models`) with runtime cache merge; no hardcoded default model catalog in state bootstrap.
+7. Verification:
+   - `py -m ruff check src tests`
+   - `py -m pytest -q`
+   - `py -m pytest tests/unit/test_packaging_smoke.py -q`
+
 ## Update (2026-02-20, strategy adapters + service-layer split + dashboard modules)
 
 1. Provider runtime adapter refactor completed:
    - `ParticipantRunner` now dispatches via `ProviderFactory` and provider-specific strategy adapters.
    - behavior parity retained for model flags, team/multi-agent toggles, prompt handling, and output normalization.
 2. Service responsibilities are now deeply extracted from `OrchestratorService`:
-   - new `src/awe_agentcheck/service_layers.py` with:
+   - new service layer package (`src/awe_agentcheck/service_layers/`) with:
      - `AnalyticsService`
      - `HistoryService`
      - `TaskManagementService`

@@ -50,30 +50,38 @@
 1. Provider 适配层重构为策略/工厂模式：
    - 新增 `ProviderAdapter` 及 `ClaudeAdapter`、`CodexAdapter`、`GeminiAdapter`
    - 新增 `ProviderFactory`，`ParticipantRunner` 改为通过适配器分发，不再依赖大量 provider 分支判断。
-2. 服务层完成首轮拆分，提升可维护性：
-   - 新增 `src/awe_agentcheck/service_layers.py`
-   - `OrchestratorService` 现将 analytics/history/task-management 委托给独立服务类处理。
-3. Dashboard 前端模块化完成：
+2. 服务层已完成包级拆分，提升可维护性：
+   - 用 `src/awe_agentcheck/service_layers/` 替代单文件 `src/awe_agentcheck/service_layers.py`
+   - 拆为 `analytics.py`、`history.py`、`task_management.py`、`__init__.py`
+   - `HistoryService` 依赖改为单对象 `HistoryDeps`，不再传一长串回调参数。
+3. Sandbox / 指纹逻辑去重完成：
+   - 工作区指纹与沙盒 bootstrap/ignore 逻辑统一到 `TaskManagementService`
+   - `OrchestratorService` 改为委托调用，避免双实现长期漂移。
+4. Prompt 模板已外置：
+   - 新增 `src/awe_agentcheck/prompt_templates/*.txt`（discussion/implementation/review/proposal）
+   - `workflow.py` 与 proposal 阶段均改为共享模板渲染器，不再继续堆 f-string。
+5. LangGraph 执行升级为真实按轮推进：
+   - `round` 节点每次只执行 1 轮，再按状态路由下一步
+   - 不再是“在 round 节点里一次跑完整 classic loop”的包装模式。
+6. Dashboard 模块化继续深化：
    - 拆分模块为：
      - `web/assets/modules/api.js`
      - `web/assets/modules/store.js`
      - `web/assets/modules/utils.js`
      - `web/assets/modules/ui.js`
+     - `web/assets/modules/create_task_help.js`
    - 页面加载改为 ES module（`<script type="module" ...>`）。
-4. 集成验证过程中补齐稳定性修复：
+   - `initElements()` 已提供按面板分组结构（`project/summary/history/controls/create/providers`），同时保留原平铺字段兼容旧代码。
+7. Provider 模型目录改为后端优先：
+   - Web 初始状态不再硬编码模型清单，优先由 `GET /api/provider-models` 下发
+   - 前端会将服务端目录与运行时缓存合并去重，而不是写死常量。
+8. 集成验证过程中补齐稳定性修复：
    - 修复 dry-run 证据输出，确保 `selftest_local_smoke.py` 在 precompletion 门禁下稳定通过。
    - 修复 LangGraph 节点中的 lambda lint 问题（避免 `ruff` 阻断）。
-5. 回归验证已通过：
+9. 回归验证已通过：
    - `pytest -q tests/unit`
    - `py -m ruff check .`
    - `py scripts/selftest_local_smoke.py --port 8011 --health-timeout-seconds 40 --task-timeout-seconds 120`
-6. 任务管理拆分进一步深化（稳定优先）：
-   - `TaskManagementService` 不再使用回调 dataclass 接线。
-   - create/list/get 改为基于真实依赖（`repository`、`artifact_store`）执行，内部承载任务创建校验/沙盒/指纹逻辑。
-7. Dashboard 模块化进一步深化：
-   - 状态/theme/api-health 辅助逻辑迁移到 `modules/store.js`。
-   - DOM 元素初始化与 participant matrix 渲染迁移到 `modules/ui.js`。
-   - `dashboard.js` 更聚焦流程编排与事件绑定。
 
 ## 上一版更新（2026-02-19）
 
@@ -81,7 +89,7 @@
    - Claude 默认命令固定 `claude-opus-4-6`
    - Codex 默认命令使用 `model_reasoning_effort=xhigh`
    - Gemini 默认命令统一为 `gemini --yolo`
-2. 新增模型目录接口 `GET /api/provider-models`，并扩充内置模型候选，避免下拉只有单一选项。
+2. 新增模型目录接口 `GET /api/provider-models`，并将 Web 下拉改为服务端目录驱动。
 3. 新增任务级对话语言控制（`conversation_language`: `en`/`zh`），已接入 API、CLI、工作流提示词和 Web 表单。
 4. 新增按提供者透传模型参数（`provider_model_params` / `--provider-model-param provider=args`）。
 5. Windows 运行稳定性增强：

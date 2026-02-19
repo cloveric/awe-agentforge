@@ -1,31 +1,6 @@
 import { normalizeProjectPath } from './utils.js';
 
-export const DEFAULT_PROVIDER_MODEL_CATALOG = Object.freeze({
-  claude: [
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'claude-opus-4-1',
-    'claude-sonnet-4-5',
-    'claude-3-7-sonnet',
-    'claude-3-5-sonnet-latest',
-  ],
-  codex: [
-    'gpt-5.3-codex',
-    'gpt-5.3-codex-spark',
-    'gpt-5-codex',
-    'gpt-5',
-    'gpt-5-mini',
-    'gpt-4.1',
-  ],
-  gemini: [
-    'gemini-3-flash-preview',
-    'gemini-3-pro-preview',
-    'gemini-3-flash',
-    'gemini-3-pro',
-    'gemini-flash-latest',
-    'gemini-pro-latest',
-  ],
-});
+export const DEFAULT_PROVIDER_KEYS = Object.freeze(['claude', 'codex', 'gemini']);
 
 export const THEME_OPTIONS = [
   { id: 'neon', label: 'Neon Grid' },
@@ -39,6 +14,10 @@ export const SELECTION_PREF_KEY = 'awe-agentcheck-selection';
 const THEME_PREF_KEY = 'awe-agentcheck-theme';
 
 export function createInitialState() {
+  const providerModelCatalog = {};
+  for (const provider of DEFAULT_PROVIDER_KEYS) {
+    providerModelCatalog[provider] = [];
+  }
   return {
     tasks: [],
     historyItems: [],
@@ -46,11 +25,7 @@ export function createInitialState() {
     analytics: null,
     policyTemplates: null,
     historyLoadedOnce: false,
-    providerModelCatalog: {
-      claude: [...DEFAULT_PROVIDER_MODEL_CATALOG.claude],
-      codex: [...DEFAULT_PROVIDER_MODEL_CATALOG.codex],
-      gemini: [...DEFAULT_PROVIDER_MODEL_CATALOG.gemini],
-    },
+    providerModelCatalog,
     selectedProject: null,
     selectedRole: 'all',
     selectedTaskId: null,
@@ -75,6 +50,28 @@ export function createInitialState() {
     participantCapabilityDraft: {},
     participantRoleRows: [],
   };
+}
+
+export function normalizeProviderModelCatalog(rawCatalog, fallbackCatalog = null) {
+  const source = rawCatalog && typeof rawCatalog === 'object' ? rawCatalog : {};
+  const fallback = fallbackCatalog && typeof fallbackCatalog === 'object' ? fallbackCatalog : {};
+  const out = {};
+  for (const provider of DEFAULT_PROVIDER_KEYS) {
+    const seen = new Set();
+    const merged = [
+      ...(Array.isArray(source[provider]) ? source[provider] : []),
+      ...(Array.isArray(fallback[provider]) ? fallback[provider] : []),
+    ];
+    out[provider] = [];
+    for (const raw of merged) {
+      const model = String(raw || '').trim();
+      const key = model.toLowerCase();
+      if (!model || seen.has(key)) continue;
+      seen.add(key);
+      out[provider].push(model);
+    }
+  }
+  return out;
 }
 
 export function applySavedSelection(state, savedSelection) {

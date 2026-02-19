@@ -1,0 +1,16 @@
+Task: $task_title
+Round: $round_no
+EvolutionLevel: $evolution_level
+RepairMode: $repair_mode
+$language_instruction
+$repair_guidance
+$plain_mode_instruction
+Implement based on this plan and summarize what changed.
+Plan:
+$plan
+$mode_guidance
+Implement only agreed plan items; do not add unrelated changes.
+Do not introduce default secrets/tokens or hidden bypass behavior.
+Include explicit assumptions and risks.
+Include an Evidence section with repo-relative file paths touched or validated.
+Do not ask follow-up questions. Keep response concise.

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import os
 import re
 import shlex
+from string import Template
 import subprocess
 import time
 from typing import Callable
@@ -25,6 +26,7 @@ except Exception:  # pragma: no cover - optional import fallback
     StateGraph = None
 
 _log = get_logger('awe_agentcheck.workflow')
+_PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parent / 'prompt_templates'
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,8 @@ class ArchitectureAuditResult:
 
 
 class WorkflowEngine:
+    _prompt_template_cache: dict[str, Template] = {}
+
     def __init__(
         self,
         *,
@@ -232,15 +236,22 @@ class WorkflowEngine:
         *,
         on_event: Callable[[dict], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        emit_task_started: bool = True,
+        round_offset: int = 0,
+        initial_previous_gate_reason: str | None = None,
+        initial_strategy_hint: str | None = None,
+        initial_loop_tracker: dict | None = None,
+        force_single_round: bool = False,
     ) -> RunResult:
         emit = on_event or (lambda event: None)
         check_cancel = should_cancel or (lambda: False)
 
-        emit({'type': 'task_started', 'task_id': config.task_id})
+        if emit_task_started:
+            emit({'type': 'task_started', 'task_id': config.task_id})
+            _log.info('workflow_started task_id=%s max_rounds=%d', config.task_id, config.max_rounds)
         set_task_context(task_id=config.task_id)
-        _log.info('workflow_started task_id=%s max_rounds=%d', config.task_id, config.max_rounds)
         tracer = self._get_tracer()
-        previous_gate_reason: str | None = None
+        previous_gate_reason: str | None = str(initial_previous_gate_reason or '').strip() or None
         deadline = self._parse_deadline(config.evolve_until)
         provider_models = self._normalize_provider_models(config.provider_models)
         provider_model_params = self._normalize_provider_model_params(config.provider_model_params)
@@ -253,13 +264,13 @@ class WorkflowEngine:
             config.codex_multi_agents_overrides
         )
         environment_context = self._environment_context(config)
-        loop_tracker = self._new_loop_tracker()
-        strategy_hint: str | None = None
+        loop_tracker = initial_loop_tracker if isinstance(initial_loop_tracker, dict) else self._new_loop_tracker()
+        strategy_hint: str | None = str(initial_strategy_hint or '').strip() or None
         stream_mode = bool(config.stream_mode)
         debate_mode = bool(config.debate_mode) and bool(config.reviewers)
         review_timeout_seconds = self._review_timeout_seconds(self.participant_timeout_seconds)
         deadline_mode = deadline is not None
-        round_no = 0
+        round_no = max(0, int(round_offset))
         while True:
             round_no += 1
             if debate_mode and check_cancel():
@@ -805,6 +816,8 @@ class WorkflowEngine:
                 terminal_reason = str(progress.get('terminal_reason') or '').strip()
                 if terminal_reason:
                     return RunResult(status='failed_gate', rounds=round_no, gate_reason=terminal_reason)
+                if force_single_round:
+                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=checklist.reason)
                 if not deadline_mode and round_no >= config.max_rounds:
                     return RunResult(status='failed_gate', rounds=round_no, gate_reason=checklist.reason)
                 continue
@@ -857,6 +870,8 @@ class WorkflowEngine:
                 terminal_reason = str(progress.get('terminal_reason') or '').strip()
                 if terminal_reason:
                     return RunResult(status='failed_gate', rounds=round_no, gate_reason=terminal_reason)
+                if force_single_round:
+                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=architecture_audit.reason)
                 if not deadline_mode and round_no >= config.max_rounds:
                     return RunResult(status='failed_gate', rounds=round_no, gate_reason=architecture_audit.reason)
                 continue
@@ -896,6 +911,8 @@ class WorkflowEngine:
             terminal_reason = str(progress.get('terminal_reason') or '').strip()
             if terminal_reason:
                 return RunResult(status='failed_gate', rounds=round_no, gate_reason=terminal_reason)
+            if force_single_round:
+                return RunResult(status='failed_gate', rounds=round_no, gate_reason=gate.reason)
             # Deadline takes priority over round cap. If a deadline is set,
             # keep iterating until deadline/cancel/pass.
             if not deadline_mode and round_no >= config.max_rounds:
@@ -998,6 +1015,9 @@ class WorkflowEngine:
             'should_cancel': state.get('should_cancel'),
             'deadline': self._parse_deadline(config.evolve_until),
             'round_no': 0,
+            'previous_gate_reason': None,
+            'strategy_hint': None,
+            'loop_tracker': self._new_loop_tracker(),
             'result': None,
         }
 
@@ -1018,41 +1038,53 @@ class WorkflowEngine:
             def _noop_cancel() -> bool:
                 return False
             check_cancel = _noop_cancel
-        round_offset = 0
+        current_round = max(0, int(state.get('round_no') or 0))
+        previous_gate_reason = str(state.get('previous_gate_reason') or '').strip() or None
+        strategy_hint = str(state.get('strategy_hint') or '').strip() or None
+        loop_tracker = state.get('loop_tracker')
+        if not isinstance(loop_tracker, dict):
+            loop_tracker = self._new_loop_tracker()
 
-        def _emit_with_round_offset(event: dict) -> None:
+        def _emit_without_task_started(event: dict) -> None:
             if not isinstance(event, dict):
                 return
             payload = dict(event)
             if str(payload.get('type') or '').strip().lower() == 'task_started':
                 return
-            if 'round' in payload:
-                try:
-                    payload['round'] = int(payload.get('round') or 0) + round_offset
-                except Exception:
-                    pass
             emit(payload)
 
-        # Keep LangGraph orchestration while running the workflow loop to completion
-        # in one execution pass for smoother UX and event continuity.
+        single_round_config = replace(config, max_rounds=1)
         one_round = self._run_classic(
-            config,
-            on_event=_emit_with_round_offset,
+            single_round_config,
+            on_event=_emit_without_task_started,
             should_cancel=check_cancel,
+            emit_task_started=False,
+            round_offset=current_round,
+            initial_previous_gate_reason=previous_gate_reason,
+            initial_strategy_hint=strategy_hint,
+            initial_loop_tracker=loop_tracker,
+            force_single_round=True,
+        )
+        result = RunResult(
+            status=str(one_round.status or 'failed_system'),
+            rounds=int(one_round.rounds or 0),
+            gate_reason=str(one_round.gate_reason or ''),
+        )
+        deadline = state.get('deadline')
+        should_finish = self._langgraph_should_finish_round(
+            result=result,
+            round_no=int(result.rounds or 0),
+            max_rounds=int(config.max_rounds),
+            deadline=deadline if isinstance(deadline, datetime) else None,
         )
         return {
             **state,
-            'round_no': int(one_round.rounds or 0),
-            'result': RunResult(
-                status=str(one_round.status or 'failed_system'),
-                rounds=int(one_round.rounds or 0),
-                gate_reason=str(one_round.gate_reason or ''),
-            ),
-            'last_round_result': RunResult(
-                status=str(one_round.status or 'failed_system'),
-                rounds=int(one_round.rounds or 0),
-                gate_reason=str(one_round.gate_reason or ''),
-            ),
+            'round_no': int(result.rounds or 0),
+            'previous_gate_reason': (result.gate_reason if str(result.status) == 'failed_gate' else previous_gate_reason),
+            'strategy_hint': strategy_hint,
+            'loop_tracker': loop_tracker,
+            'result': (result if should_finish else None),
+            'last_round_result': result,
         }
 
     @staticmethod
@@ -1075,7 +1107,13 @@ class WorkflowEngine:
 
     @staticmethod
     def _langgraph_round_route(state: dict) -> str:
-        return 'finalize' if isinstance(state.get('result'), RunResult) else 'round'
+        result = state.get('result')
+        if isinstance(result, RunResult):
+            return 'finalize'
+        last_round = state.get('last_round_result')
+        if not isinstance(last_round, RunResult):
+            return 'finalize'
+        return 'round'
 
     def _langgraph_finalize_node(self, state: dict) -> dict:
         if ('preflight_ok' in state) and (not bool(state.get('preflight_ok'))):
@@ -1474,6 +1512,34 @@ class WorkflowEngine:
             text = f'{text}\nStrategy shift hint: {hint}'
         return text
 
+    @classmethod
+    def _load_prompt_template(cls, template_name: str) -> Template:
+        key = str(template_name or '').strip()
+        if not key:
+            raise ValueError('template_name is required')
+        cached = cls._prompt_template_cache.get(key)
+        if cached is not None:
+            return cached
+        safe_name = Path(key).name
+        if safe_name != key:
+            raise ValueError(f'invalid prompt template name: {template_name}')
+        template_path = (_PROMPT_TEMPLATE_DIR / safe_name).resolve(strict=False)
+        base_dir = _PROMPT_TEMPLATE_DIR.resolve(strict=False)
+        try:
+            template_path.relative_to(base_dir)
+        except ValueError as exc:
+            raise ValueError(f'invalid prompt template path: {template_name}') from exc
+        text = template_path.read_text(encoding='utf-8')
+        template = Template(text)
+        cls._prompt_template_cache[key] = template
+        return template
+
+    @classmethod
+    def _render_prompt_template(cls, template_name: str, **fields: object) -> str:
+        template = cls._load_prompt_template(template_name)
+        normalized = {str(k): ('' if v is None else str(v)) for k, v in fields.items()}
+        return template.safe_substitute(normalized)
+
     @staticmethod
     def _new_loop_tracker() -> dict:
         return {
@@ -1771,31 +1837,37 @@ class WorkflowEngine:
         language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
         repair_guidance = WorkflowEngine._repair_mode_guidance(repair_mode)
         plain_mode_instruction = WorkflowEngine._plain_mode_instruction(bool(config.plain_mode))
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"EvolutionLevel: {level}\n"
-            f"RepairMode: {repair_mode}\n"
-            f"Description: {config.description}\n"
-            f"{language_instruction}\n"
-            f"{repair_guidance}\n"
-            f"{plain_mode_instruction}\n"
-            "Produce a concise execution plan for this round.\n"
-            "Do not ask follow-up questions. Keep response concise."
-        )
+        mode_guidance = ''
         if level == 1:
-            base += (
-                "\nMode guidance: prioritize bug/risk fixes first, and optionally propose one small safe evolution.\n"
+            mode_guidance = (
+                "Mode guidance: prioritize bug/risk fixes first, and optionally propose one small safe evolution.\n"
                 "If proposing, include one line: EVOLUTION_PROPOSAL: <small enhancement>."
             )
         elif level == 2:
-            base += (
-                "\nMode guidance: prioritize bug/risk fixes first, then proactively propose 1-2 evolution directions.\n"
+            mode_guidance = (
+                "Mode guidance: prioritize bug/risk fixes first, then proactively propose 1-2 evolution directions.\n"
                 "If proposing, include lines: EVOLUTION_PROPOSAL_1: ... and optional EVOLUTION_PROPOSAL_2: ...\n"
                 "Ensure rollout stays incremental and testable."
             )
+        previous_gate_context = ''
         if round_no > 1 and previous_gate_reason:
-            base += f"\nPrevious gate failure reason: {previous_gate_reason}\nAddress this explicitly."
+            previous_gate_context = (
+                f"Previous gate failure reason: {previous_gate_reason}\n"
+                "Address this explicitly."
+            )
+        base = WorkflowEngine._render_prompt_template(
+            'discussion_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            evolution_level=level,
+            repair_mode=repair_mode,
+            description=config.description,
+            language_instruction=language_instruction,
+            repair_guidance=repair_guidance,
+            plain_mode_instruction=plain_mode_instruction,
+            mode_guidance=mode_guidance,
+            previous_gate_context=previous_gate_context,
+        )
         return WorkflowEngine._inject_prompt_extras(
             base=base,
             environment_context=environment_context,
@@ -1850,21 +1922,16 @@ class WorkflowEngine:
         language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
         repair_guidance = WorkflowEngine._repair_mode_guidance(repair_mode)
         plain_mode_instruction = WorkflowEngine._plain_mode_instruction(bool(config.plain_mode))
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"EvolutionLevel: {level}\n"
-            f"RepairMode: {repair_mode}\n"
-            f"{language_instruction}\n"
-            f"{repair_guidance}\n"
-            f"{plain_mode_instruction}\n"
-            "Reviewer-first mode: reviewers have provided pre-implementation findings.\n"
-            "Produce the author execution plan for this round and explicitly address reviewer concerns.\n"
-            "Reviewer is primary in this phase: do not invent unrelated change themes.\n"
-            "Only include revisions tied to reviewer findings and user intent.\n"
-            "If you reject a reviewer suggestion, state reason and safer alternative.\n"
-            "Do not ask follow-up questions. Keep response concise.\n"
-            f"Reviewer context:\n{clipped}\n"
+        base = WorkflowEngine._render_prompt_template(
+            'discussion_after_reviewer_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            evolution_level=level,
+            repair_mode=repair_mode,
+            language_instruction=language_instruction,
+            repair_guidance=repair_guidance,
+            plain_mode_instruction=plain_mode_instruction,
+            reviewer_context=clipped,
         )
         return WorkflowEngine._inject_prompt_extras(
             base=base,
@@ -1897,22 +1964,17 @@ class WorkflowEngine:
                 "Resolve blockers first, then proactively implement one incremental evolution direction "
                 "from discussion if tests/lint can remain green."
             )
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"EvolutionLevel: {level}\n"
-            f"RepairMode: {repair_mode}\n"
-            f"{language_instruction}\n"
-            f"{repair_guidance}\n"
-            f"{plain_mode_instruction}\n"
-            "Implement based on this plan and summarize what changed.\n"
-            f"Plan:\n{clipped}\n"
-            f"{mode_guidance}\n"
-            "Implement only agreed plan items; do not add unrelated changes.\n"
-            "Do not introduce default secrets/tokens or hidden bypass behavior.\n"
-            "Include explicit assumptions and risks.\n"
-            "Include an Evidence section with repo-relative file paths touched or validated.\n"
-            "Do not ask follow-up questions. Keep response concise."
+        base = WorkflowEngine._render_prompt_template(
+            'implementation_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            evolution_level=level,
+            repair_mode=repair_mode,
+            language_instruction=language_instruction,
+            repair_guidance=repair_guidance,
+            plain_mode_instruction=plain_mode_instruction,
+            plan=clipped,
+            mode_guidance=mode_guidance,
         )
         return WorkflowEngine._inject_prompt_extras(
             base=base,
@@ -1940,22 +2002,16 @@ class WorkflowEngine:
             else "Review current context and provide concrete risk findings."
         )
         checklist_guidance = WorkflowEngine._review_checklist_guidance(config.evolution_level)
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"Reviewer: {reviewer_id}\n"
-            f"{language_instruction}\n"
-            f"{plain_mode_instruction}\n"
-            "Debate mode step: review the current plan/context and provide concise, concrete concerns.\n"
-            "Focus on correctness, regression risk, reliability, security, and test gaps.\n"
-            f"{depth_guidance}\n"
-            f"{checklist_guidance}\n"
-            "If you run checks, include 1-3 evidence points with file paths.\n"
-            "Do not include command logs, internal process narration, or tool/skill references.\n"
-            "If context is insufficient, return one short line starting with: insufficient_context: ...\n"
-            "Do not output VERDICT/NEXT_ACTION lines in this step.\n"
-            "Provide plain text only: findings first, then suggested fixes.\n"
-            f"Current context:\n{clipped}\n"
+        base = WorkflowEngine._render_prompt_template(
+            'debate_review_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            reviewer_id=reviewer_id,
+            language_instruction=language_instruction,
+            plain_mode_instruction=plain_mode_instruction,
+            depth_guidance=depth_guidance,
+            checklist_guidance=checklist_guidance,
+            discussion_context=clipped,
         )
         return WorkflowEngine._inject_prompt_extras(
             base=base,
@@ -1978,17 +2034,15 @@ class WorkflowEngine:
         clipped_feedback = WorkflowEngine._clip_text(reviewer_feedback, max_chars=1400)
         language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
         plain_mode_instruction = WorkflowEngine._plain_mode_instruction(bool(config.plain_mode))
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"{language_instruction}\n"
-            f"{plain_mode_instruction}\n"
-            f"Debate mode step: respond to reviewer feedback from {reviewer_id}.\n"
-            "Update the execution direction with explicit decisions.\n"
-            "Format: accepted points, rejected points(with reason), and revised implementation focus.\n"
-            "Do not output VERDICT/NEXT_ACTION lines.\n"
-            f"Current context:\n{clipped_context}\n"
-            f"Reviewer feedback:\n{clipped_feedback}\n"
+        base = WorkflowEngine._render_prompt_template(
+            'debate_reply_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            language_instruction=language_instruction,
+            plain_mode_instruction=plain_mode_instruction,
+            reviewer_id=reviewer_id,
+            discussion_context=clipped_context,
+            reviewer_feedback=clipped_feedback,
         )
         return WorkflowEngine._inject_prompt_extras(
             base=base,
@@ -2115,29 +2169,21 @@ class WorkflowEngine:
                 "For evolution proposals, block only if there is correctness/regression/security/data-loss risk.\n"
                 "Do not block solely because an optional enhancement exists.\n"
             )
-        base = (
-            f"Task: {config.title}\n"
-            f"Round: {round_no}\n"
-            f"EvolutionLevel: {level}\n"
-            f"RepairMode: {repair_mode}\n"
-            f"{language_instruction}\n"
-            f"{repair_guidance}\n"
-            f"{plain_mode_instruction}\n"
-            "Review the implementation summary and decide blocker status.\n"
-            "Mark BLOCKER only for correctness, regression, security, or data-loss risks.\n"
-            "Do not mark BLOCKER for style-only, process-only, or preference-only feedback.\n"
-            f"{depth_guidance}\n"
-            f"{checklist_guidance}\n"
-            "Keep output concise but complete enough to justify verdict.\n"
-            "Do not include command logs, internal process narration, or tool/skill references.\n"
-            'If evidence is insufficient, set "verdict":"UNKNOWN" quickly.\n'
-            f"{mode_guidance}"
-            "Output JSON only. No markdown fences. No extra prose before or after the JSON object.\n"
-            f"{control_schema_instruction}\n"
-            f"{plain_review_format}\n"
-            "Reference at least one concrete repo-relative file path when possible.\n"
-            "Do not ask follow-up questions. Keep response concise.\n"
-            f"Implementation summary:\n{clipped}\n"
+        base = WorkflowEngine._render_prompt_template(
+            'review_prompt.txt',
+            task_title=config.title,
+            round_no=round_no,
+            evolution_level=level,
+            repair_mode=repair_mode,
+            language_instruction=language_instruction,
+            repair_guidance=repair_guidance,
+            plain_mode_instruction=plain_mode_instruction,
+            depth_guidance=depth_guidance,
+            checklist_guidance=checklist_guidance,
+            mode_guidance=mode_guidance,
+            control_schema_instruction=control_schema_instruction,
+            plain_review_format=plain_review_format,
+            implementation_summary=clipped,
         )
         return WorkflowEngine._inject_prompt_extras(
             base=base,

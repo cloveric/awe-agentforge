@@ -50,30 +50,38 @@
 1. Provider adapter architecture is now strategy/factory based:
    - added `ProviderAdapter` + provider-specific adapters (`ClaudeAdapter`, `CodexAdapter`, `GeminiAdapter`)
    - added `ProviderFactory` and switched `ParticipantRunner` to use adapter dispatch instead of provider branching.
-2. Service layer split shipped for maintainability:
-   - new `src/awe_agentcheck/service_layers.py`
-   - `OrchestratorService` now delegates analytics/history/task-management responsibilities to dedicated service classes.
-3. Dashboard modularization completed:
+2. Service layers were fully package-split for maintainability:
+   - replaced monolithic `src/awe_agentcheck/service_layers.py` with `src/awe_agentcheck/service_layers/`
+   - split into `analytics.py`, `history.py`, `task_management.py`, and package export `__init__.py`.
+   - `HistoryService` now consumes a single `HistoryDeps` dependency object instead of many callback args.
+3. Sandbox/fingerprint logic deduplicated:
+   - workspace fingerprint and sandbox bootstrap/ignore logic now live in `TaskManagementService`.
+   - `OrchestratorService` delegates to task-management helpers to avoid dual implementations drifting apart.
+4. Prompt assembly externalized into template files:
+   - new `src/awe_agentcheck/prompt_templates/*.txt` for discussion/implementation/review/proposal stages.
+   - both `workflow.py` and proposal-stage prompts now render via shared template loader.
+5. LangGraph execution upgraded to real per-round graph progression:
+   - each `round` node now executes exactly one workflow round and routes by state/result.
+   - no longer wraps `_run_classic` as a full-loop single-node execution.
+6. Dashboard modularization deepened:
    - extracted frontend modules into:
      - `web/assets/modules/api.js`
      - `web/assets/modules/store.js`
      - `web/assets/modules/utils.js`
      - `web/assets/modules/ui.js`
+     - `web/assets/modules/create_task_help.js`
    - switched dashboard loader to ES module mode (`<script type="module" ...>`).
-4. Reliability fixes from integration verification:
+   - `initElements()` now exposes grouped panel scopes (`project/summary/history/controls/create/providers`) with backward-compatible flat aliases.
+7. Provider model catalog is now backend-driven first:
+   - Web state starts from empty provider lists and hydrates from `GET /api/provider-models`.
+   - dashboard normalization now merges server payload with cached runtime state, not hardcoded model constants.
+8. Reliability fixes from integration verification:
    - fixed dry-run evidence output so `selftest_local_smoke.py` can pass precompletion checks consistently.
    - removed lint-breaking lambda assignments in LangGraph nodes.
-5. Regression verification completed:
+9. Regression verification completed:
    - `pytest -q tests/unit`
    - `py -m ruff check .`
    - `py scripts/selftest_local_smoke.py --port 8011 --health-timeout-seconds 40 --task-timeout-seconds 120`
-6. Task management split was deepened (stability-first):
-   - `TaskManagementService` no longer uses callback dataclass wiring.
-   - create/list/get now run on real dependencies (`repository`, `artifact_store`) with internal task-creation validation/sandbox/fingerprint logic.
-7. Dashboard modularization was deepened:
-   - moved app state/theme/api-health helpers into `modules/store.js`.
-   - moved DOM element initialization + participant matrix rendering into `modules/ui.js`.
-   - `dashboard.js` now focuses more on orchestration/event wiring.
 
 ## Previous Update (2026-02-19)
 
@@ -81,7 +89,7 @@
    - Claude default command pins `claude-opus-4-6`
    - Codex default command uses `model_reasoning_effort=xhigh`
    - Gemini default command is normalized to `gemini --yolo`
-2. Added provider model catalog endpoint (`GET /api/provider-models`) and expanded built-in model candidates so UI dropdowns are not single-option.
+2. Added provider model catalog endpoint (`GET /api/provider-models`) and wired Web dropdowns to server-driven model lists.
 3. Added per-task conversation language control (`conversation_language`: `en`/`zh`) in API, CLI, workflow prompts, and dashboard form.
 4. Added provider model parameter passthrough end-to-end (`provider_model_params` / `--provider-model-param provider=args`).
 5. Hardened Windows runtime execution:

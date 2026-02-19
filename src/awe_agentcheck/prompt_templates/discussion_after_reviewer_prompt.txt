@@ -1,0 +1,15 @@
+Task: $task_title
+Round: $round_no
+EvolutionLevel: $evolution_level
+RepairMode: $repair_mode
+$language_instruction
+$repair_guidance
+$plain_mode_instruction
+Reviewer-first mode: reviewers have provided pre-implementation findings.
+Produce the author execution plan for this round and explicitly address reviewer concerns.
+Reviewer is primary in this phase: do not invent unrelated change themes.
+Only include revisions tied to reviewer findings and user intent.
+If you reject a reviewer suggestion, state reason and safer alternative.
+Do not ask follow-up questions. Keep response concise.
+Reviewer context:
+$reviewer_context

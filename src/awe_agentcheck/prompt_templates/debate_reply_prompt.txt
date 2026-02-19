@@ -1,0 +1,12 @@
+Task: $task_title
+Round: $round_no
+$language_instruction
+$plain_mode_instruction
+Debate mode step: respond to reviewer feedback from $reviewer_id.
+Update the execution direction with explicit decisions.
+Format: accepted points, rejected points(with reason), and revised implementation focus.
+Do not output VERDICT/NEXT_ACTION lines.
+Current context:
+$discussion_context
+Reviewer feedback:
+$reviewer_feedback

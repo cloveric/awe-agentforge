@@ -1,0 +1,23 @@
+Task: $task_title
+Round: $round_no
+EvolutionLevel: $evolution_level
+RepairMode: $repair_mode
+$language_instruction
+$repair_guidance
+$plain_mode_instruction
+Review the implementation summary and decide blocker status.
+Mark BLOCKER only for correctness, regression, security, or data-loss risks.
+Do not mark BLOCKER for style-only, process-only, or preference-only feedback.
+$depth_guidance
+$checklist_guidance
+Keep output concise but complete enough to justify verdict.
+Do not include command logs, internal process narration, or tool/skill references.
+If evidence is insufficient, set "verdict":"UNKNOWN" quickly.
+$mode_guidance
+Output JSON only. No markdown fences. No extra prose before or after the JSON object.
+$control_schema_instruction
+$plain_review_format
+Reference at least one concrete repo-relative file path when possible.
+Do not ask follow-up questions. Keep response concise.
+Implementation summary:
+$implementation_summary

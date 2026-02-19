@@ -1,0 +1,16 @@
+Task: $task_title
+Round: $round_no
+Reviewer: $reviewer_id
+$language_instruction
+$plain_mode_instruction
+Debate mode step: review the current plan/context and provide concise, concrete concerns.
+Focus on correctness, regression risk, reliability, security, and test gaps.
+$depth_guidance
+$checklist_guidance
+If you run checks, include 1-3 evidence points with file paths.
+Do not include command logs, internal process narration, or tool/skill references.
+If context is insufficient, return one short line starting with: insufficient_context: ...
+Do not output VERDICT/NEXT_ACTION lines in this step.
+Provide plain text only: findings first, then suggested fixes.
+Current context:
+$discussion_context

@@ -1,0 +1,16 @@
+Task: $task_title
+You are the author responding to reviewer-first proposal feedback.
+Reviewer leads this phase. Do not invent unrelated changes.
+$language_instruction
+$plain_instruction
+Reviewer verdict snapshot: no_blocker=$no_blocker, blocker=$blocker, unknown=$unknown
+Produce an updated implementation proposal for manual approval.
+Address reviewer concerns explicitly and keep plan incremental.
+Only propose changes that map to reviewer findings and user intent.
+If a reviewer suggestion is unsafe, explain why and give a safer replacement.
+Do not add default secrets/tokens, hidden bypasses, or broad unrelated refactors.
+$audit_author_guidance
+Include an Evidence section with repo-relative files to inspect/change.
+Do not ask follow-up questions.
+Context:
+$context_text
