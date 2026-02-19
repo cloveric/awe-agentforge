@@ -104,7 +104,7 @@ Default policy:
 4. User-specified sandbox path is preserved by default.
 5. `self_loop_mode=0` runs proposal-consensus rounds first, then enters `waiting_manual`.
 6. With `debate_mode=1`, proposal stage is reviewer-first (`proposal_precheck_review` -> author revision -> `proposal_review`).
-7. One consensus round is counted only when required reviewers align; repeated misalignment can end with `failed_gate` (`proposal_consensus_not_reached`).
+7. One consensus round is counted only when required reviewers align; same-round retries continue until alignment, cancellation/deadline, or reviewer outputs are fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
 8. Author must approve before full implementation loop starts.
 9. In full loop, author is still the implementation actor and reviewers remain evaluators.
 10. `repair_mode` defaults to `balanced`; choose `minimal` or `structural` per risk appetite.

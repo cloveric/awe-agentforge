@@ -195,6 +195,47 @@ class ProposalReviewUnavailableWorkflowEngine:
         self.participant_timeout_seconds = 60
 
 
+class ProposalRunnerRetryThenPass:
+    def __init__(self):
+        self.calls: list[str] = []
+        self.review_attempts = 0
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            return AdapterResult(
+                output='Author revised proposal after reviewer blocker feedback.',
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: proposal review.' in str(prompt):
+            self.review_attempts += 1
+            verdict = 'blocker' if self.review_attempts == 1 else 'no_blocker'
+            return AdapterResult(
+                output=f'VERDICT: {verdict.upper()}\nReviewer attempt={self.review_attempts}',
+                verdict=verdict,
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        return AdapterResult(
+            output='VERDICT: NO_BLOCKER\nReviewer precheck ok.',
+            verdict='no_blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalRetryThenPassWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerRetryThenPass()
+        self.participant_timeout_seconds = 60
+
+
 class FailingArtifactStore(ArtifactStore):
     def create_task_workspace(self, task_id: str):  # type: ignore[override]
         raise RuntimeError('artifact store failure')
@@ -1602,8 +1643,8 @@ def test_service_proposal_review_reviewer_failure_degrades_to_unknown(tmp_path: 
     )
 
     started = svc.start_task(created.task_id)
-    assert started.status.value == 'failed_gate'
-    assert started.last_gate_reason == 'proposal_consensus_not_reached'
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'author_confirmation_required'
 
     events = svc.list_events(created.task_id)
     assert any(
@@ -1617,7 +1658,8 @@ def test_service_proposal_review_reviewer_failure_degrades_to_unknown(tmp_path: 
         and str(e.get('payload', {}).get('verdict')) == 'unknown'
         for e in events
     )
-    assert any(e['type'] == 'proposal_consensus_failed' for e in events)
+    assert any(e['type'] == 'proposal_review_partial' for e in events)
+    assert not any(e['type'] == 'proposal_consensus_failed' for e in events)
 
 
 def test_service_manual_mode_uses_reviewer_first_before_author_proposal(tmp_path: Path):
@@ -1735,12 +1777,43 @@ def test_service_manual_mode_requires_actionable_proposal_review_before_executio
 
     started = svc.start_task(created.task_id)
     assert started.status.value == 'failed_gate'
-    assert started.last_gate_reason == 'proposal_consensus_not_reached'
+    assert started.last_gate_reason == 'proposal_review_unavailable'
     assert engine.runner.calls[0] == 'claude#review-B'
 
     events = svc.list_events(created.task_id)
     assert any(e['type'] == 'proposal_review_unavailable' for e in events)
     assert not any(e['type'] == 'task_started' for e in events)
+
+
+def test_service_manual_mode_keeps_retrying_same_round_until_proposal_consensus(tmp_path: Path):
+    engine = ProposalRetryThenPassWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Retry proposal until consensus',
+            description='reviewer blocks first, then agrees',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'author_confirmation_required'
+
+    events = svc.list_events(created.task_id)
+    retries = [e for e in events if e['type'] == 'proposal_consensus_retry']
+    reached = [e for e in events if e['type'] == 'proposal_consensus_reached']
+    assert retries
+    assert reached
+    assert int(reached[-1].get('payload', {}).get('attempt', 0)) >= 2
 
 
 def test_service_manual_mode_proposal_reviewer_timeout_follows_participant_timeout(tmp_path: Path):

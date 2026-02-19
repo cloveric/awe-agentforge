@@ -82,10 +82,10 @@
    - 最终代码实现仍由作者执行，审阅者不直接写入最终改动。
 15. 手动模式语义收紧：
    - 在 `self_loop_mode=0` 下，`max_rounds` 表示“提案共识轮次目标”，不再是单次讨论上限。
-   - 若审阅者在限定重试内仍无法达成共识，任务以 `failed_gate`（`proposal_consensus_not_reached`）结束。
+   - 单轮会在同一轮内持续重试直到达成共识；仅在取消/截止时间到达，或审阅输出全部不可用（`proposal_precheck_unavailable` / `proposal_review_unavailable`）时提前结束。
 16. 新增提案阶段可观测事件：
    - `proposal_precheck_review*`
-   - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_consensus_failed`
+   - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_review_partial`
 17. 已将两轮真实 codex 自检结果融合进主线并补齐回归测试：
    - 第 1 轮加固：artifact 事件防路径穿越、Windows 命令路径解析修复、SQL 条件状态更新原子化。
    - 第 2 轮加固：并发事件序号分配、沙盒创建失败回滚清理、沙盒默认私有目录、敏感文件跳过规则。
@@ -857,7 +857,7 @@ POST /api/tasks
    - 审阅者进行提案评审（`proposal_review`）
 3. **共识规则**：
    - 仅当所有必需审阅者都给出通过级结论时，才计为一轮共识完成
-   - 每轮有有限重试；若仍无法对齐，则任务以 `failed_gate`（`proposal_consensus_not_reached`）结束
+   - 在同一轮内持续重试直到对齐；仅在取消/到达截止时间，或审阅输出全部不可用（`proposal_precheck_unavailable` / `proposal_review_unavailable`）时提前结束
 4. **等待人工** → 达到目标共识轮后，状态变为 `waiting_manual`
 5. **作者决定**：
    - **批准** → 状态变为 `queued`（原因为 `author_approved`），然后立即重新启动进入完整工作流

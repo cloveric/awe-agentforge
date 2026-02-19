@@ -82,10 +82,10 @@
    - author remains the implementation owner; reviewers do not write final code changes.
 15. Manual mode semantics were tightened:
    - in `self_loop_mode=0`, `max_rounds` means required proposal consensus rounds (not just one discussion pass).
-   - if reviewers cannot converge after bounded retries, task exits with `failed_gate` (`proposal_consensus_not_reached`).
+   - one consensus round keeps iterating inside the same round until reviewers align; it stops early only on cancel/deadline or when reviewer outputs are fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
 16. Added richer proposal-stage events for observability:
    - `proposal_precheck_review*`
-   - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_consensus_failed`
+   - `proposal_consensus_reached` / `proposal_consensus_retry` / `proposal_review_partial`
 17. Merged two real codex self-check rounds into production code with regression coverage:
    - round-1 hardening: artifact events traversal guard, Windows command path parsing, SQL conditional status-update atomicity.
    - round-2 hardening: concurrent event sequence reservation, sandbox bootstrap rollback/cleanup, private-by-default sandbox base, secret-file skip rules.
@@ -857,7 +857,7 @@ This is the recommended mode for most use cases:
    - reviewers evaluate proposal quality/alignment (`proposal_review`)
 3. **Consensus rule**:
    - one round is counted only when all required reviewers return pass-level consensus
-   - each round has bounded retry attempts; if still not aligned, task ends as `failed_gate` (`proposal_consensus_not_reached`)
+   - same-round retries continue until alignment; task exits early only on cancel/deadline or reviewer outputs fully unavailable (`proposal_precheck_unavailable` / `proposal_review_unavailable`)
 4. **Wait for human** → after required consensus rounds are complete, status becomes `waiting_manual`
 5. **Author decides**:
    - **Approve** → status becomes `queued` (with `author_approved` reason), then immediately re-starts into the full workflow

@@ -167,10 +167,10 @@
    - author remains implementation owner; reviewers provide critique and gate decisions.
 2. Manual mode (`self_loop_mode=0`) semantics tightened:
    - `max_rounds` is interpreted as required proposal consensus rounds.
-   - each round supports bounded alignment retries; repeated misalignment now fails with `proposal_consensus_not_reached`.
+   - each round now keeps retrying in-place until consensus; it exits early only on cancel/deadline or reviewer outputs fully unavailable.
    - `waiting_manual` is entered only after required consensus rounds complete.
 3. Proposal-stage observability expanded:
-   - new event families: `proposal_precheck_review*`, `proposal_consensus_reached`, `proposal_consensus_retry`, `proposal_consensus_failed`.
+   - new event families: `proposal_precheck_review*`, `proposal_consensus_reached`, `proposal_consensus_retry`, `proposal_review_partial`.
 4. Documentation sync completed:
    - `README.md`, `README.zh-CN.md`, `docs/RUNBOOK.md`, `docs/ARCHITECTURE_FLOW.md` updated to match runtime behavior.
 

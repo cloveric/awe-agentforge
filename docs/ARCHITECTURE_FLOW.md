@@ -28,8 +28,8 @@ create task (queued)
            1) reviewer precheck pass
            2) author proposal/reply
            3) reviewer proposal review
-         round counted only on reviewer consensus
-         bounded retries per round; if no consensus -> failed_gate(proposal_consensus_not_reached)
+        round counted only on reviewer consensus
+        same-round retry until consensus; early stop only on cancel/deadline or reviewer outputs fully unavailable
        after target consensus rounds -> waiting_manual
        author decision:
          approve -> queued -> start task (running, full workflow)

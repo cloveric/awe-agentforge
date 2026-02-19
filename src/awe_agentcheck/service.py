@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import difflib
 import json
 import os
@@ -2381,7 +2381,43 @@ class OrchestratorService:
                 current_seed = proposal_seed
                 # Consensus stage is reviewer-first for all modes.
                 reviewer_first_mode = bool(reviewers)
-                max_alignment_attempts = 1 if OrchestratorService._is_audit_intent(config) else 3
+                proposal_deadline = WorkflowEngine._parse_deadline(config.evolve_until)
+
+                def finish_proposal_terminal(
+                    *,
+                    status: TaskStatus,
+                    reason: str,
+                    rounds_completed: int,
+                    event_type: str,
+                    payload: dict,
+                    round_number: int | None,
+                ) -> TaskView:
+                    updated = self.repository.update_task_status(
+                        task_id,
+                        status=status.value,
+                        reason=reason,
+                        rounds_completed=rounds_completed,
+                    )
+                    self.repository.append_event(
+                        task_id,
+                        event_type=event_type,
+                        payload=payload,
+                        round_number=round_number,
+                    )
+                    self.artifact_store.append_event(task_id, {'type': event_type, **payload})
+                    self.artifact_store.update_state(
+                        task_id,
+                        {
+                            'status': status.value,
+                            'last_gate_reason': reason,
+                            'rounds_completed': rounds_completed,
+                        },
+                    )
+                    self.artifact_store.write_final_report(
+                        task_id,
+                        f"status={status.value}\nreason={reason}",
+                    )
+                    return self._to_view(updated)
 
                 while consensus_rounds < target_rounds:
                     round_no = consensus_rounds + 1
@@ -2390,7 +2426,39 @@ class OrchestratorService:
                     round_latest_reviews: list[dict] = []
                     round_latest_proposal = current_seed
 
-                    while attempt < max_alignment_attempts and not consensus_reached:
+                    while not consensus_reached:
+                        if self.repository.is_cancel_requested(task_id):
+                            cancel_payload = {
+                                'round': round_no,
+                                'attempt': attempt,
+                                'consensus_rounds': consensus_rounds,
+                                'target_rounds': target_rounds,
+                            }
+                            return finish_proposal_terminal(
+                                status=TaskStatus.CANCELED,
+                                reason='canceled',
+                                rounds_completed=consensus_rounds,
+                                event_type='proposal_canceled',
+                                payload=cancel_payload,
+                                round_number=round_no,
+                            )
+                        if proposal_deadline is not None and datetime.now(timezone.utc) >= proposal_deadline:
+                            deadline_payload = {
+                                'round': round_no,
+                                'attempt': attempt,
+                                'deadline': proposal_deadline.isoformat(),
+                                'consensus_rounds': consensus_rounds,
+                                'target_rounds': target_rounds,
+                            }
+                            return finish_proposal_terminal(
+                                status=TaskStatus.CANCELED,
+                                reason='deadline_reached',
+                                rounds_completed=consensus_rounds,
+                                event_type='proposal_deadline_reached',
+                                payload=deadline_payload,
+                                round_number=round_no,
+                            )
+
                         attempt += 1
                         pre_reviews: list[dict] = []
                         merged_context = current_seed
@@ -2533,10 +2601,27 @@ class OrchestratorService:
                             stage='proposal_review',
                         )
                         review_payload = list(round_latest_reviews)
-                        no_blocker, blocker, unknown = self._proposal_verdict_counts(round_latest_reviews)
                         usable_reviews = self._proposal_review_usable_count(round_latest_reviews)
-                        if usable_reviews < len(reviewers):
+                        if round_latest_reviews and usable_reviews <= 0:
+                            fail_reason = 'proposal_review_unavailable'
                             unavailable_payload = {
+                                'round': round_no,
+                                'attempt': attempt,
+                                'reviewers_total': len(round_latest_reviews),
+                                'reviewers_usable': 0,
+                                'latest_reviews': round_latest_reviews,
+                            }
+                            return finish_proposal_terminal(
+                                status=TaskStatus.FAILED_GATE,
+                                reason=fail_reason,
+                                rounds_completed=consensus_rounds,
+                                event_type='proposal_review_unavailable',
+                                payload=unavailable_payload,
+                                round_number=round_no,
+                            )
+                        actionable_reviews = list(round_latest_reviews)
+                        if 0 < usable_reviews < len(reviewers):
+                            partial_payload = {
                                 'round': round_no,
                                 'attempt': attempt,
                                 'reviewers_total': len(round_latest_reviews),
@@ -2545,25 +2630,27 @@ class OrchestratorService:
                             }
                             self.repository.append_event(
                                 task_id,
-                                event_type='proposal_review_unavailable',
-                                payload=unavailable_payload,
+                                event_type='proposal_review_partial',
+                                payload=partial_payload,
                                 round_number=round_no,
                             )
                             self.artifact_store.append_event(
                                 task_id,
-                                {'type': 'proposal_review_unavailable', **unavailable_payload},
+                                {'type': 'proposal_review_partial', **partial_payload},
                             )
-                            current_seed = self._append_proposal_feedback_context(
-                                merged_after_review,
-                                reviewer_id='proposal_review_unavailable',
-                                review_text=(
-                                    f"usable reviewer outputs {usable_reviews}/{len(reviewers)}; "
-                                    "need actionable reviewer findings before author execution."
-                                ),
-                            )
-                            continue
+                            actionable_reviews = [
+                                item
+                                for item in round_latest_reviews
+                                if OrchestratorService._is_actionable_proposal_review_text(
+                                    str(item.get('output') or ''),
+                                )
+                            ]
+                        no_blocker, blocker, unknown = self._proposal_verdict_counts(actionable_reviews)
 
-                        if self._proposal_consensus_reached(round_latest_reviews, expected_reviewers=len(reviewers)):
+                        if self._proposal_consensus_reached(
+                            actionable_reviews,
+                            expected_reviewers=len(actionable_reviews),
+                        ):
                             consensus_reached = True
                             consensus_rounds += 1
                             current_seed = round_latest_proposal
@@ -2607,40 +2694,6 @@ class OrchestratorService:
                                 reviewer_id='consensus',
                                 review_text=f'unresolved blockers={blocker}, unknown={unknown}',
                             )
-
-                    if not consensus_reached:
-                        fail_reason = 'proposal_consensus_not_reached'
-                        failed = self.repository.update_task_status(
-                            task_id,
-                            status=TaskStatus.FAILED_GATE.value,
-                            reason=fail_reason,
-                            rounds_completed=consensus_rounds,
-                        )
-                        failed_payload = {
-                            'round': round_no,
-                            'attempts': max_alignment_attempts,
-                            'consensus_rounds': consensus_rounds,
-                            'target_rounds': target_rounds,
-                            'latest_proposal': WorkflowEngine._clip_text(round_latest_proposal, max_chars=1200),
-                            'latest_reviews': round_latest_reviews,
-                        }
-                        self.repository.append_event(
-                            task_id,
-                            event_type='proposal_consensus_failed',
-                            payload=failed_payload,
-                            round_number=round_no,
-                        )
-                        self.artifact_store.append_event(task_id, {'type': 'proposal_consensus_failed', **failed_payload})
-                        self.artifact_store.update_state(
-                            task_id,
-                            {
-                                'status': TaskStatus.FAILED_GATE.value,
-                                'last_gate_reason': fail_reason,
-                                'rounds_completed': consensus_rounds,
-                            },
-                        )
-                        self.artifact_store.write_final_report(task_id, f'status=failed_gate\nreason={fail_reason}')
-                        return self._to_view(failed)
 
                 discussion_text = current_seed
 
