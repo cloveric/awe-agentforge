@@ -5,6 +5,8 @@ from ipaddress import ip_address
 import logging
 import os
 from pathlib import Path
+from threading import Lock
+import time
 from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -394,6 +396,8 @@ def create_app(
     allow_remote_api: bool | None = None,
     api_access_token: str | None = None,
     api_access_token_header: str = 'x-awe-api-token',
+    api_rate_limit_per_minute: int | None = None,
+    api_rate_limit_window_seconds: int = 60,
 ) -> FastAPI:
     if service is None:
         repo = repository or InMemoryTaskRepository()
@@ -413,6 +417,20 @@ def create_app(
     resolved_api_access_token_header = str(
         os.getenv('AWE_API_TOKEN_HEADER', api_access_token_header) or api_access_token_header
     ).strip().lower()
+    if api_rate_limit_per_minute is not None:
+        try:
+            resolved_api_rate_limit_per_minute = int(api_rate_limit_per_minute)
+        except (TypeError, ValueError):
+            resolved_api_rate_limit_per_minute = 120
+    else:
+        raw_rate_limit = str(os.getenv('AWE_API_RATE_LIMIT_PER_MINUTE', '120') or '120').strip() or '120'
+        try:
+            resolved_api_rate_limit_per_minute = int(raw_rate_limit)
+        except ValueError:
+            resolved_api_rate_limit_per_minute = 120
+    resolved_api_rate_limit_window_seconds = max(1, int(api_rate_limit_window_seconds))
+    _rate_lock = Lock()
+    _rate_counters: dict[tuple[str, str, int], int] = {}
 
     def _field_from_loc(loc: tuple | list | None) -> str | None:
         if not loc:
@@ -446,6 +464,32 @@ def create_app(
         if field:
             payload['field'] = field
         return payload
+
+    def _consume_rate_limit(*, client_key: str, path: str) -> tuple[bool, dict[str, int]]:
+        limit = int(resolved_api_rate_limit_per_minute)
+        window = int(resolved_api_rate_limit_window_seconds)
+        if limit <= 0:
+            return True, {'limit': 0, 'remaining': 0, 'reset_seconds': 0}
+        now_epoch = int(time.time())
+        current_window = now_epoch // window
+        key = (client_key, str(path or ''), current_window)
+        with _rate_lock:
+            # Trim old windows to keep memory bounded.
+            stale_threshold = current_window - 1
+            stale_keys = [item for item in _rate_counters.keys() if int(item[2]) < stale_threshold]
+            for stale in stale_keys:
+                _rate_counters.pop(stale, None)
+
+            count = int(_rate_counters.get(key, 0)) + 1
+            _rate_counters[key] = count
+
+        remaining = max(0, limit - count)
+        reset_seconds = max(1, window - (now_epoch % window))
+        return count <= limit, {
+            'limit': limit,
+            'remaining': remaining,
+            'reset_seconds': reset_seconds,
+        }
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation_error(request: Request, exc: RequestValidationError):  # noqa: ARG001
@@ -505,6 +549,26 @@ def create_app(
                         status_code=401,
                         content=_validation_error_payload(code='unauthorized', message='invalid api token'),
                     )
+            allowed, rl_meta = _consume_rate_limit(
+                client_key=str(client_host or 'unknown'),
+                path=request.url.path,
+            )
+            if not allowed:
+                headers = {
+                    'x-rate-limit-limit': str(rl_meta.get('limit', 0)),
+                    'x-rate-limit-remaining': str(rl_meta.get('remaining', 0)),
+                    'x-rate-limit-reset-seconds': str(rl_meta.get('reset_seconds', 0)),
+                }
+                return JSONResponse(
+                    status_code=429,
+                    content=_validation_error_payload(code='too_many_requests', message='rate limit exceeded'),
+                    headers=headers,
+                )
+            response = await call_next(request)
+            response.headers['x-rate-limit-limit'] = str(rl_meta.get('limit', 0))
+            response.headers['x-rate-limit-remaining'] = str(rl_meta.get('remaining', 0))
+            response.headers['x-rate-limit-reset-seconds'] = str(rl_meta.get('reset_seconds', 0))
+            return response
         return await call_next(request)
 
     def _start_task_worker(task_id: str) -> None:

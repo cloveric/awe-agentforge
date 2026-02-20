@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from awe_agentcheck.observability import get_logger
 from awe_agentcheck.participants import get_supported_providers, parse_participant_id
+from awe_agentcheck.repository import TaskCreateRecord
 
 _SUPPORTED_CONVERSATION_LANGUAGES = {'en', 'zh'}
 _SUPPORTED_REPAIR_MODES = {'minimal', 'balanced', 'structural'}
@@ -140,7 +141,7 @@ class TaskManagementService:
                 merge_target_path=merge_target_path,
             )
 
-            row = self.repository.create_task(
+            create_record = TaskCreateRecord(
                 title=payload.title,
                 description=payload.description,
                 author_participant=author_participant.participant_id,
@@ -160,20 +161,58 @@ class TaskManagementService:
                 plain_mode=plain_mode,
                 stream_mode=stream_mode,
                 debate_mode=debate_mode,
+                auto_merge=auto_merge,
+                merge_target_path=merge_target_path,
                 sandbox_mode=sandbox_mode,
                 sandbox_workspace_path=sandbox_workspace_path,
                 sandbox_generated=sandbox_generated,
                 sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
                 project_path=str(project_root),
                 self_loop_mode=self_loop_mode,
-                auto_merge=auto_merge,
-                merge_target_path=merge_target_path,
                 workspace_path=str(workspace_root),
                 workspace_fingerprint=workspace_fingerprint,
                 max_rounds=max_rounds,
                 test_command=payload.test_command,
                 lint_command=payload.lint_command,
             )
+            create_with_record = getattr(self.repository, 'create_task_record', None)
+            if callable(create_with_record):
+                row = create_with_record(create_record)
+            else:
+                row = self.repository.create_task(
+                    title=create_record.title,
+                    description=create_record.description,
+                    author_participant=create_record.author_participant,
+                    reviewer_participants=create_record.reviewer_participants,
+                    evolution_level=create_record.evolution_level,
+                    evolve_until=create_record.evolve_until,
+                    conversation_language=create_record.conversation_language,
+                    provider_models=create_record.provider_models,
+                    provider_model_params=create_record.provider_model_params,
+                    participant_models=create_record.participant_models,
+                    participant_model_params=create_record.participant_model_params,
+                    claude_team_agents=create_record.claude_team_agents,
+                    codex_multi_agents=create_record.codex_multi_agents,
+                    claude_team_agents_overrides=create_record.claude_team_agents_overrides,
+                    codex_multi_agents_overrides=create_record.codex_multi_agents_overrides,
+                    repair_mode=create_record.repair_mode,
+                    plain_mode=create_record.plain_mode,
+                    stream_mode=create_record.stream_mode,
+                    debate_mode=create_record.debate_mode,
+                    auto_merge=create_record.auto_merge,
+                    merge_target_path=create_record.merge_target_path,
+                    sandbox_mode=create_record.sandbox_mode,
+                    sandbox_workspace_path=create_record.sandbox_workspace_path,
+                    sandbox_generated=create_record.sandbox_generated,
+                    sandbox_cleanup_on_pass=create_record.sandbox_cleanup_on_pass,
+                    project_path=create_record.project_path,
+                    self_loop_mode=create_record.self_loop_mode,
+                    workspace_path=create_record.workspace_path,
+                    workspace_fingerprint=create_record.workspace_fingerprint,
+                    max_rounds=create_record.max_rounds,
+                    test_command=create_record.test_command,
+                    lint_command=create_record.lint_command,
+                )
             self.artifact_store.create_task_workspace(row['task_id'])
             self.artifact_store.update_state(
                 row['task_id'],
@@ -520,7 +559,7 @@ class TaskManagementService:
         payload = '\n'.join(parts)
         if not payload:
             return 'empty'
-        return hashlib.sha1(payload.encode('utf-8')).hexdigest()[:20]
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:20]
 
     @classmethod
     def _build_workspace_fingerprint(

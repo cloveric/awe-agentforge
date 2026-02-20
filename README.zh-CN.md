@@ -110,6 +110,34 @@
 13. 跨平台运维脚本加固：
    - 新增 `scripts/README.md`，明确 PowerShell/Bash 脚本对照矩阵。
    - CI 新增 Bash 脚本语法检查（`bash -n scripts/*.sh`），持续保障 Linux/macOS 可用路径。
+14. 安全与稳定性加固（1-15 批量落地）：
+   - artifact 文件名改为严格净化（拒绝空字节、`..`、控制字符、平台非法符号）。
+   - `/api/*` 新增内置限流（按 client/path 计数），超限返回 `429 too_many_requests` 与 `x-rate-limit-*` 头。
+   - 可观测性初始化改为线程安全且幂等，避免重复挂载 JSON handler。
+15. 事件类型治理：
+   - 新增 `src/awe_agentcheck/domain/events.py`，提供 `EventType` 枚举与 `normalize_event_type(...)`。
+   - repository 与 SQL 存储在写入事件时统一规范化事件类型。
+   - analytics 及部分 workflow/service 关键分支改为消费事件常量，减少魔法字符串漂移。
+16. 服务端与前端继续拆单体：
+   - 新增 `src/awe_agentcheck/service_layers/evidence.py`（`EvidenceService` + `EvidenceDeps`）。
+   - `service.py` 进一步收敛为委托调用（证据收集/清单写入/回归用例沉淀）。
+   - 新增 `web/assets/modules/dialogue.js`，对话渲染与文本净化从 `dashboard.js` 抽离。
+17. 创建任务参数对象化：
+   - 引入 `TaskCreateRecord` 与 `create_task_record(...)`。
+   - 任务创建链路可用单对象贯穿 service->repository->SQL，降低超长参数列表漂移风险。
+18. 数据层性能加固：
+   - 新增复合索引：
+     - `ix_tasks_status_created_at`
+     - `ix_tasks_status_updated_at`
+     - `ix_task_events_task_id_created_at`
+     - `ix_task_events_task_id_event_type_created_at`。
+19. CI 门禁升级到生产基线：
+   - 新增 `mypy`（源码类型检查）、`bandit`（高危扫描）、`pytest-cov`（`--cov-fail-under=80`）。
+   - 依赖版本增加上限约束，降低上游破坏性升级风险。
+20. 新增集成测试覆盖：
+   - `tests/integration/test_orchestrator_flow.py` 覆盖真实 create->start->round 执行链路（通过路径 + 架构硬门禁失败路径）。
+21. 新增容器化基础：
+   - 增加 `Dockerfile` 与 `.dockerignore`，用于标准化部署与复现实验环境。
 
 ## 上一版更新（2026-02-19）
 
@@ -443,6 +471,7 @@ $env:AWE_WORKFLOW_BACKEND="langgraph"
 | `AWE_API_ALLOW_REMOTE` | `false` | 是否允许非 loopback 远程访问 API（默认仅本机） |
 | `AWE_API_TOKEN` | _(无)_ | API 鉴权 token（可选） |
 | `AWE_API_TOKEN_HEADER` | `Authorization` | API token 使用的请求头 |
+| `AWE_API_RATE_LIMIT_PER_MINUTE` | `120` | `/api/*` 按 client/path 的每分钟配额（`0` 表示关闭限流） |
 | `AWE_DRY_RUN` | `false` | 设为 `true` 时不实际调用参与者 |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | 可观测性中的服务名称 |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(无)_ | OpenTelemetry 收集器端点 |

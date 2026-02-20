@@ -41,7 +41,7 @@ def _env_provider_commands(name: str) -> dict[str, str]:
         return {}
     try:
         parsed = json.loads(raw)
-    except Exception:
+    except json.JSONDecodeError:
         return {}
     if not isinstance(parsed, dict):
         return {}

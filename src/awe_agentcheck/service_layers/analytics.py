@@ -4,7 +4,9 @@ from datetime import datetime
 import re
 from typing import Callable
 
+from awe_agentcheck.domain.events import EventType, REVIEW_EVENT_TYPES
 from awe_agentcheck.domain.models import TaskStatus
+from awe_agentcheck.observability import get_logger
 
 
 _TERMINAL_STATUSES = {
@@ -13,6 +15,7 @@ _TERMINAL_STATUSES = {
     TaskStatus.FAILED_SYSTEM.value,
     TaskStatus.CANCELED.value,
 }
+_log = get_logger('awe_agentcheck.service_layers.analytics')
 
 
 class AnalyticsService:
@@ -96,17 +99,20 @@ class AnalyticsService:
                 continue
             try:
                 events = self.repository.list_events(task_id)
+            except KeyError:
+                events = []
             except Exception:
+                _log.exception('list_events failed while building stats task_id=%s', task_id)
                 events = []
             for event in events:
                 etype = str(event.get('type') or '').strip().lower()
-                if etype == 'prompt_cache_probe':
+                if etype == EventType.PROMPT_CACHE_PROBE.value:
                     payload = self._merged_event_payload(event)
                     if _to_bool(payload.get('prefix_reuse_eligible')):
                         prefix_reuse_eligible += 1
                         if _to_bool(payload.get('prefix_reused')):
                             prefix_reuse_hits += 1
-                elif etype == 'prompt_cache_break':
+                elif etype == EventType.PROMPT_CACHE_BREAK.value:
                     prompt_cache_break_count_50 += 1
                     payload = self._merged_event_payload(event)
                     reason = str(payload.get('reason') or '').strip().lower()
@@ -180,11 +186,14 @@ class AnalyticsService:
                 continue
             try:
                 events = self.repository.list_events(task_id)
+            except KeyError:
+                events = []
             except Exception:
+                _log.exception('list_events failed while building analytics task_id=%s', task_id)
                 events = []
             for event in events:
                 etype = str(event.get('type') or '').strip().lower()
-                if etype not in {'review', 'proposal_review', 'proposal_precheck_review', 'debate_review'}:
+                if etype not in REVIEW_EVENT_TYPES:
                     continue
                 payload = self._merged_event_payload(event)
                 participant = str(payload.get('participant') or '').strip()

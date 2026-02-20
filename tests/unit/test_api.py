@@ -43,6 +43,8 @@ def build_client(
     *,
     api_access_token: str | None = None,
     allow_remote_api: bool | None = None,
+    api_rate_limit_per_minute: int | None = None,
+    api_rate_limit_window_seconds: int = 60,
     workflow_engine=None,
     client: tuple[str, int] = ('testclient', 50000),
 ) -> TestClient:
@@ -56,6 +58,8 @@ def build_client(
         workspace_tree_safe_root=tmp_path,
         allow_remote_api=allow_remote_api,
         api_access_token=api_access_token,
+        api_rate_limit_per_minute=api_rate_limit_per_minute,
+        api_rate_limit_window_seconds=api_rate_limit_window_seconds,
     )
     return TestClient(app, client=client)
 
@@ -114,6 +118,24 @@ def test_api_create_start_and_get_task_roundtrip(tmp_path: Path):
     fetched_body = fetched.json()
     assert fetched_body['task_id'] == body['task_id']
     assert fetched_body['status'] == 'passed'
+
+
+def test_api_rate_limit_returns_429_when_quota_exceeded(tmp_path: Path):
+    client = build_client(
+        tmp_path,
+        api_rate_limit_per_minute=2,
+        api_rate_limit_window_seconds=60,
+    )
+    first = client.get('/api/stats')
+    second = client.get('/api/stats')
+    third = client.get('/api/stats')
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    body = third.json()
+    assert body['code'] == 'too_many_requests'
+    assert 'x-rate-limit-limit' in third.headers
 
 
 def test_api_events_and_cancel(tmp_path: Path):

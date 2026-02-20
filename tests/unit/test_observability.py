@@ -17,6 +17,41 @@ def test_configure_observability_no_endpoint_is_noop():
     configure_observability(service_name='awe-agentcheck', otlp_endpoint=None)
 
 
+def test_configure_observability_is_idempotent_for_json_handler(monkeypatch):
+    import awe_agentcheck.observability as observability
+
+    root = logging.getLogger('awe_agentcheck')
+    original_handlers = list(root.handlers)
+    original_level = root.level
+
+    try:
+        for handler in list(root.handlers):
+            if isinstance(handler, logging.StreamHandler) and isinstance(
+                getattr(handler, 'formatter', None), _JsonFormatter
+            ):
+                root.removeHandler(handler)
+
+        monkeypatch.setattr(observability, '_configured', False)
+        monkeypatch.setattr(observability, '_configured_otlp_endpoint', None)
+
+        configure_observability(service_name='awe-agentcheck', otlp_endpoint=None)
+        configure_observability(service_name='awe-agentcheck', otlp_endpoint=None)
+
+        json_handlers = [
+            handler
+            for handler in root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and isinstance(getattr(handler, 'formatter', None), _JsonFormatter)
+        ]
+        assert len(json_handlers) == 1
+    finally:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+        for handler in original_handlers:
+            root.addHandler(handler)
+        root.setLevel(original_level)
+
+
 def test_set_and_get_task_context():
     set_task_context(task_id='abc-123', round_no=2)
     assert get_task_id() == 'abc-123'

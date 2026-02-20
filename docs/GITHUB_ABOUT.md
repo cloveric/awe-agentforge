@@ -17,7 +17,11 @@ AWE-AgentForge orchestrates multiple coding CLIs in one observable workflow:
 - externalized prompt templates (`src/awe_agentcheck/prompt_templates/*.txt`) for safer prompt evolution
 - preflight policy guards and evidence-gated completion (`No evidence, no merge`)
 - auto-merge and sandbox promotion controls
-- modular dashboard client (`api/store/utils/ui/create_task_help/avatar/tree/history`) for maintainable Web evolution
+- modular dashboard client (`api/store/utils/ui/create_task_help/avatar/tree/history/dialogue`) for maintainable Web evolution
+- typed event taxonomy (`EventType`) + normalized event writes across repository/SQL storage
+- API rate limiting for `/api/*` and stricter artifact filename sanitization
+- CI hard gates: ruff + mypy + bandit + pytest-cov (80% threshold)
+- integration workflow tests and container baseline (`Dockerfile`)
 - post-refactor stability fix verified by browser console + API smoke checks
 - analytics + benchmark feedback loop for self-improving runs
 - cross-platform operation scripts for Windows + Linux/macOS
@@ -41,7 +45,11 @@ AWE-AgentForge 把多智能体协作工程化为一条可观测流水线：
 - Prompt 模板外置（`src/awe_agentcheck/prompt_templates/*.txt`），降低拼接脆弱性
 - 预检策略门禁 + 证据硬门禁（`No evidence, no merge`）
 - 自动融合与沙盒晋升控制
-- Dashboard 客户端按模块拆分（`api/store/utils/ui/create_task_help/avatar/tree/history`），便于持续迭代
+- Dashboard 客户端按模块拆分（`api/store/utils/ui/create_task_help/avatar/tree/history/dialogue`），便于持续迭代
+- 事件类型治理（`EventType`）+ repository/SQL 统一事件类型归一化
+- `/api/*` 内置限流 + artifact 文件名严格净化，降低运行期安全风险
+- CI 硬门禁升级：ruff + mypy + bandit + pytest-cov（80%）
+- 新增集成测试链路与容器化基础（`Dockerfile`）
 - 已补齐重构后自查修复，并通过浏览器控制台 + API 冒烟验证
 - 基于 analytics + benchmark 的自我进化回路
 - 同时覆盖 Windows 与 Linux/macOS 的运维脚本

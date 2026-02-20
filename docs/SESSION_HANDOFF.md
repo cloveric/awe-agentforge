@@ -1,5 +1,30 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-20, one-shot 1-15 hardening batch)
+
+1. Security/runtime hardening completed:
+   - strict artifact filename sanitization in `src/awe_agentcheck/storage/artifacts.py`.
+   - API rate limiter for `/api/*` (`AWE_API_RATE_LIMIT_PER_MINUTE`, `429 too_many_requests`, `x-rate-limit-*` headers).
+   - observability bootstrap made thread-safe and idempotent.
+2. Event taxonomy formalized:
+   - added `src/awe_agentcheck/domain/events.py` (`EventType` + `normalize_event_type`).
+   - repository and SQL event writes now normalize event type values.
+3. Service/frontend monolith reduction:
+   - extracted evidence logic into `src/awe_agentcheck/service_layers/evidence.py` and delegated from `service.py`.
+   - extracted dialogue rendering/text normalization to `web/assets/modules/dialogue.js`; `dashboard.js` reduced.
+4. Data + CI baseline upgrades:
+   - DB composite indexes added for tasks and task_events hot query paths.
+   - CI now runs `mypy src`, `bandit -lll`, and `pytest --cov=src --cov-fail-under=80`.
+   - dependency ranges now include upper bounds.
+5. Integrations/deployment:
+   - added `tests/integration/test_orchestrator_flow.py` (pass path + architecture hard-fail path).
+   - added `Dockerfile` + `.dockerignore`.
+6. Verification completed:
+   - `py -m ruff check .`
+   - `py -m mypy src`
+   - `py -m bandit -q -r src -lll`
+   - `py -m pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q`
+
 ## Update (2026-02-20, adapters package split + dashboard module split + post-refactor runtime fix)
 
 1. Adapter runtime layer is now physically package-split:

@@ -14,6 +14,7 @@ from typing import Callable
 from contextlib import nullcontext
 
 from awe_agentcheck.adapters import ParticipantRunner
+from awe_agentcheck.domain.events import EventType
 from awe_agentcheck.domain.gate import evaluate_medium_gate
 from awe_agentcheck.domain.models import ReviewVerdict
 from awe_agentcheck.observability import get_logger, set_task_context
@@ -248,7 +249,7 @@ class WorkflowEngine:
         check_cancel = should_cancel or (lambda: False)
 
         if emit_task_started:
-            emit({'type': 'task_started', 'task_id': config.task_id})
+            emit({'type': EventType.TASK_STARTED.value, 'task_id': config.task_id})
             _log.info('workflow_started task_id=%s max_rounds=%d', config.task_id, config.max_rounds)
         set_task_context(task_id=config.task_id)
         tracer = self._get_tracer()
@@ -284,15 +285,15 @@ class WorkflowEngine:
         while True:
             round_no += 1
             if debate_mode and check_cancel():
-                emit({'type': 'canceled', 'round': round_no})
+                emit({'type': EventType.CANCELED.value, 'round': round_no})
                 return RunResult(status='canceled', rounds=round_no - 1, gate_reason='canceled')
             if deadline is not None and datetime.now(timezone.utc) >= deadline:
-                emit({'type': 'deadline_reached', 'round': round_no, 'deadline': deadline.isoformat()})
+                emit({'type': EventType.DEADLINE_REACHED.value, 'round': round_no, 'deadline': deadline.isoformat()})
                 return RunResult(status='canceled', rounds=round_no - 1, gate_reason='deadline_reached')
 
             set_task_context(task_id=config.task_id, round_no=round_no)
             _log.info('round_started round=%d', round_no)
-            emit({'type': 'round_started', 'round': round_no})
+            emit({'type': EventType.ROUND_STARTED.value, 'round': round_no})
 
             implementation_context = self._debate_seed_context(
                 config,
@@ -928,11 +929,11 @@ class WorkflowEngine:
             )
             if gate.passed:
                 _log.info('gate_passed round=%d reason=%s', round_no, gate.reason)
-                emit({'type': 'gate_passed', 'round': round_no, 'reason': gate.reason})
+                emit({'type': EventType.GATE_PASSED.value, 'round': round_no, 'reason': gate.reason})
                 return RunResult(status='passed', rounds=round_no, gate_reason=gate.reason)
 
             _log.warning('gate_failed round=%d reason=%s', round_no, gate.reason)
-            emit({'type': 'gate_failed', 'round': round_no, 'reason': gate.reason})
+            emit({'type': EventType.GATE_FAILED.value, 'round': round_no, 'reason': gate.reason})
             previous_gate_reason = gate.reason
             progress = self._assess_loop_progress(
                 loop_tracker=loop_tracker,
@@ -1022,6 +1023,39 @@ class WorkflowEngine:
                 'on_event': state.get('on_event'),
                 'should_cancel': state.get('should_cancel'),
             }
+        workspace = Path(config.cwd)
+        if (not workspace.exists()) or (not workspace.is_dir()):
+            return {
+                'preflight_ok': False,
+                'preflight_error': f'langgraph_preflight_error: invalid cwd {workspace}',
+                'config': config,
+                'on_event': state.get('on_event'),
+                'should_cancel': state.get('should_cancel'),
+            }
+        if not str(config.author.participant_id or '').strip():
+            return {
+                'preflight_ok': False,
+                'preflight_error': 'langgraph_preflight_error: missing author participant_id',
+                'config': config,
+                'on_event': state.get('on_event'),
+                'should_cancel': state.get('should_cancel'),
+            }
+        if not str(config.test_command or '').strip():
+            return {
+                'preflight_ok': False,
+                'preflight_error': 'langgraph_preflight_error: missing test_command',
+                'config': config,
+                'on_event': state.get('on_event'),
+                'should_cancel': state.get('should_cancel'),
+            }
+        if not str(config.lint_command or '').strip():
+            return {
+                'preflight_ok': False,
+                'preflight_error': 'langgraph_preflight_error: missing lint_command',
+                'config': config,
+                'on_event': state.get('on_event'),
+                'should_cancel': state.get('should_cancel'),
+            }
         return {
             'preflight_ok': True,
             'config': config,
@@ -1050,7 +1084,7 @@ class WorkflowEngine:
                 _ = event
                 return None
             emit = _noop_emit
-        emit({'type': 'task_started', 'task_id': config.task_id})
+        emit({'type': EventType.TASK_STARTED.value, 'task_id': config.task_id})
         set_task_context(task_id=config.task_id)
         _log.info('workflow_started task_id=%s max_rounds=%d backend=langgraph', config.task_id, config.max_rounds)
         return {
@@ -1106,7 +1140,7 @@ class WorkflowEngine:
             if not isinstance(event, dict):
                 return
             payload = dict(event)
-            if str(payload.get('type') or '').strip().lower() == 'task_started':
+            if str(payload.get('type') or '').strip().lower() == EventType.TASK_STARTED.value:
                 return
             emit(payload)
 
@@ -1631,7 +1665,7 @@ class WorkflowEngine:
             return ''
         if len(payload) > max_chars:
             payload = payload[:max_chars]
-        return hashlib.sha1(payload.encode('utf-8')).hexdigest()[:16]
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:16]
 
     def _participant_runtime_profile(
         self,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from awe_agentcheck.api import create_app
 from awe_agentcheck.adapters import ParticipantRunner
 from awe_agentcheck.config import load_settings
@@ -10,6 +12,8 @@ from awe_agentcheck.repository import InMemoryTaskRepository
 from awe_agentcheck.service import OrchestratorService
 from awe_agentcheck.storage.artifacts import ArtifactStore
 from awe_agentcheck.workflow import ShellCommandExecutor, WorkflowEngine
+
+_log = logging.getLogger(__name__)
 
 
 def build_app():
@@ -25,6 +29,7 @@ def build_app():
         db.create_schema()
         repo = SqlTaskRepository(db)
     except Exception:
+        _log.exception('database bootstrap failed; falling back to in-memory repository')
         repo = InMemoryTaskRepository()
 
     runner = ParticipantRunner(

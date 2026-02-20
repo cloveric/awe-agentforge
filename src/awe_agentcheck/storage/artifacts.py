@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -100,10 +101,7 @@ class ArtifactStore:
 
     def write_artifact_json(self, task_id: str, *, name: str, payload: dict) -> Path:
         ws = self.create_task_workspace(task_id)
-        safe_name = str(name or "").strip()
-        if not safe_name:
-            raise ValueError("artifact name is required")
-        safe_name = safe_name.replace("\\", "_").replace("/", "_")
+        safe_name = self._sanitize_artifact_name(name)
         if not safe_name.endswith(".json"):
             safe_name += ".json"
         path = ws.artifacts_dir / safe_name
@@ -143,3 +141,30 @@ class ArtifactStore:
     @staticmethod
     def _utc_now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _sanitize_artifact_name(name: str | None) -> str:
+        text = str(name or "").strip()
+        if not text:
+            raise ValueError("artifact name is required")
+        if "\x00" in text:
+            raise ValueError("artifact name contains null byte")
+
+        # Normalize separators first, then reject traversal-like patterns.
+        normalized = text.replace("\\", "_").replace("/", "_")
+        if ".." in normalized:
+            raise ValueError("artifact name cannot contain '..'")
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in normalized):
+            raise ValueError("artifact name contains control characters")
+
+        # Keep a conservative filename charset to avoid platform-specific edge cases.
+        sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", normalized).strip(" .")
+        if not sanitized:
+            raise ValueError("artifact name is empty after sanitization")
+        if sanitized in {".", ".."}:
+            raise ValueError("artifact name is invalid")
+        if len(sanitized) > 120:
+            sanitized = sanitized[:120].rstrip(" .")
+        if not sanitized:
+            raise ValueError("artifact name is invalid")
+        return sanitized

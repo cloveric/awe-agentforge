@@ -38,5 +38,11 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
 
+      - name: MyPy
+        run: python -m mypy src
+
+      - name: Bandit
+        run: python -m bandit -q -r src -lll
+
       - name: Pytest
-        run: python -m pytest -q
+        run: python -m pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q

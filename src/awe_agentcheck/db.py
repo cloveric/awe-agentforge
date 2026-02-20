@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -26,7 +27,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from awe_agentcheck.repository import decode_task_meta, encode_task_meta
+from awe_agentcheck.domain.events import EventType, normalize_event_type
+from awe_agentcheck.repository import TaskCreateRecord, decode_task_meta, encode_task_meta
 
 
 def _iso_utc(value: datetime) -> str:
@@ -43,6 +45,10 @@ class Base(DeclarativeBase):
 
 class TaskEntity(Base):
     __tablename__ = 'tasks'
+    __table_args__ = (
+        Index('ix_tasks_status_created_at', 'status', 'created_at'),
+        Index('ix_tasks_status_updated_at', 'status', 'updated_at'),
+    )
 
     task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -67,6 +73,8 @@ class TaskEventEntity(Base):
     __tablename__ = 'task_events'
     __table_args__ = (
         UniqueConstraint('task_id', 'seq', name='uq_task_events_task_id_seq'),
+        Index('ix_task_events_task_id_created_at', 'task_id', 'created_at'),
+        Index('ix_task_events_task_id_event_type_created_at', 'task_id', 'event_type', 'created_at'),
     )
 
     id: Mapped[int] = mapped_column(Integer(), primary_key=True, autoincrement=True)
@@ -176,45 +184,82 @@ class SqlTaskRepository:
         test_command: str,
         lint_command: str,
     ) -> dict:
-        now = datetime.now(timezone.utc)
-        task = TaskEntity(
-            task_id=f'task-{uuid4().hex[:12]}',
+        record = TaskCreateRecord(
             title=title,
             description=description,
             author_participant=author_participant,
-            reviewer_participants_json=encode_task_meta(
-                reviewer_participants=reviewer_participants,
-                evolution_level=evolution_level,
-                evolve_until=evolve_until,
-                conversation_language=conversation_language,
-                provider_models=provider_models,
-                provider_model_params=provider_model_params,
-                participant_models=participant_models,
-                participant_model_params=participant_model_params,
-                claude_team_agents=claude_team_agents,
-                codex_multi_agents=codex_multi_agents,
-                claude_team_agents_overrides=claude_team_agents_overrides,
-                codex_multi_agents_overrides=codex_multi_agents_overrides,
-                repair_mode=repair_mode,
-                plain_mode=plain_mode,
-                stream_mode=stream_mode,
-                debate_mode=debate_mode,
-                auto_merge=auto_merge,
-                merge_target_path=merge_target_path,
-                sandbox_mode=sandbox_mode,
-                sandbox_workspace_path=sandbox_workspace_path,
-                sandbox_generated=sandbox_generated,
-                sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
-                project_path=project_path,
-                self_loop_mode=self_loop_mode,
-                workspace_fingerprint=workspace_fingerprint,
-            ),
+            reviewer_participants=reviewer_participants,
+            evolution_level=evolution_level,
+            evolve_until=evolve_until,
+            conversation_language=conversation_language,
+            provider_models=provider_models,
+            provider_model_params=provider_model_params,
+            participant_models=participant_models,
+            participant_model_params=participant_model_params,
+            claude_team_agents=claude_team_agents,
+            codex_multi_agents=codex_multi_agents,
+            claude_team_agents_overrides=claude_team_agents_overrides,
+            codex_multi_agents_overrides=codex_multi_agents_overrides,
+            repair_mode=repair_mode,
+            plain_mode=plain_mode,
+            stream_mode=stream_mode,
+            debate_mode=debate_mode,
+            auto_merge=auto_merge,
+            merge_target_path=merge_target_path,
+            sandbox_mode=sandbox_mode,
+            sandbox_workspace_path=sandbox_workspace_path,
+            sandbox_generated=sandbox_generated,
+            sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
+            project_path=project_path,
+            self_loop_mode=self_loop_mode,
             workspace_path=workspace_path,
-            status='queued',
-            last_gate_reason=None,
-            max_rounds=int(max_rounds),
+            workspace_fingerprint=workspace_fingerprint,
+            max_rounds=max_rounds,
             test_command=test_command,
             lint_command=lint_command,
+        )
+        return self.create_task_record(record)
+
+    def create_task_record(self, record: TaskCreateRecord) -> dict:
+        now = datetime.now(timezone.utc)
+        task = TaskEntity(
+            task_id=f'task-{uuid4().hex[:12]}',
+            title=record.title,
+            description=record.description,
+            author_participant=record.author_participant,
+            reviewer_participants_json=encode_task_meta(
+                reviewer_participants=record.reviewer_participants,
+                evolution_level=record.evolution_level,
+                evolve_until=record.evolve_until,
+                conversation_language=record.conversation_language,
+                provider_models=record.provider_models,
+                provider_model_params=record.provider_model_params,
+                participant_models=record.participant_models or {},
+                participant_model_params=record.participant_model_params or {},
+                claude_team_agents=record.claude_team_agents,
+                codex_multi_agents=record.codex_multi_agents,
+                claude_team_agents_overrides=record.claude_team_agents_overrides,
+                codex_multi_agents_overrides=record.codex_multi_agents_overrides,
+                repair_mode=record.repair_mode,
+                plain_mode=record.plain_mode,
+                stream_mode=record.stream_mode,
+                debate_mode=record.debate_mode,
+                auto_merge=record.auto_merge,
+                merge_target_path=record.merge_target_path,
+                sandbox_mode=record.sandbox_mode,
+                sandbox_workspace_path=record.sandbox_workspace_path,
+                sandbox_generated=record.sandbox_generated,
+                sandbox_cleanup_on_pass=record.sandbox_cleanup_on_pass,
+                project_path=record.project_path,
+                self_loop_mode=record.self_loop_mode,
+                workspace_fingerprint=record.workspace_fingerprint,
+            ),
+            workspace_path=record.workspace_path,
+            status='queued',
+            last_gate_reason=None,
+            max_rounds=int(record.max_rounds),
+            test_command=record.test_command,
+            lint_command=record.lint_command,
             rounds_completed=0,
             cancel_requested=False,
             created_at=now,
@@ -353,7 +398,7 @@ class SqlTaskRepository:
         self,
         task_id: str,
         *,
-        event_type: str,
+        event_type: str | EventType,
         payload: dict,
         round_number: int | None = None,
     ) -> dict:
@@ -370,7 +415,7 @@ class SqlTaskRepository:
                     event = TaskEventEntity(
                         task_id=task_id,
                         seq=next_seq,
-                        event_type=event_type,
+                        event_type=normalize_event_type(event_type),
                         round_number=round_number,
                         payload_json=json.dumps(payload, ensure_ascii=True),
                         created_at=now,

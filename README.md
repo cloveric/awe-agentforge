@@ -108,6 +108,34 @@
 13. Cross-platform operations hardening:
    - added `scripts/README.md` with PowerShell/Bash script matrix.
    - CI now runs Bash syntax checks (`bash -n scripts/*.sh`) to keep Linux/macOS script paths healthy.
+14. Security and reliability hardening (1-15 batch):
+   - artifact filenames are now strictly sanitized (rejects null bytes, traversal-like `..`, control chars, and platform-unsafe symbols).
+   - API now has built-in per-client/per-path rate limiting for `/api/*` with `429 too_many_requests` and `x-rate-limit-*` headers.
+   - observability bootstrap is now thread-safe and idempotent (no duplicate JSON handlers on repeated init).
+15. Event taxonomy formalization:
+   - added `src/awe_agentcheck/domain/events.py` with `EventType` enum + `normalize_event_type(...)`.
+   - repository and SQL storage now normalize event type values at write-time.
+   - analytics and key workflow/service branches now consume typed event constants.
+16. Service and frontend monolith reduction:
+   - extracted evidence/reporting logic into `src/awe_agentcheck/service_layers/evidence.py` (`EvidenceService` + `EvidenceDeps`).
+   - `service.py` reduced further (delegates evidence artifact collection, manifest writing, regression-case emission).
+   - extracted dialogue rendering/formatting into `web/assets/modules/dialogue.js`; `dashboard.js` shrank again.
+17. Create-task pipeline parameter consolidation:
+   - introduced `TaskCreateRecord` (repository boundary object) and `create_task_record(...)`.
+   - task creation can now pass one structured payload through service->repository->SQL path, reducing drift risk from long parameter lists.
+18. Data-layer performance hardening:
+   - added composite indexes:
+     - `ix_tasks_status_created_at`
+     - `ix_tasks_status_updated_at`
+     - `ix_task_events_task_id_created_at`
+     - `ix_task_events_task_id_event_type_created_at`.
+19. CI gates expanded to production-grade baseline:
+   - added `mypy` (source package type checks), `bandit` high-severity scan, and `pytest-cov` threshold gate (`--cov-fail-under=80`).
+   - dependency bounds tightened with upper limits to reduce unexpected breaking upgrades.
+20. Integration test coverage added:
+   - new `tests/integration/test_orchestrator_flow.py` validates real create->start->round execution paths (pass + architecture hard-fail).
+21. Containerization baseline added:
+   - new `Dockerfile` and `.dockerignore` for reproducible deployment/runtime.
 
 ## Previous Update (2026-02-19)
 
@@ -441,6 +469,7 @@ Or use `.env.example` as a starter and export the values in your shell.
 | `AWE_API_ALLOW_REMOTE` | `false` | Allow non-loopback API access (`false` keeps local-only default) |
 | `AWE_API_TOKEN` | _(none)_ | Optional bearer token for API protection |
 | `AWE_API_TOKEN_HEADER` | `Authorization` | Header name used for API token validation |
+| `AWE_API_RATE_LIMIT_PER_MINUTE` | `120` | Per-client/per-path API quota for `/api/*` (`0` disables quota) |
 | `AWE_DRY_RUN` | `false` | When `true`, participants are not actually invoked |
 | `AWE_SERVICE_NAME` | `awe-agentcheck` | Service name for observability |
 | `AWE_OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_ | OpenTelemetry collector endpoint |

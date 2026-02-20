@@ -1,16 +1,58 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from typing import Protocol
 from uuid import uuid4
+
+from awe_agentcheck.domain.events import EventType, normalize_event_type
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@dataclass(frozen=True)
+class TaskCreateRecord:
+    title: str
+    description: str
+    author_participant: str
+    reviewer_participants: list[str]
+    evolution_level: int
+    evolve_until: str | None
+    conversation_language: str
+    provider_models: dict[str, str]
+    provider_model_params: dict[str, str]
+    participant_models: dict[str, str] | None
+    participant_model_params: dict[str, str] | None
+    claude_team_agents: bool
+    codex_multi_agents: bool
+    claude_team_agents_overrides: dict[str, bool] | None
+    codex_multi_agents_overrides: dict[str, bool] | None
+    repair_mode: str
+    plain_mode: bool
+    stream_mode: bool
+    debate_mode: bool
+    auto_merge: bool
+    merge_target_path: str | None
+    sandbox_mode: bool
+    sandbox_workspace_path: str | None
+    sandbox_generated: bool
+    sandbox_cleanup_on_pass: bool
+    project_path: str
+    self_loop_mode: int
+    workspace_path: str
+    workspace_fingerprint: dict[str, object] | None
+    max_rounds: int
+    test_command: str
+    lint_command: str
+
+
 class TaskRepository(Protocol):
+    def create_task_record(self, record: TaskCreateRecord) -> dict:
+        ...
+
     def create_task(
         self,
         *,
@@ -92,7 +134,7 @@ class TaskRepository(Protocol):
         self,
         task_id: str,
         *,
-        event_type: str,
+        event_type: str | EventType,
         payload: dict,
         round_number: int | None = None,
     ) -> dict:
@@ -146,47 +188,84 @@ class InMemoryTaskRepository:
         test_command: str,
         lint_command: str,
     ) -> dict:
+        record = TaskCreateRecord(
+            title=title,
+            description=description,
+            author_participant=author_participant,
+            reviewer_participants=reviewer_participants,
+            evolution_level=evolution_level,
+            evolve_until=evolve_until,
+            conversation_language=conversation_language,
+            provider_models=provider_models,
+            provider_model_params=provider_model_params,
+            participant_models=participant_models,
+            participant_model_params=participant_model_params,
+            claude_team_agents=claude_team_agents,
+            codex_multi_agents=codex_multi_agents,
+            claude_team_agents_overrides=claude_team_agents_overrides,
+            codex_multi_agents_overrides=codex_multi_agents_overrides,
+            repair_mode=repair_mode,
+            plain_mode=plain_mode,
+            stream_mode=stream_mode,
+            debate_mode=debate_mode,
+            auto_merge=auto_merge,
+            merge_target_path=merge_target_path,
+            sandbox_mode=sandbox_mode,
+            sandbox_workspace_path=sandbox_workspace_path,
+            sandbox_generated=sandbox_generated,
+            sandbox_cleanup_on_pass=sandbox_cleanup_on_pass,
+            project_path=project_path,
+            self_loop_mode=self_loop_mode,
+            workspace_path=workspace_path,
+            workspace_fingerprint=workspace_fingerprint,
+            max_rounds=max_rounds,
+            test_command=test_command,
+            lint_command=lint_command,
+        )
+        return self.create_task_record(record)
+
+    def create_task_record(self, record: TaskCreateRecord) -> dict:
         task_id = f'task-{uuid4().hex[:12]}'
         row = {
             'task_id': task_id,
-            'title': title,
-            'description': description,
-            'author_participant': author_participant,
-            'reviewer_participants': reviewer_participants,
-            'evolution_level': int(max(0, min(3, int(evolution_level)))),
-            'evolve_until': (str(evolve_until).strip() if evolve_until else None),
-            'conversation_language': str(conversation_language or 'en').strip().lower() or 'en',
-            'provider_models': {str(k).strip().lower(): str(v).strip() for k, v in (provider_models or {}).items() if str(k).strip() and str(v).strip()},
-            'provider_model_params': {str(k).strip().lower(): str(v).strip() for k, v in (provider_model_params or {}).items() if str(k).strip() and str(v).strip()},
-            'participant_models': {str(k).strip(): str(v).strip() for k, v in (participant_models or {}).items() if str(k).strip() and str(v).strip()},
-            'participant_model_params': {str(k).strip(): str(v).strip() for k, v in (participant_model_params or {}).items() if str(k).strip() and str(v).strip()},
-            'claude_team_agents': bool(claude_team_agents),
-            'codex_multi_agents': bool(codex_multi_agents),
-            'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (claude_team_agents_overrides or {}).items() if str(k).strip()},
-            'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (codex_multi_agents_overrides or {}).items() if str(k).strip()},
-            'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
-            'plain_mode': bool(plain_mode),
-            'stream_mode': bool(stream_mode),
-            'debate_mode': bool(debate_mode),
-            'auto_merge': bool(auto_merge),
-            'merge_target_path': (str(merge_target_path).strip() if merge_target_path else None),
-            'sandbox_mode': bool(sandbox_mode),
-            'sandbox_workspace_path': (str(sandbox_workspace_path).strip() if sandbox_workspace_path else None),
-            'sandbox_generated': bool(sandbox_generated),
-            'sandbox_cleanup_on_pass': bool(sandbox_cleanup_on_pass),
-            'project_path': str(project_path).strip() or workspace_path,
-            'self_loop_mode': int(max(0, min(1, int(self_loop_mode)))),
-            'workspace_path': workspace_path,
+            'title': record.title,
+            'description': record.description,
+            'author_participant': record.author_participant,
+            'reviewer_participants': record.reviewer_participants,
+            'evolution_level': int(max(0, min(3, int(record.evolution_level)))),
+            'evolve_until': (str(record.evolve_until).strip() if record.evolve_until else None),
+            'conversation_language': str(record.conversation_language or 'en').strip().lower() or 'en',
+            'provider_models': {str(k).strip().lower(): str(v).strip() for k, v in (record.provider_models or {}).items() if str(k).strip() and str(v).strip()},
+            'provider_model_params': {str(k).strip().lower(): str(v).strip() for k, v in (record.provider_model_params or {}).items() if str(k).strip() and str(v).strip()},
+            'participant_models': {str(k).strip(): str(v).strip() for k, v in (record.participant_models or {}).items() if str(k).strip() and str(v).strip()},
+            'participant_model_params': {str(k).strip(): str(v).strip() for k, v in (record.participant_model_params or {}).items() if str(k).strip() and str(v).strip()},
+            'claude_team_agents': bool(record.claude_team_agents),
+            'codex_multi_agents': bool(record.codex_multi_agents),
+            'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (record.claude_team_agents_overrides or {}).items() if str(k).strip()},
+            'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (record.codex_multi_agents_overrides or {}).items() if str(k).strip()},
+            'repair_mode': str(record.repair_mode or 'balanced').strip().lower() or 'balanced',
+            'plain_mode': bool(record.plain_mode),
+            'stream_mode': bool(record.stream_mode),
+            'debate_mode': bool(record.debate_mode),
+            'auto_merge': bool(record.auto_merge),
+            'merge_target_path': (str(record.merge_target_path).strip() if record.merge_target_path else None),
+            'sandbox_mode': bool(record.sandbox_mode),
+            'sandbox_workspace_path': (str(record.sandbox_workspace_path).strip() if record.sandbox_workspace_path else None),
+            'sandbox_generated': bool(record.sandbox_generated),
+            'sandbox_cleanup_on_pass': bool(record.sandbox_cleanup_on_pass),
+            'project_path': str(record.project_path).strip() or record.workspace_path,
+            'self_loop_mode': int(max(0, min(1, int(record.self_loop_mode)))),
+            'workspace_path': record.workspace_path,
             'workspace_fingerprint': (
-                {str(k).strip(): v for k, v in dict(workspace_fingerprint or {}).items() if str(k).strip()}
-                if isinstance(workspace_fingerprint, dict)
+                {str(k).strip(): v for k, v in dict(record.workspace_fingerprint or {}).items() if str(k).strip()}
+                if isinstance(record.workspace_fingerprint, dict)
                 else {}
             ),
             'status': 'queued',
             'last_gate_reason': None,
-            'max_rounds': int(max_rounds),
-            'test_command': test_command,
-            'lint_command': lint_command,
+            'max_rounds': int(record.max_rounds),
+            'test_command': record.test_command,
+            'lint_command': record.lint_command,
             'rounds_completed': 0,
             'cancel_requested': False,
             'created_at': _utc_now_iso(),
@@ -262,7 +341,7 @@ class InMemoryTaskRepository:
         self,
         task_id: str,
         *,
-        event_type: str,
+        event_type: str | EventType,
         payload: dict,
         round_number: int | None = None,
     ) -> dict:
@@ -271,7 +350,7 @@ class InMemoryTaskRepository:
         event = {
             'seq': len(self.events[task_id]) + 1,
             'task_id': task_id,
-            'type': event_type,
+            'type': normalize_event_type(event_type),
             'round': round_number,
             'payload': payload,
             'created_at': _utc_now_iso(),

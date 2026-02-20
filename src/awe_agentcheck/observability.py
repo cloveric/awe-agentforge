@@ -4,6 +4,7 @@ import json
 import logging
 import sys
 from contextvars import ContextVar
+from threading import Lock
 
 _task_id_var: ContextVar[str | None] = ContextVar('task_id', default=None)
 _round_var: ContextVar[int | None] = ContextVar('round_no', default=None)
@@ -45,6 +46,8 @@ class _JsonFormatter(logging.Formatter):
 
 
 _configured = False
+_configured_otlp_endpoint: str | None = None
+_configure_lock = Lock()
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -54,16 +57,31 @@ def get_logger(name: str) -> logging.Logger:
 
 def configure_observability(*, service_name: str, otlp_endpoint: str | None) -> None:
     global _configured
-    if not _configured:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(_JsonFormatter())
-        root = logging.getLogger('awe_agentcheck')
-        root.addHandler(handler)
-        root.setLevel(logging.DEBUG)
-        _configured = True
+    global _configured_otlp_endpoint
+    with _configure_lock:
+        if not _configured:
+            root = logging.getLogger('awe_agentcheck')
+            has_json_handler = any(
+                isinstance(handler, logging.StreamHandler)
+                and isinstance(getattr(handler, 'formatter', None), _JsonFormatter)
+                for handler in root.handlers
+            )
+            if not has_json_handler:
+                handler = logging.StreamHandler(sys.stderr)
+                handler.setFormatter(_JsonFormatter())
+                root.addHandler(handler)
+            root.setLevel(logging.DEBUG)
+            _configured = True
 
     if not otlp_endpoint:
         return
+    endpoint = str(otlp_endpoint).strip()
+    if not endpoint:
+        return
+
+    with _configure_lock:
+        if _configured_otlp_endpoint == endpoint:
+            return
 
     try:
         from opentelemetry import trace
@@ -78,6 +96,8 @@ def configure_observability(*, service_name: str, otlp_endpoint: str | None) -> 
         return
 
     provider = TracerProvider(resource=Resource.create({'service.name': service_name}))
-    exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+    exporter = OTLPSpanExporter(endpoint=endpoint)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
+    with _configure_lock:
+        _configured_otlp_endpoint = endpoint

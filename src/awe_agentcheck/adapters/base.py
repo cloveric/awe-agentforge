@@ -115,7 +115,7 @@ def _parse_json_control_payload(output: str) -> dict[str, str | None]:
     for candidate in _iter_json_candidates(output):
         try:
             parsed = json.loads(candidate)
-        except Exception:
+        except json.JSONDecodeError:
             continue
         if not isinstance(parsed, dict):
             continue

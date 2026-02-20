@@ -52,3 +52,33 @@ def test_remove_task_workspace_allows_normal_task_id(tmp_path: Path):
     store = ArtifactStore(root=tmp_path)
     store.create_task_workspace(task_id='task-normal')
     assert store.remove_task_workspace(task_id='task-normal') is True
+
+
+@pytest.mark.parametrize(
+    'name',
+    [
+        '../escape',
+        '..\\escape',
+        'a\x00b',
+        '..',
+        '',
+    ],
+)
+def test_write_artifact_json_rejects_unsafe_name(tmp_path: Path, name: str):
+    store = ArtifactStore(root=tmp_path)
+    store.create_task_workspace(task_id='task-safe')
+    with pytest.raises(ValueError):
+        store.write_artifact_json('task-safe', name=name, payload={'ok': False})
+
+
+def test_write_artifact_json_sanitizes_platform_unsafe_chars(tmp_path: Path):
+    store = ArtifactStore(root=tmp_path)
+    store.create_task_workspace(task_id='task-safe')
+    path = store.write_artifact_json(
+        'task-safe',
+        name='report:*?"<>| draft',
+        payload={'ok': True},
+    )
+    assert path.name.endswith('.json')
+    assert path.exists()
+    assert all(ch not in path.name for ch in ':*?"<>|')
