@@ -1075,6 +1075,73 @@ import {
         formatRevisionSummaryFn: formatRevisionSummary,
       });
     }
+
+    function renderCreateHelp() {
+      const lang = state.createHelpLanguage === 'en' ? 'en' : 'zh';
+      const collapsed = !!state.createHelpCollapsed;
+
+      if (el.createHelpPanel) {
+        el.createHelpPanel.classList.toggle('is-collapsed', collapsed);
+      }
+      if (el.openCreateHelpBtn) {
+        el.openCreateHelpBtn.textContent = collapsed ? 'Help' : 'Hide Help';
+        el.openCreateHelpBtn.title = collapsed ? 'Open Create Task help' : 'Hide Create Task help';
+      }
+      if (el.createHelpLangEnBtn) {
+        el.createHelpLangEnBtn.classList.toggle('active', lang === 'en');
+      }
+      if (el.createHelpLangZhBtn) {
+        el.createHelpLangZhBtn.classList.toggle('active', lang === 'zh');
+      }
+      if (el.createHelpHint) {
+        el.createHelpHint.textContent = lang === 'en'
+          ? 'Create Task field guide (EN)'
+          : 'Create Task 字段说明（中文）';
+      }
+      if (!el.createHelpList) return;
+
+      el.createHelpList.innerHTML = '';
+      if (collapsed) return;
+
+      for (const item of CREATE_TASK_HELP_ITEMS) {
+        const card = document.createElement('article');
+        card.className = 'create-help-item';
+
+        const head = document.createElement('div');
+        head.className = 'create-help-item-title';
+        head.textContent = String(item.field || '');
+
+        const desc = document.createElement('div');
+        desc.className = 'create-help-item-desc';
+        desc.textContent = lang === 'en' ? String(item.en || '') : String(item.zh || '');
+
+        card.appendChild(head);
+        card.appendChild(desc);
+        el.createHelpList.appendChild(card);
+      }
+    }
+
+    function setCreateHelpCollapsed(collapsed, opts = {}) {
+      state.createHelpCollapsed = !!collapsed;
+      renderCreateHelp();
+      if (opts.persist === false) return;
+      try {
+        localStorage.setItem('awe-agentcheck-create-help-collapsed', state.createHelpCollapsed ? '1' : '0');
+      } catch {
+      }
+    }
+
+    function setCreateHelpLanguage(language, opts = {}) {
+      const normalized = String(language || '').trim().toLowerCase() === 'en' ? 'en' : 'zh';
+      state.createHelpLanguage = normalized;
+      renderCreateHelp();
+      if (opts.persist === false) return;
+      try {
+        localStorage.setItem('awe-agentcheck-create-help-lang', normalized);
+      } catch {
+      }
+    }
+
     function currentWorkspacePathForPolicy() {
       const task = selectedTask();
       if (task && task.workspace_path) {
