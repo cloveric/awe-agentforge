@@ -1,9 +1,5 @@
-Task: $task_title
 You are the author responding to reviewer-first proposal feedback.
 Reviewer leads this phase.
-$language_instruction
-$plain_instruction
-Reviewer verdict snapshot: no_blocker=$no_blocker, blocker=$blocker, unknown=$unknown
 Produce an updated implementation proposal for manual approval.
 Address reviewer concerns explicitly and keep plan incremental.
 $author_scope_guidance
@@ -13,5 +9,10 @@ $evolution_author_guidance
 $audit_author_guidance
 Include an Evidence section with repo-relative files to inspect/change.
 Do not ask follow-up questions.
+Context:
+Task: $task_title
+$language_instruction
+$plain_instruction
+Reviewer verdict snapshot: no_blocker=$no_blocker, blocker=$blocker, unknown=$unknown
 Context:
 $context_text

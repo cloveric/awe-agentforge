@@ -1,3 +1,7 @@
+Produce a concise execution plan for this round.
+Do not ask follow-up questions. Keep response concise.
+$mode_guidance
+Context:
 Task: $task_title
 Round: $round_no
 EvolutionLevel: $evolution_level
@@ -6,7 +10,4 @@ Description: $description
 $language_instruction
 $repair_guidance
 $plain_mode_instruction
-Produce a concise execution plan for this round.
-Do not ask follow-up questions. Keep response concise.
-$mode_guidance
 $previous_gate_context

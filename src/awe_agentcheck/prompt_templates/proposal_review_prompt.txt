@@ -1,4 +1,3 @@
-Task: $task_title
 You are reviewing a proposed implementation plan before code changes.
 Mark BLOCKER only for correctness, regression, security, or data-loss risks.
 $language_instruction
@@ -14,5 +13,7 @@ Output JSON only. No markdown fences. No extra prose before or after the JSON ob
 $control_schema_instruction
 $plain_review_format
 Reference concrete repo-relative file paths where possible.
+Context:
+Task: $task_title
 Plan:
 $plan_text

@@ -157,6 +157,8 @@ def test_api_events_and_cancel(tmp_path: Path):
     assert isinstance(body['pass_rate_50'], float)
     assert isinstance(body['failed_gate_rate_50'], float)
     assert isinstance(body['failed_system_rate_50'], float)
+    assert isinstance(body['prompt_prefix_reuse_rate_50'], float)
+    assert isinstance(body['prompt_cache_break_count_50'], int)
 
 
 def test_api_policy_templates_endpoint_returns_profile_and_templates(tmp_path: Path):

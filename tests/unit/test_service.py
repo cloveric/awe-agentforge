@@ -1910,6 +1910,62 @@ def test_service_stats_include_recent_rates_and_duration(tmp_path: Path):
     assert stats.failed_gate_rate_50 == 1 / 3
     assert stats.failed_system_rate_50 == 1 / 3
     assert stats.mean_task_duration_seconds_50 == 120.0
+    assert stats.prompt_prefix_reuse_rate_50 == 0.0
+    assert stats.prompt_cache_break_count_50 == 0
+    assert stats.prompt_cache_break_model_50 == 0
+    assert stats.prompt_cache_break_toolset_50 == 0
+    assert stats.prompt_cache_break_prefix_50 == 0
+
+
+def test_service_stats_include_prompt_cache_stability_metrics(tmp_path: Path):
+    svc = build_service(tmp_path)
+    task = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Prompt cache metrics',
+            description='cache probe accounting',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+        )
+    )
+    svc.repository.append_event(
+        task.task_id,
+        event_type='prompt_cache_probe',
+        payload={
+            'prefix_reuse_eligible': False,
+            'prefix_reused': False,
+        },
+        round_number=1,
+    )
+    svc.repository.append_event(
+        task.task_id,
+        event_type='prompt_cache_probe',
+        payload={
+            'prefix_reuse_eligible': True,
+            'prefix_reused': True,
+        },
+        round_number=2,
+    )
+    svc.repository.append_event(
+        task.task_id,
+        event_type='prompt_cache_break',
+        payload={'reason': 'model_changed'},
+        round_number=2,
+    )
+    svc.repository.append_event(
+        task.task_id,
+        event_type='prompt_cache_break',
+        payload={'reason': 'prefix_changed'},
+        round_number=2,
+    )
+
+    stats = svc.get_stats()
+    assert stats.prompt_prefix_reuse_rate_50 == 1.0
+    assert stats.prompt_cache_break_count_50 == 2
+    assert stats.prompt_cache_break_model_50 == 1
+    assert stats.prompt_cache_break_toolset_50 == 0
+    assert stats.prompt_cache_break_prefix_50 == 1
 
 
 def test_service_proposal_review_reviewer_failure_degrades_to_unknown(tmp_path: Path):

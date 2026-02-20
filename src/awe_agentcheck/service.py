@@ -133,6 +133,11 @@ class StatsView:
     failed_gate_rate_50: float
     failed_system_rate_50: float
     mean_task_duration_seconds_50: float
+    prompt_prefix_reuse_rate_50: float
+    prompt_cache_break_count_50: int
+    prompt_cache_break_model_50: int
+    prompt_cache_break_toolset_50: int
+    prompt_cache_break_prefix_50: int
 
 
 _PROVIDER_RE = re.compile(r'provider=([a-zA-Z0-9_-]+)')

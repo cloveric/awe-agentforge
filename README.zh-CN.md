@@ -92,6 +92,16 @@
 10. 重构后自查修复：
    - 修复了 `web/assets/dashboard.js` 中缺失的 Create Task Help 处理函数（`setCreateHelpCollapsed`、`setCreateHelpLanguage`、`renderCreateHelp`）。
    - 已通过浏览器控制台与 API 冒烟检查（`/healthz`、`/api/stats`、静态模块路由）确认页面运行恢复稳定。
+11. Prompt caching 稳定性与可观测性增强：
+   - 调整 prompt 模板顺序：将稳定策略/指令前缀固定在前，动态任务内容统一放入 `Context:` 区块，减少缓存前缀抖动。
+   - 工作流在 debate/discussion/implementation/review 阶段新增事件：
+     - `prompt_cache_probe`
+     - `prompt_cache_break`（原因：`model_changed` / `toolset_changed` / `prefix_changed`）。
+   - LangGraph 多轮执行现在保持同一份 prompt-cache 状态，不再每轮重置。
+   - stats/API/dashboard 新增缓存稳定性指标：
+     - `prompt_prefix_reuse_rate_50`
+     - `prompt_cache_break_count_50`
+     - `prompt_cache_break_model_50` / `prompt_cache_break_toolset_50` / `prompt_cache_break_prefix_50`。
 
 ## 上一版更新（2026-02-19）
 

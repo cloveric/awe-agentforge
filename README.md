@@ -92,6 +92,14 @@
 10. Post-refactor self-check fix:
    - restored missing `Create Task Help` handlers (`setCreateHelpCollapsed`, `setCreateHelpLanguage`, `renderCreateHelp`) in `web/assets/dashboard.js`.
    - verified runtime page health with browser console + API smoke (`/healthz`, `/api/stats`, static module routes).
+11. Prompt-caching stability hardening + observability:
+   - prompt templates were reordered to keep static policy/instruction prefix stable and move dynamic task payload under `Context:`.
+   - workflow now emits `prompt_cache_probe` and `prompt_cache_break` events (reasons: `model_changed` / `toolset_changed` / `prefix_changed`) across debate/discussion/implementation/review stages.
+   - LangGraph round loop now preserves prompt-cache state across rounds (no per-round reset).
+   - stats/API/dashboard now expose cache stability KPIs:
+     - `prompt_prefix_reuse_rate_50`
+     - `prompt_cache_break_count_50`
+     - `prompt_cache_break_model_50` / `prompt_cache_break_toolset_50` / `prompt_cache_break_prefix_50`.
 
 ## Previous Update (2026-02-19)
 

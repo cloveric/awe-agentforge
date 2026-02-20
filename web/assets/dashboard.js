@@ -1679,6 +1679,8 @@ import {
         { label: 'Gate Fail 50', value: `${(Number(stats.failed_gate_rate_50 || 0) * 100).toFixed(1)}%` },
         { label: 'System Fail 50', value: `${(Number(stats.failed_system_rate_50 || 0) * 100).toFixed(1)}%` },
         { label: 'Avg Sec 50', value: Number(stats.mean_task_duration_seconds_50 || 0).toFixed(1) },
+        { label: 'Prefix Reuse 50', value: `${(Number(stats.prompt_prefix_reuse_rate_50 || 0) * 100).toFixed(1)}%` },
+        { label: 'Cache Break 50', value: String(Number(stats.prompt_cache_break_count_50 || 0)) },
       ];
 
       el.kpiStrip.innerHTML = '';
@@ -1708,7 +1710,10 @@ import {
         `Pass50=${(Number(stats.pass_rate_50 || 0) * 100).toFixed(1)}% | ` +
         `FG50=${(Number(stats.failed_gate_rate_50 || 0) * 100).toFixed(1)}% | ` +
         `FS50=${(Number(stats.failed_system_rate_50 || 0) * 100).toFixed(1)}% | ` +
-        `AvgSec50=${Number(stats.mean_task_duration_seconds_50 || 0).toFixed(1)}`;
+        `AvgSec50=${Number(stats.mean_task_duration_seconds_50 || 0).toFixed(1)} | ` +
+        `PrefixReuse50=${(Number(stats.prompt_prefix_reuse_rate_50 || 0) * 100).toFixed(1)}% | ` +
+        `CacheBreak50=${Number(stats.prompt_cache_break_count_50 || 0)} ` +
+        `(model=${Number(stats.prompt_cache_break_model_50 || 0)}, toolset=${Number(stats.prompt_cache_break_toolset_50 || 0)}, prefix=${Number(stats.prompt_cache_break_prefix_50 || 0)})`;
       renderKpiStrip(stats);
     }
 

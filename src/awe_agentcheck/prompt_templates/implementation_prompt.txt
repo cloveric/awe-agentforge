@@ -1,3 +1,5 @@
+Implement based on this plan and summarize what changed.
+Context:
 Task: $task_title
 Round: $round_no
 EvolutionLevel: $evolution_level
@@ -5,7 +7,6 @@ RepairMode: $repair_mode
 $language_instruction
 $repair_guidance
 $plain_mode_instruction
-Implement based on this plan and summarize what changed.
 Plan:
 $plan
 $mode_guidance

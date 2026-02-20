@@ -153,6 +153,11 @@ class StatsResponse(BaseModel):
     failed_gate_rate_50: float
     failed_system_rate_50: float
     mean_task_duration_seconds_50: float
+    prompt_prefix_reuse_rate_50: float
+    prompt_cache_break_count_50: int
+    prompt_cache_break_model_50: int
+    prompt_cache_break_toolset_50: int
+    prompt_cache_break_prefix_50: int
 
 
 class WorkspaceTreeNodeResponse(BaseModel):
@@ -610,6 +615,11 @@ def create_app(
             failed_gate_rate_50=stats.failed_gate_rate_50,
             failed_system_rate_50=stats.failed_system_rate_50,
             mean_task_duration_seconds_50=stats.mean_task_duration_seconds_50,
+            prompt_prefix_reuse_rate_50=stats.prompt_prefix_reuse_rate_50,
+            prompt_cache_break_count_50=stats.prompt_cache_break_count_50,
+            prompt_cache_break_model_50=stats.prompt_cache_break_model_50,
+            prompt_cache_break_toolset_50=stats.prompt_cache_break_toolset_50,
+            prompt_cache_break_prefix_50=stats.prompt_cache_break_prefix_50,
         )
 
     @app.get('/api/provider-models', response_model=ProviderModelsResponse)

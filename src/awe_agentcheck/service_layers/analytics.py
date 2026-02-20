@@ -78,6 +78,50 @@ class AnalyticsService:
                 durations.append(delta)
         mean_task_duration_seconds_50 = (sum(durations) / len(durations)) if durations else 0.0
 
+        def _to_bool(value) -> bool:
+            if isinstance(value, bool):
+                return value
+            text = str(value or '').strip().lower()
+            return text in {'1', 'true', 'yes', 'on'}
+
+        prefix_reuse_eligible = 0
+        prefix_reuse_hits = 0
+        prompt_cache_break_count_50 = 0
+        prompt_cache_break_model_50 = 0
+        prompt_cache_break_toolset_50 = 0
+        prompt_cache_break_prefix_50 = 0
+        for row in recent_rows:
+            task_id = str(row.get('task_id') or '').strip()
+            if not task_id:
+                continue
+            try:
+                events = self.repository.list_events(task_id)
+            except Exception:
+                events = []
+            for event in events:
+                etype = str(event.get('type') or '').strip().lower()
+                if etype == 'prompt_cache_probe':
+                    payload = self._merged_event_payload(event)
+                    if _to_bool(payload.get('prefix_reuse_eligible')):
+                        prefix_reuse_eligible += 1
+                        if _to_bool(payload.get('prefix_reused')):
+                            prefix_reuse_hits += 1
+                elif etype == 'prompt_cache_break':
+                    prompt_cache_break_count_50 += 1
+                    payload = self._merged_event_payload(event)
+                    reason = str(payload.get('reason') or '').strip().lower()
+                    if reason == 'model_changed':
+                        prompt_cache_break_model_50 += 1
+                    elif reason == 'toolset_changed':
+                        prompt_cache_break_toolset_50 += 1
+                    elif reason == 'prefix_changed':
+                        prompt_cache_break_prefix_50 += 1
+        prompt_prefix_reuse_rate_50 = (
+            prefix_reuse_hits / prefix_reuse_eligible
+            if prefix_reuse_eligible > 0
+            else 0.0
+        )
+
         return self._stats_factory(
             total_tasks=len(rows),
             status_counts=counts,
@@ -89,6 +133,11 @@ class AnalyticsService:
             failed_gate_rate_50=failed_gate_rate_50,
             failed_system_rate_50=failed_system_rate_50,
             mean_task_duration_seconds_50=mean_task_duration_seconds_50,
+            prompt_prefix_reuse_rate_50=prompt_prefix_reuse_rate_50,
+            prompt_cache_break_count_50=prompt_cache_break_count_50,
+            prompt_cache_break_model_50=prompt_cache_break_model_50,
+            prompt_cache_break_toolset_50=prompt_cache_break_toolset_50,
+            prompt_cache_break_prefix_50=prompt_cache_break_prefix_50,
         )
 
     def get_analytics(self, *, limit: int = 300) -> dict:

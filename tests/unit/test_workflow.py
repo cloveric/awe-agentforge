@@ -1194,6 +1194,76 @@ def test_workflow_stream_mode_emits_participant_stream_events(tmp_path: Path):
     assert any(e.get('type') == 'participant_stream' for e in sink.events)
 
 
+def test_workflow_emits_prompt_cache_probe_events_with_prefix_reuse_signal(tmp_path: Path):
+    runner = FakeRunner([
+        _ok_result(),              # round1 discussion
+        _ok_result(),              # round1 implementation
+        _ok_result('blocker'),     # round1 review -> gate fail
+        _ok_result(),              # round2 discussion
+        _ok_result(),              # round2 implementation
+        _ok_result('no_blocker'),  # round2 review -> gate pass
+    ])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-cache-probe',
+            title='Cache probe',
+            description='exercise two rounds for probe reuse',
+            author=parse_participant_id('codex#author-A'),
+            reviewers=[parse_participant_id('claude#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=3,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    probes = [e for e in sink.events if str(e.get('type')) == 'prompt_cache_probe']
+    assert probes
+    assert any(bool(e.get('prefix_reuse_eligible')) and bool(e.get('prefix_reused')) for e in probes)
+    breaks = [e for e in sink.events if str(e.get('type')) == 'prompt_cache_break']
+    assert not breaks
+
+
+def test_prompt_cache_probe_emits_break_event_when_model_changes():
+    state: dict = {}
+    participant = parse_participant_id('codex#author-A')
+    probe1, breaks1 = WorkflowEngine._record_prompt_cache_probe(
+        cache_state=state,
+        round_no=1,
+        stage='discussion',
+        participant=participant,
+        model='gpt-5.3-codex',
+        model_params='reasoning_effort=high',
+        claude_team_agents=False,
+        codex_multi_agents=False,
+        prompt='Static instruction header\nContext: round1',
+    )
+    probe2, breaks2 = WorkflowEngine._record_prompt_cache_probe(
+        cache_state=state,
+        round_no=2,
+        stage='discussion',
+        participant=participant,
+        model='gpt-5.3-codex-spark',
+        model_params='reasoning_effort=high',
+        claude_team_agents=False,
+        codex_multi_agents=False,
+        prompt='Static instruction header\nContext: round2',
+    )
+
+    assert probe1['baseline'] is True
+    assert probe2['model_reuse_eligible'] is True
+    assert any(str(item.get('reason')) == 'model_changed' for item in breaks2)
+    assert breaks1 == []
+
+
 def test_workflow_evolution_level_1_emits_architecture_warnings_without_hard_fail(tmp_path: Path, monkeypatch):
     monkeypatch.delenv('AWE_ARCH_AUDIT_MODE', raising=False)
     huge = tmp_path / 'oversized.py'

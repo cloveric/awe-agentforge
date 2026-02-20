@@ -241,6 +241,7 @@ class WorkflowEngine:
         initial_previous_gate_reason: str | None = None,
         initial_strategy_hint: str | None = None,
         initial_loop_tracker: dict | None = None,
+        initial_prompt_cache_state: dict | None = None,
         force_single_round: bool = False,
     ) -> RunResult:
         emit = on_event or (lambda event: None)
@@ -265,6 +266,15 @@ class WorkflowEngine:
         )
         environment_context = self._environment_context(config)
         loop_tracker = initial_loop_tracker if isinstance(initial_loop_tracker, dict) else self._new_loop_tracker()
+        prompt_cache_state = (
+            initial_prompt_cache_state
+            if isinstance(initial_prompt_cache_state, dict)
+            else {
+                'participant_model_signatures': {},
+                'participant_tool_signatures': {},
+                'participant_stage_prefix_signatures': {},
+            }
+        )
         strategy_hint: str | None = str(initial_strategy_hint or '').strip() or None
         stream_mode = bool(config.stream_mode)
         debate_mode = bool(config.debate_mode) and bool(config.reviewers)
@@ -317,38 +327,47 @@ class WorkflowEngine:
                         }
                     )
                     try:
+                        debate_review_prompt = self._debate_review_prompt(
+                            config,
+                            round_no,
+                            implementation_context,
+                            reviewer.participant_id,
+                            environment_context=environment_context,
+                            strategy_hint=strategy_hint,
+                        )
+                        runtime_profile = self._participant_runtime_profile(
+                            participant=reviewer,
+                            config=config,
+                            provider_models=provider_models,
+                            provider_model_params=provider_model_params,
+                            participant_models=participant_models,
+                            participant_model_params=participant_model_params,
+                            claude_team_agents_overrides=claude_team_agents_overrides,
+                            codex_multi_agents_overrides=codex_multi_agents_overrides,
+                        )
+                        probe_event, break_events = self._record_prompt_cache_probe(
+                            cache_state=prompt_cache_state,
+                            round_no=round_no,
+                            stage='debate_review',
+                            participant=reviewer,
+                            model=runtime_profile['model'],
+                            model_params=runtime_profile['model_params'],
+                            claude_team_agents=bool(runtime_profile['claude_team_agents']),
+                            codex_multi_agents=bool(runtime_profile['codex_multi_agents']),
+                            prompt=debate_review_prompt,
+                        )
+                        emit(probe_event)
+                        for cache_break in break_events:
+                            emit(cache_break)
                         debate_review = self.runner.run(
                             participant=reviewer,
-                            prompt=self._debate_review_prompt(
-                                config,
-                                round_no,
-                                implementation_context,
-                                reviewer.participant_id,
-                                environment_context=environment_context,
-                                strategy_hint=strategy_hint,
-                            ),
+                            prompt=debate_review_prompt,
                             cwd=config.cwd,
                             timeout_seconds=review_timeout_seconds,
-                            model=self._resolve_model_for_participant(
-                                participant=reviewer,
-                                provider_models=provider_models,
-                                participant_models=participant_models,
-                            ),
-                            model_params=self._resolve_model_params_for_participant(
-                                participant=reviewer,
-                                provider_model_params=provider_model_params,
-                                participant_model_params=participant_model_params,
-                            ),
-                            claude_team_agents=self._resolve_agent_toggle_for_participant(
-                                participant=reviewer,
-                                global_enabled=bool(config.claude_team_agents),
-                                overrides=claude_team_agents_overrides,
-                            ),
-                            codex_multi_agents=self._resolve_agent_toggle_for_participant(
-                                participant=reviewer,
-                                global_enabled=bool(config.codex_multi_agents),
-                                overrides=codex_multi_agents_overrides,
-                            ),
+                            model=runtime_profile['model'],
+                            model_params=runtime_profile['model_params'],
+                            claude_team_agents=bool(runtime_profile['claude_team_agents']),
+                            codex_multi_agents=bool(runtime_profile['codex_multi_agents']),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,
@@ -462,31 +481,39 @@ class WorkflowEngine:
                         strategy_hint=strategy_hint,
                     )
                 )
+                discussion_profile = self._participant_runtime_profile(
+                    participant=config.author,
+                    config=config,
+                    provider_models=provider_models,
+                    provider_model_params=provider_model_params,
+                    participant_models=participant_models,
+                    participant_model_params=participant_model_params,
+                    claude_team_agents_overrides=claude_team_agents_overrides,
+                    codex_multi_agents_overrides=codex_multi_agents_overrides,
+                )
+                discussion_probe_event, discussion_break_events = self._record_prompt_cache_probe(
+                    cache_state=prompt_cache_state,
+                    round_no=round_no,
+                    stage='discussion',
+                    participant=config.author,
+                    model=discussion_profile['model'],
+                    model_params=discussion_profile['model_params'],
+                    claude_team_agents=bool(discussion_profile['claude_team_agents']),
+                    codex_multi_agents=bool(discussion_profile['codex_multi_agents']),
+                    prompt=discussion_prompt,
+                )
+                emit(discussion_probe_event)
+                for cache_break in discussion_break_events:
+                    emit(cache_break)
                 discussion = self.runner.run(
                     participant=config.author,
                     prompt=discussion_prompt,
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
-                    model=self._resolve_model_for_participant(
-                        participant=config.author,
-                        provider_models=provider_models,
-                        participant_models=participant_models,
-                    ),
-                    model_params=self._resolve_model_params_for_participant(
-                        participant=config.author,
-                        provider_model_params=provider_model_params,
-                        participant_model_params=participant_model_params,
-                    ),
-                    claude_team_agents=self._resolve_agent_toggle_for_participant(
-                        participant=config.author,
-                        global_enabled=bool(config.claude_team_agents),
-                        overrides=claude_team_agents_overrides,
-                    ),
-                    codex_multi_agents=self._resolve_agent_toggle_for_participant(
-                        participant=config.author,
-                        global_enabled=bool(config.codex_multi_agents),
-                        overrides=codex_multi_agents_overrides,
-                    ),
+                    model=discussion_profile['model'],
+                    model_params=discussion_profile['model_params'],
+                    claude_team_agents=bool(discussion_profile['claude_team_agents']),
+                    codex_multi_agents=bool(discussion_profile['codex_multi_agents']),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -538,37 +565,46 @@ class WorkflowEngine:
                         'timeout_seconds': self.participant_timeout_seconds,
                     }
                 )
+                implementation_prompt = self._implementation_prompt(
+                    config,
+                    round_no,
+                    implementation_context,
+                    environment_context=environment_context,
+                    strategy_hint=strategy_hint,
+                )
+                implementation_profile = self._participant_runtime_profile(
+                    participant=config.author,
+                    config=config,
+                    provider_models=provider_models,
+                    provider_model_params=provider_model_params,
+                    participant_models=participant_models,
+                    participant_model_params=participant_model_params,
+                    claude_team_agents_overrides=claude_team_agents_overrides,
+                    codex_multi_agents_overrides=codex_multi_agents_overrides,
+                )
+                implementation_probe_event, implementation_break_events = self._record_prompt_cache_probe(
+                    cache_state=prompt_cache_state,
+                    round_no=round_no,
+                    stage='implementation',
+                    participant=config.author,
+                    model=implementation_profile['model'],
+                    model_params=implementation_profile['model_params'],
+                    claude_team_agents=bool(implementation_profile['claude_team_agents']),
+                    codex_multi_agents=bool(implementation_profile['codex_multi_agents']),
+                    prompt=implementation_prompt,
+                )
+                emit(implementation_probe_event)
+                for cache_break in implementation_break_events:
+                    emit(cache_break)
                 implementation = self.runner.run(
                     participant=config.author,
-                    prompt=self._implementation_prompt(
-                        config,
-                        round_no,
-                        implementation_context,
-                        environment_context=environment_context,
-                        strategy_hint=strategy_hint,
-                    ),
+                    prompt=implementation_prompt,
                     cwd=config.cwd,
                     timeout_seconds=self.participant_timeout_seconds,
-                    model=self._resolve_model_for_participant(
-                        participant=config.author,
-                        provider_models=provider_models,
-                        participant_models=participant_models,
-                    ),
-                    model_params=self._resolve_model_params_for_participant(
-                        participant=config.author,
-                        provider_model_params=provider_model_params,
-                        participant_model_params=participant_model_params,
-                    ),
-                    claude_team_agents=self._resolve_agent_toggle_for_participant(
-                        participant=config.author,
-                        global_enabled=bool(config.claude_team_agents),
-                        overrides=claude_team_agents_overrides,
-                    ),
-                    codex_multi_agents=self._resolve_agent_toggle_for_participant(
-                        participant=config.author,
-                        global_enabled=bool(config.codex_multi_agents),
-                        overrides=codex_multi_agents_overrides,
-                    ),
+                    model=implementation_profile['model'],
+                    model_params=implementation_profile['model_params'],
+                    claude_team_agents=bool(implementation_profile['claude_team_agents']),
+                    codex_multi_agents=bool(implementation_profile['codex_multi_agents']),
                     on_stream=(
                         self._stream_emitter(
                             emit=emit,
@@ -620,37 +656,46 @@ class WorkflowEngine:
                         }
                     )
                     try:
+                        review_prompt = self._review_prompt(
+                            config,
+                            round_no,
+                            implementation.output,
+                            environment_context=environment_context,
+                            strategy_hint=strategy_hint,
+                        )
+                        review_profile = self._participant_runtime_profile(
+                            participant=reviewer,
+                            config=config,
+                            provider_models=provider_models,
+                            provider_model_params=provider_model_params,
+                            participant_models=participant_models,
+                            participant_model_params=participant_model_params,
+                            claude_team_agents_overrides=claude_team_agents_overrides,
+                            codex_multi_agents_overrides=codex_multi_agents_overrides,
+                        )
+                        review_probe_event, review_break_events = self._record_prompt_cache_probe(
+                            cache_state=prompt_cache_state,
+                            round_no=round_no,
+                            stage='review',
+                            participant=reviewer,
+                            model=review_profile['model'],
+                            model_params=review_profile['model_params'],
+                            claude_team_agents=bool(review_profile['claude_team_agents']),
+                            codex_multi_agents=bool(review_profile['codex_multi_agents']),
+                            prompt=review_prompt,
+                        )
+                        emit(review_probe_event)
+                        for cache_break in review_break_events:
+                            emit(cache_break)
                         review = self.runner.run(
                             participant=reviewer,
-                            prompt=self._review_prompt(
-                                config,
-                                round_no,
-                                implementation.output,
-                                environment_context=environment_context,
-                                strategy_hint=strategy_hint,
-                            ),
+                            prompt=review_prompt,
                             cwd=config.cwd,
                             timeout_seconds=review_timeout_seconds,
-                            model=self._resolve_model_for_participant(
-                                participant=reviewer,
-                                provider_models=provider_models,
-                                participant_models=participant_models,
-                            ),
-                            model_params=self._resolve_model_params_for_participant(
-                                participant=reviewer,
-                                provider_model_params=provider_model_params,
-                                participant_model_params=participant_model_params,
-                            ),
-                            claude_team_agents=self._resolve_agent_toggle_for_participant(
-                                participant=reviewer,
-                                global_enabled=bool(config.claude_team_agents),
-                                overrides=claude_team_agents_overrides,
-                            ),
-                            codex_multi_agents=self._resolve_agent_toggle_for_participant(
-                                participant=reviewer,
-                                global_enabled=bool(config.codex_multi_agents),
-                                overrides=codex_multi_agents_overrides,
-                            ),
+                            model=review_profile['model'],
+                            model_params=review_profile['model_params'],
+                            claude_team_agents=bool(review_profile['claude_team_agents']),
+                            codex_multi_agents=bool(review_profile['codex_multi_agents']),
                             on_stream=(
                                 self._stream_emitter(
                                     emit=emit,
@@ -1018,6 +1063,11 @@ class WorkflowEngine:
             'previous_gate_reason': None,
             'strategy_hint': None,
             'loop_tracker': self._new_loop_tracker(),
+            'prompt_cache_state': {
+                'participant_model_signatures': {},
+                'participant_tool_signatures': {},
+                'participant_stage_prefix_signatures': {},
+            },
             'result': None,
         }
 
@@ -1044,6 +1094,13 @@ class WorkflowEngine:
         loop_tracker = state.get('loop_tracker')
         if not isinstance(loop_tracker, dict):
             loop_tracker = self._new_loop_tracker()
+        prompt_cache_state = state.get('prompt_cache_state')
+        if not isinstance(prompt_cache_state, dict):
+            prompt_cache_state = {
+                'participant_model_signatures': {},
+                'participant_tool_signatures': {},
+                'participant_stage_prefix_signatures': {},
+            }
 
         def _emit_without_task_started(event: dict) -> None:
             if not isinstance(event, dict):
@@ -1063,6 +1120,7 @@ class WorkflowEngine:
             initial_previous_gate_reason=previous_gate_reason,
             initial_strategy_hint=strategy_hint,
             initial_loop_tracker=loop_tracker,
+            initial_prompt_cache_state=prompt_cache_state,
             force_single_round=True,
         )
         result = RunResult(
@@ -1083,6 +1141,7 @@ class WorkflowEngine:
             'previous_gate_reason': (result.gate_reason if str(result.status) == 'failed_gate' else previous_gate_reason),
             'strategy_hint': strategy_hint,
             'loop_tracker': loop_tracker,
+            'prompt_cache_state': prompt_cache_state,
             'result': (result if should_finish else None),
             'last_round_result': result,
         }
@@ -1573,6 +1632,166 @@ class WorkflowEngine:
         if len(payload) > max_chars:
             payload = payload[:max_chars]
         return hashlib.sha1(payload.encode('utf-8')).hexdigest()[:16]
+
+    def _participant_runtime_profile(
+        self,
+        *,
+        participant: Participant,
+        config: RunConfig,
+        provider_models: dict[str, str],
+        provider_model_params: dict[str, str],
+        participant_models: dict[str, str],
+        participant_model_params: dict[str, str],
+        claude_team_agents_overrides: dict[str, bool],
+        codex_multi_agents_overrides: dict[str, bool],
+    ) -> dict[str, object]:
+        return {
+            'model': self._resolve_model_for_participant(
+                participant=participant,
+                provider_models=provider_models,
+                participant_models=participant_models,
+            ),
+            'model_params': self._resolve_model_params_for_participant(
+                participant=participant,
+                provider_model_params=provider_model_params,
+                participant_model_params=participant_model_params,
+            ),
+            'claude_team_agents': self._resolve_agent_toggle_for_participant(
+                participant=participant,
+                global_enabled=bool(config.claude_team_agents),
+                overrides=claude_team_agents_overrides,
+            ),
+            'codex_multi_agents': self._resolve_agent_toggle_for_participant(
+                participant=participant,
+                global_enabled=bool(config.codex_multi_agents),
+                overrides=codex_multi_agents_overrides,
+            ),
+        }
+
+    @staticmethod
+    def _record_prompt_cache_probe(
+        *,
+        cache_state: dict,
+        round_no: int,
+        stage: str,
+        participant: Participant,
+        model: str | None,
+        model_params: str | None,
+        claude_team_agents: bool,
+        codex_multi_agents: bool,
+        prompt: str,
+    ) -> tuple[dict, list[dict]]:
+        participant_model_signatures = cache_state.setdefault('participant_model_signatures', {})
+        participant_tool_signatures = cache_state.setdefault('participant_tool_signatures', {})
+        participant_stage_prefix_signatures = cache_state.setdefault('participant_stage_prefix_signatures', {})
+        if not isinstance(participant_model_signatures, dict):
+            participant_model_signatures = {}
+            cache_state['participant_model_signatures'] = participant_model_signatures
+        if not isinstance(participant_tool_signatures, dict):
+            participant_tool_signatures = {}
+            cache_state['participant_tool_signatures'] = participant_tool_signatures
+        if not isinstance(participant_stage_prefix_signatures, dict):
+            participant_stage_prefix_signatures = {}
+            cache_state['participant_stage_prefix_signatures'] = participant_stage_prefix_signatures
+
+        participant_key = str(participant.participant_id or '').strip().lower() or str(participant.alias or '').strip().lower()
+        stage_key = f'{participant_key}|{str(stage or "").strip().lower() or "unknown"}'
+        model_label = str(model or '').strip() or '__provider_default__'
+        model_params_label = str(model_params or '').strip()
+        prompt_text = str(prompt or '')
+        marker_idx = prompt_text.find('\nContext:')
+        if marker_idx < 0:
+            marker_idx = prompt_text.find('Context:')
+        static_prefix_text = prompt_text[:marker_idx] if marker_idx > 0 else prompt_text[:1800]
+        prefix_sig = WorkflowEngine._text_signature(static_prefix_text, max_chars=1800)
+        prompt_sig = WorkflowEngine._text_signature(prompt_text, max_chars=4000)
+        model_sig = WorkflowEngine._text_signature(
+            f'provider={participant.provider}|model={model_label}|params={model_params_label}',
+            max_chars=512,
+        )
+        toolset_sig = WorkflowEngine._text_signature(
+            f'claude_team_agents={1 if claude_team_agents else 0}|codex_multi_agents={1 if codex_multi_agents else 0}',
+            max_chars=128,
+        )
+
+        previous_model_sig = str(participant_model_signatures.get(participant_key) or '')
+        previous_toolset_sig = str(participant_tool_signatures.get(participant_key) or '')
+        previous_prefix_sig = str(participant_stage_prefix_signatures.get(stage_key) or '')
+
+        model_reuse_eligible = bool(previous_model_sig)
+        toolset_reuse_eligible = bool(previous_toolset_sig)
+        prefix_reuse_eligible = bool(previous_prefix_sig)
+
+        model_reused = bool(model_reuse_eligible and previous_model_sig == model_sig)
+        toolset_reused = bool(toolset_reuse_eligible and previous_toolset_sig == toolset_sig)
+        prefix_reused = bool(prefix_reuse_eligible and previous_prefix_sig == prefix_sig)
+
+        probe_event = {
+            'type': 'prompt_cache_probe',
+            'round': int(round_no),
+            'stage': str(stage or '').strip().lower() or 'unknown',
+            'participant': participant.participant_id,
+            'provider': participant.provider,
+            'model': model_label,
+            'model_params': model_params_label,
+            'prompt_chars': len(prompt_text),
+            'prefix_signature': prefix_sig,
+            'prompt_signature': prompt_sig,
+            'toolset_signature': toolset_sig,
+            'baseline': not prefix_reuse_eligible,
+            'prefix_reuse_eligible': prefix_reuse_eligible,
+            'prefix_reused': prefix_reused,
+            'model_reuse_eligible': model_reuse_eligible,
+            'model_reused': model_reused,
+            'toolset_reuse_eligible': toolset_reuse_eligible,
+            'toolset_reused': toolset_reused,
+        }
+
+        break_events: list[dict] = []
+        if model_reuse_eligible and not model_reused:
+            break_events.append(
+                {
+                    'type': 'prompt_cache_break',
+                    'round': int(round_no),
+                    'stage': str(stage or '').strip().lower() or 'unknown',
+                    'participant': participant.participant_id,
+                    'provider': participant.provider,
+                    'reason': 'model_changed',
+                    'previous_signature': previous_model_sig,
+                    'current_signature': model_sig,
+                }
+            )
+        if toolset_reuse_eligible and not toolset_reused:
+            break_events.append(
+                {
+                    'type': 'prompt_cache_break',
+                    'round': int(round_no),
+                    'stage': str(stage or '').strip().lower() or 'unknown',
+                    'participant': participant.participant_id,
+                    'provider': participant.provider,
+                    'reason': 'toolset_changed',
+                    'previous_signature': previous_toolset_sig,
+                    'current_signature': toolset_sig,
+                }
+            )
+        if prefix_reuse_eligible and not prefix_reused:
+            break_events.append(
+                {
+                    'type': 'prompt_cache_break',
+                    'round': int(round_no),
+                    'stage': str(stage or '').strip().lower() or 'unknown',
+                    'participant': participant.participant_id,
+                    'provider': participant.provider,
+                    'reason': 'prefix_changed',
+                    'previous_signature': previous_prefix_sig,
+                    'current_signature': prefix_sig,
+                }
+            )
+
+        participant_model_signatures[participant_key] = model_sig
+        participant_tool_signatures[participant_key] = toolset_sig
+        participant_stage_prefix_signatures[stage_key] = prefix_sig
+        return probe_event, break_events
 
     @staticmethod
     def _strategy_hint_from_reason(

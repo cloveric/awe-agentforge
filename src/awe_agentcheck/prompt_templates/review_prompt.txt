@@ -1,10 +1,3 @@
-Task: $task_title
-Round: $round_no
-EvolutionLevel: $evolution_level
-RepairMode: $repair_mode
-$language_instruction
-$repair_guidance
-$plain_mode_instruction
 Review the implementation summary and decide blocker status.
 Mark BLOCKER only for correctness, regression, security, or data-loss risks.
 Do not mark BLOCKER for style-only, process-only, or preference-only feedback.
@@ -19,5 +12,13 @@ $control_schema_instruction
 $plain_review_format
 Reference at least one concrete repo-relative file path when possible.
 Do not ask follow-up questions. Keep response concise.
+Context:
+Task: $task_title
+Round: $round_no
+EvolutionLevel: $evolution_level
+RepairMode: $repair_mode
+$language_instruction
+$repair_guidance
+$plain_mode_instruction
 Implementation summary:
 $implementation_summary
