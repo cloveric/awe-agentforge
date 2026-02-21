@@ -87,13 +87,14 @@ def proposal_author_prompt(
     no_blocker = sum(1 for item in review_payload if str(item.get('verdict')) == ReviewVerdict.NO_BLOCKER.value)
     blocker = sum(1 for item in review_payload if str(item.get('verdict')) == ReviewVerdict.BLOCKER.value)
     unknown = sum(1 for item in review_payload if str(item.get('verdict')) == ReviewVerdict.UNKNOWN.value)
-    if level >= 3:
+    if level >= 1:
         author_scope_guidance = (
             "Primary plan must still map to reviewer findings and user intent. "
             "You may append 1-3 optional proactive evolution candidates if they are low-risk and testable."
         )
         evolution_author_guidance = (
-            "For each optional candidate, include impact/risk/effort and a concrete verification path."
+            "For each optional candidate, include impact/risk/effort and a concrete verification path. "
+            "Do not relax bug-fix, security, correctness, or regression standards for required items."
         )
     else:
         author_scope_guidance = (

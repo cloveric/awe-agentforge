@@ -2382,14 +2382,64 @@ def test_service_proposal_author_prompt_frontier_level_is_more_open(tmp_path: Pa
     assert 'impact/risk/effort' in prompt
 
 
-def test_service_proposal_author_prompt_non_frontier_keeps_strict_scope(tmp_path: Path):
+def test_service_proposal_author_prompt_evolution_level_2_is_more_open(tmp_path: Path):
     cfg = RunConfig(
         task_id='t-proposal-author-e2',
-        title='E2 strict scope',
+        title='E2 open scope',
         description='fix bugs',
         author=parse_participant_id('codex#author-A'),
         reviewers=[parse_participant_id('claude#review-B')],
         evolution_level=2,
+        evolve_until=None,
+        cwd=tmp_path,
+        max_rounds=1,
+        test_command='py -m pytest -q',
+        lint_command='py -m ruff check .',
+        conversation_language='en',
+        plain_mode=True,
+    )
+    prompt = OrchestratorService._proposal_author_prompt(
+        config=cfg,
+        merged_context='Reviewer findings here.',
+        review_payload=[{'verdict': 'no_blocker'}],
+    )
+    assert 'optional proactive evolution candidates' in prompt
+    assert 'impact/risk/effort' in prompt
+
+
+def test_service_proposal_author_prompt_evolution_level_1_is_more_open(tmp_path: Path):
+    cfg = RunConfig(
+        task_id='t-proposal-author-e1',
+        title='E1 open scope',
+        description='review and improve',
+        author=parse_participant_id('codex#author-A'),
+        reviewers=[parse_participant_id('claude#review-B')],
+        evolution_level=1,
+        evolve_until=None,
+        cwd=tmp_path,
+        max_rounds=1,
+        test_command='py -m pytest -q',
+        lint_command='py -m ruff check .',
+        conversation_language='en',
+        plain_mode=True,
+    )
+    prompt = OrchestratorService._proposal_author_prompt(
+        config=cfg,
+        merged_context='Reviewer findings here.',
+        review_payload=[{'verdict': 'no_blocker'}],
+    )
+    assert 'optional proactive evolution candidates' in prompt
+    assert 'impact/risk/effort' in prompt
+
+
+def test_service_proposal_author_prompt_fix_only_keeps_strict_scope(tmp_path: Path):
+    cfg = RunConfig(
+        task_id='t-proposal-author-e0',
+        title='E0 strict scope',
+        description='fix bugs',
+        author=parse_participant_id('codex#author-A'),
+        reviewers=[parse_participant_id('claude#review-B')],
+        evolution_level=0,
         evolve_until=None,
         cwd=tmp_path,
         max_rounds=1,
