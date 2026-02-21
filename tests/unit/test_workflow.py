@@ -1401,7 +1401,7 @@ def test_workflow_evolution_level_1_emits_architecture_warnings_without_hard_fai
     assert str(last.get('reason') or '') == 'architecture_threshold_warning'
 
 
-def test_workflow_evolution_level_2_hard_fails_on_architecture_thresholds(tmp_path: Path, monkeypatch):
+def test_workflow_evolution_level_2_emits_architecture_warnings_without_hard_fail(tmp_path: Path, monkeypatch):
     monkeypatch.delenv('AWE_ARCH_AUDIT_MODE', raising=False)
     huge = tmp_path / 'oversized.py'
     huge.write_text('\n'.join(['x = 1'] * 1305), encoding='utf-8')
@@ -1431,13 +1431,13 @@ def test_workflow_evolution_level_2_hard_fails_on_architecture_thresholds(tmp_pa
         on_event=sink,
     )
 
-    assert result.status == 'failed_gate'
-    assert result.gate_reason == 'architecture_threshold_exceeded'
-    assert any(
-        str(e.get('type') or '') == 'gate_failed'
-        and str(e.get('stage') or '') == 'architecture_audit'
-        for e in sink.events
-    )
+    assert result.status == 'passed'
+    audits = [e for e in sink.events if e.get('type') == 'architecture_audit']
+    assert audits
+    last = audits[-1]
+    assert last.get('mode') == 'warn'
+    assert last.get('passed') is False
+    assert str(last.get('reason') or '') == 'architecture_threshold_warning'
 
 
 def test_workflow_architecture_thresholds_support_env_override(tmp_path: Path, monkeypatch):

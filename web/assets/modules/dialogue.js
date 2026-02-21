@@ -115,13 +115,30 @@ export function isKeyDialogueEvent(type) {
 export function verdictLabel(verdict, lang) {
   const v = String(verdict || '').trim().toLowerCase();
   if (lang === 'zh') {
-    if (v === 'no_blocker') return '通过（可继续）';
-    if (v === 'blocker') return '不通过（需先修复）';
-    return '不确定（信息不足）';
+    if (v === 'no_blocker') return '方案可执行（不代表无问题）';
+    if (v === 'blocker') return '方案需补充后再执行';
+    return '信息不足，需要补充';
   }
-  if (v === 'no_blocker') return 'Pass (can continue)';
-  if (v === 'blocker') return 'Needs fixes (blocking)';
-  return 'Unclear (insufficient info)';
+  if (v === 'no_blocker') return 'Plan executable (not bug-free)';
+  if (v === 'blocker') return 'Plan needs revision before execution';
+  return 'Insufficient info';
+}
+
+function parseControlJson(raw) {
+  const text = String(raw || '').trim();
+  if (!text || !text.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      verdict: String(parsed.verdict || '').trim().toLowerCase(),
+      issue: String(parsed.issue || '').trim(),
+      impact: String(parsed.impact || '').trim(),
+      next: String(parsed.next || '').trim(),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function eventText(event, task, { showStreamDetails = false } = {}) {
@@ -134,11 +151,21 @@ export function eventText(event, task, { showStreamDetails = false } = {}) {
     if (plainMode) {
       const cleaned = stripControlLines(stripInternalNoise(raw));
       if (event.type === 'proposal_review' || event.type === 'proposal_precheck_review' || event.type === 'review') {
-        const verdict = verdictLabel(payload.verdict, lang);
+        const control = parseControlJson(raw);
+        const verdict = verdictLabel((control && control.verdict) || payload.verdict, lang);
+        const issue = (control && control.issue) || cleaned || (lang === 'zh' ? '无' : 'n/a');
+        const impact = (control && control.impact) || '';
+        const next = (control && control.next) || '';
         if (lang === 'zh') {
-          return `判定: ${verdict}\n说明: ${cleaned || '无'}`;
+          let text = `结论: ${verdict}\n发现: ${issue}`;
+          if (impact) text += `\n影响: ${impact}`;
+          if (next) text += `\n建议: ${next}`;
+          return text;
         }
-        return `Verdict: ${verdict}\nReason: ${cleaned || 'n/a'}`;
+        let text = `Conclusion: ${verdict}\nFinding: ${issue}`;
+        if (impact) text += `\nImpact: ${impact}`;
+        if (next) text += `\nNext: ${next}`;
+        return text;
       }
       return cleaned || raw || (lang === 'zh' ? '暂无可读内容' : 'No readable content yet');
     }
@@ -340,4 +367,3 @@ export function renderDialoguePanel({
   requestAnimationFrame(() => { dialogueEl.scrollTop = dialogueEl.scrollHeight; });
   return signature;
 }
-

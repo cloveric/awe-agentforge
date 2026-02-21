@@ -2077,7 +2077,9 @@ class OrchestratorService:
         )
         review_payload: list[dict] = []
         consensus_rounds = 0
-        target_rounds = max(1, int(row.get('max_rounds', 1)))
+        # Proposal consensus is a pre-execution checkpoint and should complete once
+        # per task start. max_rounds is reserved for execution/review loop rounds.
+        target_rounds = 1
         retry_limit = self._proposal_stall_retry_limit()
         repeat_round_limit = self._proposal_repeat_rounds_limit()
 

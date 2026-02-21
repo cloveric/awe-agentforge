@@ -67,7 +67,7 @@ def test_integration_create_start_roundtrip_pass(tmp_path: Path):
     assert any(str(item.get('type')) == 'gate_passed' for item in events)
 
 
-def test_integration_architecture_audit_can_fail_gate(tmp_path: Path):
+def test_integration_architecture_audit_can_fail_gate_at_level_3(tmp_path: Path):
     workspace = tmp_path / 'repo-arch-fail'
     workspace.mkdir(parents=True, exist_ok=True)
     _seed_workspace(workspace)
@@ -87,7 +87,7 @@ def test_integration_architecture_audit_can_fail_gate(tmp_path: Path):
             sandbox_mode=False,
             auto_merge=False,
             self_loop_mode=1,
-            evolution_level=2,
+            evolution_level=3,
             max_rounds=1,
             workspace_path=str(workspace),
             test_command='python -m pytest -q',

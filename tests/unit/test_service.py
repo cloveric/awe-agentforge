@@ -2187,8 +2187,8 @@ def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_rou
     assert stall_events
     payload = stall_events[-1].get('payload', {})
     assert str(payload.get('stall_kind')) == 'in_round'
-    assert int(payload.get('attempt') or 0) >= 10
-    assert int(payload.get('retry_limit') or 0) == 10
+    assert int(payload.get('attempt') or 0) >= 3
+    assert int(payload.get('retry_limit') or 0) == 3
     assert any(e['type'] == 'author_confirmation_required' for e in events)
 
     stall_artifact = (
@@ -2202,7 +2202,7 @@ def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_rou
     assert stall_artifact.exists()
 
 
-def test_service_manual_mode_marks_pending_when_same_issue_repeats_across_rounds(tmp_path: Path):
+def test_service_manual_mode_uses_single_proposal_consensus_round_even_when_max_rounds_is_large(tmp_path: Path):
     engine = ProposalRepeatedRoundIssueWorkflowEngine()
     svc = OrchestratorService(
         repository=InMemoryTaskRepository(),
@@ -2213,8 +2213,8 @@ def test_service_manual_mode_marks_pending_when_same_issue_repeats_across_rounds
         CreateTaskInput(
             sandbox_mode=False,
             self_loop_mode=0,
-            title='Repeated issue across rounds',
-            description='same issue should not loop forever across rounds',
+            title='Single proposal consensus round',
+            description='proposal should resolve once, execution rounds handle max_rounds',
             author_participant='codex#author-A',
             reviewer_participants=['claude#review-B'],
             max_rounds=5,
@@ -2223,17 +2223,15 @@ def test_service_manual_mode_marks_pending_when_same_issue_repeats_across_rounds
 
     started = svc.start_task(created.task_id)
     assert started.status.value == 'waiting_manual'
-    assert started.last_gate_reason == 'proposal_consensus_stalled_across_rounds'
-    assert int(started.rounds_completed) >= 4
+    assert started.last_gate_reason == 'author_confirmation_required'
+    assert int(started.rounds_completed) == 1
 
     events = svc.list_events(created.task_id)
-    stall_events = [e for e in events if e['type'] == 'proposal_consensus_stalled']
-    assert stall_events
-    payload = stall_events[-1].get('payload', {})
-    assert str(payload.get('stall_kind')) == 'across_rounds'
-    assert int(payload.get('repeated_rounds') or 0) >= 4
-    assert str(payload.get('round_signature') or '').strip()
-    assert any(e['type'] == 'author_confirmation_required' for e in events)
+    assert not any(e['type'] == 'proposal_consensus_stalled' for e in events)
+    reached = [e for e in events if e['type'] == 'proposal_consensus_reached']
+    assert reached
+    payload = reached[-1].get('payload', {})
+    assert int(payload.get('target_rounds') or 0) == 1
 
 
 def test_service_manual_mode_proposal_reviewer_timeout_follows_participant_timeout(tmp_path: Path):

@@ -53,7 +53,8 @@ def test_architecture_thresholds_and_mode_env_overrides(monkeypatch):
     assert architecture_audit_mode(1) == 'hard'
     monkeypatch.setenv('AWE_ARCH_AUDIT_MODE', 'invalid')
     assert architecture_audit_mode(1) == 'warn'
-    assert architecture_audit_mode(2) == 'hard'
+    assert architecture_audit_mode(2) == 'warn'
+    assert architecture_audit_mode(3) == 'hard'
 
 
 def test_run_architecture_audit_workspace_missing_and_level_off(tmp_path: Path):

@@ -150,7 +150,7 @@ def architecture_audit_mode(level: int) -> str:
     if raw in {'off', 'warn', 'hard'}:
         return raw
     normalized = max(0, min(3, int(level)))
-    return 'hard' if normalized >= 2 else 'warn'
+    return 'hard' if normalized >= 3 else 'warn'
 
 
 def run_architecture_audit(*, cwd: Path, evolution_level: int) -> ArchitectureAuditResult:

@@ -8,7 +8,7 @@ from awe_agentcheck.workflow import RunConfig, WorkflowEngine
 from awe_agentcheck.workflow_prompting import inject_prompt_extras
 from awe_agentcheck.workflow_text import clip_text
 
-PROPOSAL_STALL_RETRY_LIMIT = 10
+PROPOSAL_STALL_RETRY_LIMIT = 3
 PROPOSAL_REPEAT_ROUNDS_LIMIT = 4
 
 
