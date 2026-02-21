@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -97,6 +98,16 @@ def _ok_result(verdict: str = 'no_blocker') -> AdapterResult:
     return AdapterResult(output=line, verdict=verdict, next_action=None, returncode=0, duration_seconds=0.1)
 
 
+def _json_result(payload: dict, *, verdict: str = 'no_blocker') -> AdapterResult:
+    return AdapterResult(
+        output=json.dumps(payload, ensure_ascii=True),
+        verdict=verdict,
+        next_action=None,
+        returncode=0,
+        duration_seconds=0.1,
+    )
+
+
 def _ok_result_no_evidence(verdict: str = 'no_blocker') -> AdapterResult:
     line = f'VERDICT: {verdict.upper()}\nIssue: summarized changes without file references.'
     return AdapterResult(output=line, verdict=verdict, next_action=None, returncode=0, duration_seconds=0.1)
@@ -148,6 +159,149 @@ def test_workflow_passes_on_first_round(tmp_path: Path):
     assert any(e['type'] == 'review_started' for e in sink.events)
     assert any(e['type'] == 'verification_started' for e in sink.events)
     assert any('Execution context:' in prompt for prompt in runner.prompts)
+
+
+def test_workflow_fails_when_review_issue_checks_are_missing(tmp_path: Path):
+    runner = FakeRunner(
+        [
+            _ok_result(),  # discussion
+            _ok_result(),  # implementation
+            _json_result(
+                {
+                    'verdict': 'NO_BLOCKER',
+                    'next_action': 'pass',
+                    'issue': 'summary',
+                    'impact': 'impact',
+                    'next': 'next',
+                }
+            ),  # reviewer
+        ]
+    )
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-review-issue-missing',
+            title='Issue checks required',
+            description='must include issue checks',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='python -m pytest -q',
+            lint_command='python -m ruff check .',
+            proposal_issue_contract={'issue_ids': ['ISSUE-001']},
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'failed_gate'
+    assert result.gate_reason == 'review_issue_checks_missing'
+    assert any(str(e.get('type') or '') == 'review_issue_checks' for e in sink.events)
+
+
+def test_workflow_fails_when_review_issue_is_unresolved(tmp_path: Path):
+    runner = FakeRunner(
+        [
+            _ok_result(),  # discussion
+            _ok_result(),  # implementation
+            _json_result(
+                {
+                    'verdict': 'NO_BLOCKER',
+                    'next_action': 'retry',
+                    'issue': 'summary',
+                    'impact': 'impact',
+                    'next': 'next',
+                    'issue_checks': [
+                        {
+                            'issue_id': 'ISSUE-001',
+                            'status': 'unresolved',
+                            'note': 'still failing',
+                            'evidence_paths': ['src/awe_agentcheck/service.py'],
+                        }
+                    ],
+                }
+            ),  # reviewer
+        ]
+    )
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-review-issue-unresolved',
+            title='Issue unresolved',
+            description='must fail when unresolved',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='python -m pytest -q',
+            lint_command='python -m ruff check .',
+            proposal_issue_contract={'issue_ids': ['ISSUE-001']},
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'failed_gate'
+    assert result.gate_reason == 'review_issue_unresolved'
+
+
+def test_workflow_passes_when_review_issue_checks_resolve_contract(tmp_path: Path):
+    runner = FakeRunner(
+        [
+            _ok_result(),  # discussion
+            _ok_result(),  # implementation
+            _json_result(
+                {
+                    'verdict': 'NO_BLOCKER',
+                    'next_action': 'pass',
+                    'issue': 'summary',
+                    'impact': 'impact',
+                    'next': 'next',
+                    'issue_checks': [
+                        {
+                            'issue_id': 'ISSUE-001',
+                            'status': 'resolved',
+                            'note': 'fixed',
+                            'evidence_paths': ['src/awe_agentcheck/service.py'],
+                        }
+                    ],
+                }
+            ),  # reviewer
+        ]
+    )
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-review-issue-pass',
+            title='Issue resolved',
+            description='passes when all required issue checks are resolved',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=0,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='python -m pytest -q',
+            lint_command='python -m ruff check .',
+            proposal_issue_contract={'issue_ids': ['ISSUE-001']},
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    assert result.gate_reason == 'passed'
 
 
 def test_workflow_applies_phase_timeouts_and_memory_context_per_stage(tmp_path: Path):
@@ -620,6 +774,27 @@ def test_review_prompt_includes_required_checklist_for_evolution_level_1(tmp_pat
     assert 'architecture size/responsibility' in prompt
     assert 'cross-platform runtime/scripts' in prompt
     assert 'Required control output schema (JSON only' in prompt
+
+
+def test_review_prompt_includes_issue_contract_guidance_when_present(tmp_path: Path):
+    cfg = RunConfig(
+        task_id='t6-issue-contract',
+        title='Issue contract test',
+        description='must include issue checks',
+        author=parse_participant_id('claude#author-A'),
+        reviewers=[parse_participant_id('codex#review-B')],
+        evolution_level=1,
+        evolve_until=None,
+        cwd=tmp_path,
+        max_rounds=1,
+        test_command='python -m pytest -q',
+        lint_command='python -m ruff check .',
+        proposal_issue_contract={'issue_ids': ['ISSUE-001', 'ISSUE-002']},
+    )
+    prompt = WorkflowEngine._review_prompt(cfg, 1, 'impl summary')
+    assert 'Issue contract (must enforce)' in prompt
+    assert 'ISSUE-001, ISSUE-002' in prompt
+    assert 'issue_checks' in prompt
 
 
 def test_prompts_include_language_instruction_for_chinese(tmp_path: Path):

@@ -39,6 +39,7 @@ from awe_agentcheck.task_options import (
     normalize_memory_mode as normalize_memory_mode_task,
     normalize_phase_timeout_seconds as normalize_phase_timeout_seconds_task,
 )
+from awe_agentcheck.proposal_contract import parse_review_issue_checks
 from awe_agentcheck.workflow_text import clip_text, text_signature
 try:
     from langgraph.graph import END, StateGraph
@@ -213,6 +214,7 @@ class RunConfig:
     plain_mode: bool = True
     stream_mode: bool = False
     debate_mode: bool = False
+    proposal_issue_contract: dict[str, object] | None = None
 
 @dataclass(frozen=True)
 class RunResult:
@@ -716,6 +718,7 @@ class WorkflowEngine:
 
             verdicts: list[ReviewVerdict] = []
             review_outputs: list[str] = []
+            review_output_entries: list[dict[str, str]] = []
             for reviewer in config.reviewers:
                 with self._span(tracer, 'workflow.review', {'task.id': config.task_id, 'round': round_no, 'participant': reviewer.participant_id}):
                     emit(
@@ -792,14 +795,21 @@ class WorkflowEngine:
                             )
                             verdict = ReviewVerdict.UNKNOWN
                             verdicts.append(verdict)
-                            review_outputs.append(f'[review_error] {runtime_reason}')
+                            error_output = f'[review_error] {runtime_reason}'
+                            review_outputs.append(error_output)
+                            review_output_entries.append(
+                                {
+                                    'participant': reviewer.participant_id,
+                                    'output': error_output,
+                                }
+                            )
                             emit(
                                 {
                                     'type': EventType.REVIEW.value,
                                     'round': round_no,
                                     'participant': reviewer.participant_id,
                                     'verdict': verdict.value,
-                                    'output': f'[review_error] {runtime_reason}',
+                                    'output': error_output,
                                     'duration_seconds': review.duration_seconds,
                                 }
                             )
@@ -817,21 +827,35 @@ class WorkflowEngine:
                         )
                         verdict = ReviewVerdict.UNKNOWN
                         verdicts.append(verdict)
-                        review_outputs.append(f'[review_error] {reason}')
+                        error_output = f'[review_error] {reason}'
+                        review_outputs.append(error_output)
+                        review_output_entries.append(
+                            {
+                                'participant': reviewer.participant_id,
+                                'output': error_output,
+                            }
+                        )
                         emit(
                             {
                                 'type': EventType.REVIEW.value,
                                 'round': round_no,
                                 'participant': reviewer.participant_id,
                                 'verdict': verdict.value,
-                                'output': f'[review_error] {reason}',
+                                'output': error_output,
                                 'duration_seconds': 0.0,
                             }
                         )
                         continue
                 verdict = self._normalize_verdict(review.verdict)
                 verdicts.append(verdict)
-                review_outputs.append(str(review.output or ''))
+                review_output = str(review.output or '')
+                review_outputs.append(review_output)
+                review_output_entries.append(
+                    {
+                        'participant': reviewer.participant_id,
+                        'output': review_output,
+                    }
+                )
                 emit(
                     {
                         'type': EventType.REVIEW.value,
@@ -843,6 +867,80 @@ class WorkflowEngine:
                         'duration_seconds': review.duration_seconds,
                     }
                 )
+
+            required_issue_ids = self._proposal_contract_issue_ids(config.proposal_issue_contract)
+            if required_issue_ids:
+                coverage: set[str] = set()
+                unresolved: set[str] = set()
+                checks_by_reviewer: list[dict] = []
+                for entry in review_output_entries:
+                    review_check = parse_review_issue_checks(
+                        output=str(entry.get('output') or ''),
+                        required_issue_ids=required_issue_ids,
+                    )
+                    checks_by_reviewer.append(
+                        {
+                            'participant': str(entry.get('participant') or ''),
+                            'required_issue_ids': list(review_check.get('required_issue_ids') or []),
+                            'covered_issue_ids': list(review_check.get('covered_issue_ids') or []),
+                            'missing_issue_ids': list(review_check.get('missing_issue_ids') or []),
+                            'unresolved_issue_ids': list(review_check.get('unresolved_issue_ids') or []),
+                        }
+                    )
+                    coverage.update(str(v) for v in list(review_check.get('covered_issue_ids') or []))
+                    unresolved.update(str(v) for v in list(review_check.get('unresolved_issue_ids') or []))
+
+                required_set = {str(v) for v in required_issue_ids}
+                missing = sorted(required_set - coverage)
+                unresolved_ids = sorted({v for v in unresolved if v in required_set})
+                checks_payload = {
+                    'type': EventType.REVIEW_ISSUE_CHECKS.value,
+                    'round': round_no,
+                    'required_issue_ids': sorted(required_set),
+                    'covered_issue_ids': sorted(coverage),
+                    'missing_issue_ids': missing,
+                    'unresolved_issue_ids': unresolved_ids,
+                    'checks_by_reviewer': checks_by_reviewer,
+                }
+                emit(checks_payload)
+                if missing or unresolved_ids:
+                    reason = 'review_issue_unresolved' if unresolved_ids else 'review_issue_checks_missing'
+                    emit(
+                        {
+                            'type': EventType.GATE_FAILED.value,
+                            'round': round_no,
+                            'reason': reason,
+                            'stage': 'review_issue_checks',
+                        }
+                    )
+                    progress = self._assess_loop_progress(
+                        loop_tracker=loop_tracker,
+                        gate_reason=reason,
+                        implementation_output=str(implementation.output or ''),
+                        review_outputs=review_outputs,
+                        tests_ok=False,
+                        lint_ok=False,
+                    )
+                    if progress.get('triggered'):
+                        strategy_hint = str(progress.get('hint') or '').strip() or strategy_hint
+                        emit(
+                            {
+                                'type': EventType.STRATEGY_SHIFTED.value,
+                                'round': round_no,
+                                'hint': strategy_hint,
+                                'signals': dict(progress.get('signals') or {}),
+                                'shift_count': int(progress.get('shift_count') or 0),
+                            }
+                        )
+                    previous_gate_reason = reason
+                    terminal_reason = str(progress.get('terminal_reason') or '').strip()
+                    if terminal_reason:
+                        return RunResult(status='failed_gate', rounds=round_no, gate_reason=terminal_reason)
+                    if force_single_round:
+                        return RunResult(status='failed_gate', rounds=round_no, gate_reason=reason)
+                    if not deadline_mode and round_no >= config.max_rounds:
+                        return RunResult(status='failed_gate', rounds=round_no, gate_reason=reason)
+                    continue
 
             if check_cancel():
                 emit({'type': EventType.CANCELED.value, 'round': round_no})
@@ -2179,7 +2277,11 @@ class WorkflowEngine:
             enabled=bool(config.plain_mode),
             language=config.conversation_language,
         )
-        control_schema_instruction = WorkflowEngine._control_output_schema_instruction()
+        contract_issue_ids = WorkflowEngine._proposal_contract_issue_ids(config.proposal_issue_contract)
+        control_schema_instruction = WorkflowEngine._control_output_schema_instruction(
+            require_issue_checks=bool(contract_issue_ids),
+        )
+        issue_contract_guidance = WorkflowEngine._issue_contract_review_guidance(contract_issue_ids)
         audit_mode = WorkflowEngine._is_audit_discovery_task(config)
         depth_guidance = (
             "Task mode is audit/discovery: allow deeper checks and provide concrete evidence with file paths."
@@ -2207,6 +2309,7 @@ class WorkflowEngine:
             mode_guidance=mode_guidance,
             control_schema_instruction=control_schema_instruction,
             plain_review_format=plain_review_format,
+            issue_contract_guidance=issue_contract_guidance,
             implementation_summary=clipped,
         )
         return inject_prompt_extras(
@@ -2219,6 +2322,23 @@ class WorkflowEngine:
     @staticmethod
     def _review_timeout_seconds(participant_timeout_seconds: int) -> int:
         return max(1, int(participant_timeout_seconds))
+
+    @staticmethod
+    def _proposal_contract_issue_ids(contract: dict[str, object] | None) -> list[str]:
+        if not isinstance(contract, dict):
+            return []
+        raw = contract.get('issue_ids')
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in raw:
+            text = str(value or '').strip().upper()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(text)
+        return out
 
     @staticmethod
     def _normalize_verdict(raw: str) -> ReviewVerdict:
@@ -2324,9 +2444,28 @@ class WorkflowEngine:
         )
 
     @staticmethod
-    def _control_output_schema_instruction() -> str:
+    def _control_output_schema_instruction(*, require_issue_checks: bool = False) -> str:
+        if require_issue_checks:
+            return (
+                "Required control output schema (JSON only, one object; no markdown fences): "
+                '{"verdict":"NO_BLOCKER|BLOCKER|UNKNOWN","next_action":"pass|retry|stop","issue":"...","impact":"...","next":"...",'
+                '"issue_checks":[{"issue_id":"ISSUE-001","status":"resolved|unresolved|unknown","note":"...","evidence_paths":["..."]}]}'  # noqa: E501
+                " Do not output legacy VERDICT/NEXT_ACTION lines unless compatibility mode is explicitly enabled."
+            )
         return (
             "Required control output schema (JSON only, one object; no markdown fences): "
             '{"verdict":"NO_BLOCKER|BLOCKER|UNKNOWN","next_action":"pass|retry|stop","issue":"...","impact":"...","next":"..."}'
             " Do not output legacy VERDICT/NEXT_ACTION lines unless compatibility mode is explicitly enabled."
+        )
+
+    @staticmethod
+    def _issue_contract_review_guidance(issue_ids: list[str]) -> str:
+        ids = [str(v).strip().upper() for v in list(issue_ids or []) if str(v).strip()]
+        if not ids:
+            return ''
+        joined = ', '.join(ids[:12])
+        return (
+            'Issue contract (must enforce): include "issue_checks" and cover every required issue id exactly. '
+            f"Required IDs: {joined}. "
+            'Use status=resolved only when implementation truly addressed it with evidence paths.'
         )

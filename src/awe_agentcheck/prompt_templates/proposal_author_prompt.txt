@@ -4,6 +4,9 @@ Produce an updated implementation proposal for manual approval.
 Address reviewer concerns explicitly and keep plan incremental.
 $author_scope_guidance
 If a reviewer suggestion is unsafe, explain why and give a safer replacement.
+Respond with JSON only and include "issue_responses":
+"issue_responses":[{"issue_id":"ISSUE-001","status":"accept|reject|defer","reason":"...","alternative_plan":"...","validation_commands":["..."],"evidence_paths":["..."]}]
+If status=reject, reason + alternative_plan + validation_commands + evidence_paths are required.
 Do not add default secrets/tokens, hidden bypasses, or broad unrelated refactors.
 $evolution_author_guidance
 $audit_author_guidance

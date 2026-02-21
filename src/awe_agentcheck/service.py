@@ -61,6 +61,13 @@ from awe_agentcheck.proposal_helpers import (
     proposal_verdict_counts,
     review_timeout_seconds,
 )
+from awe_agentcheck.proposal_contract import (
+    extract_required_issue_ids,
+    parse_author_issue_responses,
+    parse_reviewer_issues,
+    validate_author_issue_responses,
+    validate_reviewer_issue_contract,
+)
 from awe_agentcheck.risk_assessment import (
     analyze_workspace_profile,
     load_risk_policy_contract,
@@ -878,6 +885,24 @@ class OrchestratorService:
             return None
         return self._read_json_file(path)
 
+    def _load_pending_proposal_contract(self, task_id: str) -> dict | None:
+        payload = self._read_task_artifact_json(task_id, 'pending_proposal')
+        if not isinstance(payload, dict):
+            return None
+        contract = payload.get('proposal_contract')
+        if not isinstance(contract, dict):
+            return None
+        required = [str(v).strip().upper() for v in list(contract.get('required_issue_ids') or []) if str(v).strip()]
+        accepted = [str(v).strip().upper() for v in list(contract.get('accepted_issue_ids') or []) if str(v).strip()]
+        issue_ids = sorted(set(accepted or required))
+        if not issue_ids:
+            return None
+        return {
+            'issue_ids': issue_ids,
+            'required_issue_ids': sorted(set(required)),
+            'accepted_issue_ids': sorted(set(accepted)),
+        }
+
     def _write_evidence_manifest(
         self,
         *,
@@ -1456,6 +1481,7 @@ class OrchestratorService:
             author = parse_participant_id(row['author_participant'])
             reviewers = [parse_participant_id(v) for v in row['reviewer_participants']]
             baseline_manifest = self.fusion_manager.build_manifest(workspace_root)
+            proposal_issue_contract = self._load_pending_proposal_contract(task_id)
 
             result = self.workflow_engine.run(
                 RunConfig(
@@ -1489,6 +1515,7 @@ class OrchestratorService:
                     max_rounds=int(row['max_rounds']),
                     test_command=row['test_command'],
                     lint_command=row['lint_command'],
+                    proposal_issue_contract=proposal_issue_contract,
                 ),
                 on_event=on_event,
                 should_cancel=should_cancel,
@@ -2076,6 +2103,8 @@ class OrchestratorService:
             "Generated proposal requires author approval before implementation."
         )
         review_payload: list[dict] = []
+        proposal_contract: dict[str, object] = {}
+        last_author_issue_validation: dict[str, object] = {}
         consensus_rounds = 0
         # Proposal consensus is a pre-execution checkpoint and should complete once
         # per task start. max_rounds is reserved for execution/review loop rounds.
@@ -2265,6 +2294,14 @@ class OrchestratorService:
                             self.artifact_store.append_event(task_id, error_payload)
                             verdict = ReviewVerdict.UNKNOWN
                             review_text = f'[{error_type}] {reason}'
+                        parsed_issues = parse_reviewer_issues(
+                            output=review_text,
+                            verdict=verdict.value,
+                        )
+                        contract_ok = not (
+                            verdict in {ReviewVerdict.BLOCKER, ReviewVerdict.UNKNOWN}
+                            and len(parsed_issues) == 0
+                        )
                         payload = {
                             'type': stage,
                             'round': round_no,
@@ -2272,6 +2309,8 @@ class OrchestratorService:
                             'provider': reviewer.provider,
                             'verdict': verdict.value,
                             'output': review_text,
+                            'issues': parsed_issues,
+                            'issue_contract_ok': contract_ok,
                         }
                         payloads.append(payload)
                         self.repository.append_event(
@@ -2368,6 +2407,8 @@ class OrchestratorService:
                         'consensus_rounds': rounds_completed,
                         'target_rounds': target_rounds,
                         'review_payload': list(latest_reviews),
+                        'proposal_contract': dict(proposal_contract or {}),
+                        'author_issue_validation': dict(last_author_issue_validation or {}),
                         'author_feedback_note': author_feedback_note,
                         'stall': stall_payload,
                     }
@@ -2458,6 +2499,38 @@ class OrchestratorService:
                                 round_no=round_no,
                                 stage='proposal_precheck_review',
                             )
+                            precheck_actionable_reviews = [
+                                item
+                                for item in pre_reviews
+                                if self._is_actionable_proposal_review_text(str(item.get('output') or ''))
+                            ]
+                            precheck_contract = validate_reviewer_issue_contract(precheck_actionable_reviews)
+                            if not bool(precheck_contract.get('ok', False)):
+                                contract_payload = {
+                                    'round': round_no,
+                                    'attempt': attempt,
+                                    'stage': 'proposal_precheck_review',
+                                    'missing_issue_participants': list(precheck_contract.get('missing_issue_participants') or []),
+                                }
+                                self.repository.append_event(
+                                    task_id,
+                                    event_type='proposal_review_contract_violation',
+                                    payload=contract_payload,
+                                    round_number=round_no,
+                                )
+                                self.artifact_store.append_event(
+                                    task_id,
+                                    {'type': EventType.PROPOSAL_REVIEW_CONTRACT_VIOLATION.value, **contract_payload},
+                                )
+                                current_seed = self._append_proposal_feedback_context(
+                                    merged_context,
+                                    reviewer_id='contract',
+                                    review_text=(
+                                        'proposal_precheck_review contract violation: '
+                                        f"missing structured issues from {', '.join(list(precheck_contract.get('missing_issue_participants') or []))}"
+                                    ),
+                                )
+                                continue
                             if pre_reviews and self._proposal_review_usable_count(pre_reviews) == 0:
                                 fail_reason = 'proposal_precheck_unavailable'
                                 fail_payload = {
@@ -2598,6 +2671,66 @@ class OrchestratorService:
                             continue
                         discussion_text = str(discussion.output or '').strip() or current_seed
                         round_latest_proposal = discussion_text
+                        required_issue_ids = extract_required_issue_ids(pre_reviews)
+                        author_issue_responses = parse_author_issue_responses(discussion_text)
+                        author_validation = validate_author_issue_responses(
+                            required_issue_ids=required_issue_ids,
+                            responses=author_issue_responses,
+                        )
+                        last_author_issue_validation = dict(author_validation)
+                        if required_issue_ids and not bool(author_validation.get('ok', False)):
+                            incomplete_payload = {
+                                'round': round_no,
+                                'attempt': attempt,
+                                'required_issue_ids': list(author_validation.get('required_issue_ids') or []),
+                                'missing_issue_ids': list(author_validation.get('missing_issue_ids') or []),
+                                'invalid_reject_issue_ids': list(author_validation.get('invalid_reject_issue_ids') or []),
+                            }
+                            self.repository.append_event(
+                                task_id,
+                                event_type='proposal_discussion_incomplete',
+                                payload=incomplete_payload,
+                                round_number=round_no,
+                            )
+                            self.artifact_store.append_event(
+                                task_id,
+                                {'type': EventType.PROPOSAL_DISCUSSION_INCOMPLETE.value, **incomplete_payload},
+                            )
+                            current_seed = self._append_proposal_feedback_context(
+                                merged_context,
+                                reviewer_id='contract',
+                                review_text=(
+                                    'proposal_discussion_incomplete: missing/invalid issue responses. '
+                                    f"missing={','.join(list(author_validation.get('missing_issue_ids') or [])) or 'n/a'}; "
+                                    f"invalid_reject={','.join(list(author_validation.get('invalid_reject_issue_ids') or [])) or 'n/a'}"
+                                ),
+                            )
+                            if attempt >= retry_limit:
+                                proposal_preview = clip_text(round_latest_proposal, max_chars=800).strip()
+                                stall_summary = (
+                                    f"Task: {str(row.get('title') or '')}\n"
+                                    f"Proposal discussion incomplete in round {round_no}: reached retry limit ({retry_limit}).\n"
+                                    f"Consensus rounds completed: {consensus_rounds}/{target_rounds}\n"
+                                    f"Latest proposal preview:\n{proposal_preview}"
+                                )
+                                stall_payload = {
+                                    'stall_kind': 'in_round',
+                                    'round': round_no,
+                                    'attempt': attempt,
+                                    'retry_limit': retry_limit,
+                                    'missing_issue_ids': list(author_validation.get('missing_issue_ids') or []),
+                                    'invalid_reject_issue_ids': list(author_validation.get('invalid_reject_issue_ids') or []),
+                                }
+                                review_payload = list(pre_reviews)
+                                return finish_proposal_stalled(
+                                    reason='proposal_consensus_stalled_in_round',
+                                    summary_text=stall_summary,
+                                    rounds_completed=consensus_rounds,
+                                    round_number=round_no,
+                                    stall_payload=stall_payload,
+                                    latest_reviews=list(pre_reviews),
+                                )
+                            continue
                         if discussion_text:
                             discussion_event = {
                                 'type': EventType.DISCUSSION.value,
@@ -2626,6 +2759,63 @@ class OrchestratorService:
                             round_no=round_no,
                             stage='proposal_review',
                         )
+                        review_contract = validate_reviewer_issue_contract(
+                            [
+                                item
+                                for item in round_latest_reviews
+                                if self._is_actionable_proposal_review_text(str(item.get('output') or ''))
+                            ]
+                        )
+                        if not bool(review_contract.get('ok', False)):
+                            contract_payload = {
+                                'round': round_no,
+                                'attempt': attempt,
+                                'stage': 'proposal_review',
+                                'missing_issue_participants': list(review_contract.get('missing_issue_participants') or []),
+                            }
+                            self.repository.append_event(
+                                task_id,
+                                event_type='proposal_review_contract_violation',
+                                payload=contract_payload,
+                                round_number=round_no,
+                            )
+                            self.artifact_store.append_event(
+                                task_id,
+                                {'type': EventType.PROPOSAL_REVIEW_CONTRACT_VIOLATION.value, **contract_payload},
+                            )
+                            current_seed = self._append_proposal_feedback_context(
+                                merged_after_review,
+                                reviewer_id='contract',
+                                review_text=(
+                                    'proposal_review contract violation: '
+                                    f"missing structured issues from {', '.join(list(review_contract.get('missing_issue_participants') or []))}"
+                                ),
+                            )
+                            if attempt >= retry_limit:
+                                proposal_preview = clip_text(round_latest_proposal, max_chars=800).strip()
+                                stall_summary = (
+                                    f"Task: {str(row.get('title') or '')}\n"
+                                    f"Proposal review contract violation in round {round_no}: reached retry limit ({retry_limit}).\n"
+                                    f"Consensus rounds completed: {consensus_rounds}/{target_rounds}\n"
+                                    f"Latest proposal preview:\n{proposal_preview}"
+                                )
+                                stall_payload = {
+                                    'stall_kind': 'in_round',
+                                    'round': round_no,
+                                    'attempt': attempt,
+                                    'retry_limit': retry_limit,
+                                    'missing_issue_participants': list(review_contract.get('missing_issue_participants') or []),
+                                }
+                                review_payload = list(round_latest_reviews)
+                                return finish_proposal_stalled(
+                                    reason='proposal_consensus_stalled_in_round',
+                                    summary_text=stall_summary,
+                                    rounds_completed=consensus_rounds,
+                                    round_number=round_no,
+                                    stall_payload=stall_payload,
+                                    latest_reviews=list(round_latest_reviews),
+                                )
+                            continue
                         review_payload = list(round_latest_reviews)
                         usable_reviews = self._proposal_review_usable_count(round_latest_reviews)
                         if round_latest_reviews and usable_reviews <= 0:
@@ -2672,6 +2862,19 @@ class OrchestratorService:
                                 )
                             ]
                         no_blocker, blocker, unknown = self._proposal_verdict_counts(actionable_reviews)
+                        required_from_latest_review = extract_required_issue_ids(actionable_reviews)
+                        accepted_issue_ids = sorted(
+                            [
+                                issue_id
+                                for issue_id, response in dict(author_issue_responses or {}).items()
+                                if str(dict(response).get('status') or '').strip().lower() == 'accept'
+                            ]
+                        )
+                        proposal_contract = {
+                            'required_issue_ids': list(required_from_latest_review),
+                            'accepted_issue_ids': accepted_issue_ids,
+                            'author_issue_validation': dict(author_validation),
+                        }
 
                         if self._proposal_consensus_reached(
                             actionable_reviews,
@@ -2819,6 +3022,8 @@ class OrchestratorService:
             'consensus_rounds': consensus_rounds,
             'target_rounds': target_rounds,
             'review_payload': review_payload,
+            'proposal_contract': dict(proposal_contract or {}),
+            'author_issue_validation': dict(last_author_issue_validation or {}),
             'author_feedback_note': author_feedback_note,
         }
         self.repository.append_event(

@@ -11,6 +11,9 @@ Do not include command logs, internal process narration, or tool/skill reference
 If evidence is insufficient, set "verdict":"UNKNOWN" quickly.
 Output JSON only. No markdown fences. No extra prose before or after the JSON object.
 $control_schema_instruction
+When verdict is BLOCKER or UNKNOWN, include "issues" with concrete IDs:
+"issues":[{"issue_id":"ISSUE-001","summary":"...","severity":"blocker|unknown|high|medium|low","required_action":"...","evidence_paths":["..."],"required_response":true}]
+Do not use duplicate issue_id values.
 $plain_review_format
 Reference concrete repo-relative file paths where possible.
 Context:

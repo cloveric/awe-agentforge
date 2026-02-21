@@ -151,30 +151,38 @@ Default policy:
    - reviewer outputs fully unavailable still fail fast (`proposal_precheck_unavailable` / `proposal_review_unavailable`).
 8. Author must approve before full implementation loop starts.
 9. In full loop, author is still the implementation actor and reviewers remain evaluators.
-10. `repair_mode` defaults to `balanced`; choose `minimal` or `structural` per risk appetite.
-11. `plain_mode=1`, `stream_mode=1`, `debate_mode=1` are default-friendly for readable and observable runs.
-12. `auto_merge=1` is enabled by default; disable per task with CLI `--no-auto-merge`, API `auto_merge=false`, or Web `Auto Merge=0`.
-13. Optional model pinning via `--provider-model provider=model` applies per provider for this task.
-14. Optional per-provider args via `--provider-model-param provider=args` are forwarded as-is.
-15. Optional language control via `--conversation-language en|zh` influences prompt output language.
-16. Optional Claude `--agents` behavior via `--claude-team-agents 1` applies to Claude participants only.
-17. Memory recall/persistence can be tuned with `memory_mode=off|basic|strict` (default `basic`).
-18. Optional per-phase timeout overrides are accepted via `phase_timeout_seconds` (`proposal|discussion|implementation|review|command`).
-19. `max_rounds` is used only when `evolve_until` is empty; if `evolve_until` is set, deadline takes priority.
-20. If `max_rounds>1` and `auto_merge=0`, runtime forces fresh sandbox isolation and captures per-round artifacts (`round-N.patch`, `round-N.md`, round snapshots).
-21. Promotion back to target path is then a separate explicit action via `promote-round` (guarded by promotion policy checks).
-22. Before a task can become `passed`, `PreCompletionChecklist` must pass:
+10. Proposal phase now enforces structured issue contract:
+   - reviewer `BLOCKER/UNKNOWN` must provide explicit `issues[].issue_id` (`ISSUE-xxx`).
+   - author must provide `issue_responses[]` for required issue ids.
+   - author `reject` requires `reason + alternative_plan + validation_commands + evidence_paths`.
+11. Contract-incomplete discussion does not advance to proposal-review execution; it retries in-round and can end in `proposal_consensus_stalled_in_round`.
+12. Pending proposal artifact now stores `proposal_contract` and `author_issue_validation` for operator audit.
+13. If proposal contract contains required issue ids, review stage must return `issue_checks[]` covering all required ids.
+14. Missing/unresolved issue checks hard-fail gate with `review_issue_checks_missing` / `review_issue_unresolved`.
+15. `repair_mode` defaults to `balanced`; choose `minimal` or `structural` per risk appetite.
+16. `plain_mode=1`, `stream_mode=1`, `debate_mode=1` are default-friendly for readable and observable runs.
+17. `auto_merge=1` is enabled by default; disable per task with CLI `--no-auto-merge`, API `auto_merge=false`, or Web `Auto Merge=0`.
+18. Optional model pinning via `--provider-model provider=model` applies per provider for this task.
+19. Optional per-provider args via `--provider-model-param provider=args` are forwarded as-is.
+20. Optional language control via `--conversation-language en|zh` influences prompt output language.
+21. Optional Claude `--agents` behavior via `--claude-team-agents 1` applies to Claude participants only.
+22. Memory recall/persistence can be tuned with `memory_mode=off|basic|strict` (default `basic`).
+23. Optional per-phase timeout overrides are accepted via `phase_timeout_seconds` (`proposal|discussion|implementation|review|command`).
+24. `max_rounds` is used only when `evolve_until` is empty; if `evolve_until` is set, deadline takes priority.
+25. If `max_rounds>1` and `auto_merge=0`, runtime forces fresh sandbox isolation and captures per-round artifacts (`round-N.patch`, `round-N.md`, round snapshots).
+26. Promotion back to target path is then a separate explicit action via `promote-round` (guarded by promotion policy checks).
+27. Before a task can become `passed`, `PreCompletionChecklist` must pass:
    - verification stage executed
    - evidence paths present in implementation/review/verification outputs.
-23. Checklist failures emit explicit reasons (for example `precompletion_evidence_missing`) and block completion.
-24. Each checklist result is persisted as `artifacts/evidence_bundle_round_<n>.json` for auditability.
-25. Pass + auto-merge path performs an additional evidence-bundle validation (`No evidence, no merge`).
-26. Task start/resume validates a stored workspace fingerprint; mismatches are blocked as `workspace_resume_guard_mismatch`.
-27. Repeated no-progress rounds trigger `strategy_shifted` with remediation hints.
-28. Multiple strategy shifts without progress end as `failed_gate` with `loop_no_progress`.
-29. Task start now runs a preflight risk-policy gate before consensus/execution.
-30. Preflight hard-fail reason: `preflight_risk_gate_failed` (prevents expensive empty runs).
-31. Auto-merge path enforces merge-target head SHA stability; drift during run fails with `head_sha_mismatch`.
+28. Checklist failures emit explicit reasons (for example `precompletion_evidence_missing`) and block completion.
+29. Each checklist result is persisted as `artifacts/evidence_bundle_round_<n>.json` for auditability.
+30. Pass + auto-merge path performs an additional evidence-bundle validation (`No evidence, no merge`).
+31. Task start/resume validates a stored workspace fingerprint; mismatches are blocked as `workspace_resume_guard_mismatch`.
+32. Repeated no-progress rounds trigger `strategy_shifted` with remediation hints.
+33. Multiple strategy shifts without progress end as `failed_gate` with `loop_no_progress`.
+34. Task start now runs a preflight risk-policy gate before consensus/execution.
+35. Preflight hard-fail reason: `preflight_risk_gate_failed` (prevents expensive empty runs).
+36. Auto-merge path enforces merge-target head SHA stability; drift during run fails with `head_sha_mismatch`.
 
 ## 4) Inspect status and timeline
 

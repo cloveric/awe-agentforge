@@ -331,10 +331,45 @@ class ProposalRunnerRetryThenPass:
             )
         if 'Stage: proposal review.' in str(prompt):
             self.review_attempts += 1
-            verdict = 'blocker' if self.review_attempts == 1 else 'no_blocker'
+            if self.review_attempts == 1:
+                return AdapterResult(
+                    output=json.dumps(
+                        {
+                            'verdict': 'BLOCKER',
+                            'next_action': 'retry',
+                            'issue': 'auth validation still missing',
+                            'impact': 'risk of bypass',
+                            'next': 'add guard and tests',
+                            'issues': [
+                                {
+                                    'issue_id': 'ISSUE-001',
+                                    'summary': 'Auth validation still missing',
+                                    'severity': 'blocker',
+                                    'required_action': 'add service guard and tests',
+                                    'evidence_paths': ['src/awe_agentcheck/service.py'],
+                                    'required_response': True,
+                                }
+                            ],
+                        },
+                        ensure_ascii=True,
+                    ),
+                    verdict='blocker',
+                    next_action=None,
+                    returncode=0,
+                    duration_seconds=0.1,
+                )
             return AdapterResult(
-                output=f'VERDICT: {verdict.upper()}\nReviewer attempt={self.review_attempts}',
-                verdict=verdict,
+                output=json.dumps(
+                    {
+                        'verdict': 'NO_BLOCKER',
+                        'next_action': 'pass',
+                        'issue': 'resolved',
+                        'impact': 'safe',
+                        'next': 'continue',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='no_blocker',
                 next_action=None,
                 returncode=0,
                 duration_seconds=0.1,
@@ -391,6 +426,136 @@ class ProposalRunnerAlwaysBlocker:
 class ProposalAlwaysBlockerWorkflowEngine:
     def __init__(self):
         self.runner = ProposalRunnerAlwaysBlocker()
+        self.participant_timeout_seconds = 60
+
+
+class ProposalRunnerDiscussionIncomplete:
+    def __init__(self):
+        self.calls: list[str] = []
+        self.review_calls = 0
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            return AdapterResult(
+                output='Author plan without structured issue_responses.',
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: precheck.' in str(prompt):
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'verdict': 'NO_BLOCKER',
+                        'next_action': 'pass',
+                        'issue': 'Need explicit auth validation',
+                        'impact': 'risk',
+                        'next': 'respond by issue_id',
+                        'issues': [
+                            {
+                                'issue_id': 'ISSUE-001',
+                                'summary': 'Add auth validation coverage.',
+                                'severity': 'high',
+                                'required_action': 'Update tests and service checks.',
+                                'evidence_paths': ['src/awe_agentcheck/service.py'],
+                                'required_response': True,
+                            }
+                        ],
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='no_blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        self.review_calls += 1
+        return AdapterResult(
+            output=json.dumps(
+                {
+                    'verdict': 'NO_BLOCKER',
+                    'next_action': 'pass',
+                    'issue': 'ok',
+                    'impact': 'ok',
+                    'next': 'ok',
+                },
+                ensure_ascii=True,
+            ),
+            verdict='no_blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalDiscussionIncompleteWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerDiscussionIncomplete()
+        self.participant_timeout_seconds = 60
+
+
+class ProposalRunnerReviewContractViolation:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'issue_responses': [],
+                        'plan': 'author keeps the plan short',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: precheck.' in str(prompt):
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'verdict': 'NO_BLOCKER',
+                        'next_action': 'pass',
+                        'issue': 'scope ready',
+                        'impact': 'none',
+                        'next': 'continue',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='no_blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        return AdapterResult(
+            output=json.dumps(
+                {
+                    'verdict': 'BLOCKER',
+                    'next_action': 'retry',
+                    'issue': 'still risky but missing issue ids',
+                    'impact': 'cannot verify closure',
+                    'next': 'provide explicit issue ids',
+                },
+                ensure_ascii=True,
+            ),
+            verdict='blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalReviewContractViolationWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerReviewContractViolation()
         self.participant_timeout_seconds = 60
 
 
@@ -2200,6 +2365,72 @@ def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_rou
         / 'consensus_stall.json'
     )
     assert stall_artifact.exists()
+
+
+def test_service_proposal_discussion_requires_structured_issue_responses(tmp_path: Path):
+    engine = ProposalDiscussionIncompleteWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Require issue responses',
+            description='review and refine proposal contract',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'proposal_consensus_stalled_in_round'
+
+    events = svc.list_events(created.task_id)
+    incomplete_events = [e for e in events if e['type'] == 'proposal_discussion_incomplete']
+    assert incomplete_events
+    payload = incomplete_events[-1].get('payload', {})
+    assert 'ISSUE-001' in list(payload.get('missing_issue_ids') or [])
+    # Because author never provided structured issue responses, stage=proposal_review should not run.
+    assert not any(
+        e['type'] == 'proposal_review'
+        and str((e.get('payload') or {}).get('type') or '') == 'proposal_review'
+        for e in events
+    )
+
+
+def test_service_marks_contract_violation_when_blocker_has_no_issue_list(tmp_path: Path):
+    engine = ProposalReviewContractViolationWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Contract violation on review',
+            description='reviewer blocker must include issue ids',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'proposal_consensus_stalled_in_round'
+
+    events = svc.list_events(created.task_id)
+    violation_events = [e for e in events if e['type'] == 'proposal_review_contract_violation']
+    assert violation_events
+    violation_payload = violation_events[-1].get('payload', {})
+    assert str(violation_payload.get('stage') or '') == 'proposal_review'
 
 
 def test_service_manual_mode_uses_single_proposal_consensus_round_even_when_max_rounds_is_large(tmp_path: Path):

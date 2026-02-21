@@ -1,5 +1,45 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-21, proposal/review issue-contract hardening 1-6)
+
+1. Landed strict proposal contract parsing module:
+   - `src/awe_agentcheck/proposal_contract.py`
+   - parses/validates:
+     - reviewer `issues[]` with `issue_id`
+     - author `issue_responses[]` with reject-contract fields
+     - review `issue_checks[]` for post-implementation closure.
+2. Proposal consensus loop now enforces issue-level structure:
+   - reviewer blocker/unknown must provide explicit issue IDs (no synthetic auto-fill).
+   - author must respond to required issue IDs; missing/invalid rejects emit `proposal_discussion_incomplete`.
+   - new pending payload fields: `proposal_contract`, `author_issue_validation`.
+   - new events: `proposal_discussion_incomplete`, `proposal_review_contract_violation`.
+3. Runtime review stage now enforces proposal contract carry-over:
+   - `RunConfig` adds `proposal_issue_contract`.
+   - service loads contract from `artifacts/pending_proposal.json` and injects into workflow.
+   - workflow requires reviewer `issue_checks[]` coverage for required issue IDs.
+   - missing coverage/unresolved statuses hard-fail gate with:
+     - `review_issue_checks_missing`
+     - `review_issue_unresolved`
+   - new event: `review_issue_checks`.
+4. Prompt templates now explicitly request structured outputs:
+   - `proposal_review_prompt.txt`: explicit `issues[]` contract for blocker/unknown.
+   - `proposal_author_prompt.txt`: explicit `issue_responses[]` + reject requirements.
+   - `review_prompt.txt`: dynamic issue-contract guidance + `issue_checks[]` schema when required.
+5. Tests added/updated:
+   - `tests/unit/test_service.py`:
+     - proposal discussion incomplete contract case
+     - proposal review contract violation case
+     - retry-then-pass runner updated to structured blocker issues.
+   - `tests/unit/test_workflow.py`:
+     - missing issue checks -> gate fail
+     - unresolved issue checks -> gate fail
+     - resolved issue checks -> pass
+     - review prompt issue-contract guidance assertion.
+6. Verification:
+   - `py -m pytest -q tests/unit/test_service.py tests/unit/test_workflow.py`
+   - `py -m ruff check src/awe_agentcheck/proposal_contract.py src/awe_agentcheck/service.py src/awe_agentcheck/workflow.py tests/unit/test_service.py tests/unit/test_workflow.py`
+   - `py -m mypy src/awe_agentcheck/proposal_contract.py src/awe_agentcheck/service.py src/awe_agentcheck/workflow.py`
+
 ## Update (2026-02-21, memory/runtime controls integrated closeout)
 
 1. Landed durable memory layer:

@@ -51,7 +51,7 @@
 
 | Date | Daily Summary |
 |---|---|
-| 2026-02-21 | Landed integrated memory system + runtime controls: durable memory store, stage recall hooks, per-phase timeout budgets, API/CLI/Web controls (`memory_mode`, `phase_timeout_seconds`), and full verification pass (ruff/mypy/pytest/bandit/pytest-cov). |
+| 2026-02-21 | Landed integrated memory/runtime controls and then hardened proposal-review contracts end-to-end: reviewer issue IDs, author structured issue responses, reviewer issue-check closure gate, new observability events/artifacts, and full verification pass (ruff/mypy/pytest/bandit/pytest-cov). |
 | 2026-02-20 | Adapter strategy/factory split, service-layer package split, prompt/template + LangGraph round-flow upgrades, dashboard modularization, and CI/governance/security baseline hardening. |
 | 2026-02-19 | Reviewer-first/manual-consensus stabilization, preflight/precompletion/resume guardrails, benchmark + analytics loops, and project history/PR summary integrations. |
 
