@@ -18,9 +18,11 @@ from awe_agentcheck.task_options import (
     normalize_conversation_language,
     normalize_evolve_until,
     normalize_merge_target_path,
+    normalize_memory_mode,
     normalize_participant_agent_overrides,
     normalize_participant_model_params,
     normalize_participant_models,
+    normalize_phase_timeout_seconds,
     normalize_plain_mode,
     normalize_provider_model_params,
     normalize_provider_models,
@@ -99,6 +101,8 @@ class TaskManagementService:
             field='codex_multi_agents_overrides',
         )
         repair_mode = self._normalize_repair_mode(payload.repair_mode, strict=True)
+        memory_mode = self._normalize_memory_mode(getattr(payload, 'memory_mode', 'basic'), strict=True)
+        phase_timeout_seconds = self._normalize_phase_timeout_seconds(getattr(payload, 'phase_timeout_seconds', None))
         plain_mode = self._normalize_plain_mode(payload.plain_mode)
         stream_mode = self._normalize_bool_flag(payload.stream_mode, default=True)
         debate_mode = self._normalize_bool_flag(payload.debate_mode, default=True)
@@ -170,6 +174,8 @@ class TaskManagementService:
                 claude_team_agents_overrides=claude_team_agents_overrides,
                 codex_multi_agents_overrides=codex_multi_agents_overrides,
                 repair_mode=repair_mode,
+                memory_mode=memory_mode,
+                phase_timeout_seconds=phase_timeout_seconds,
                 plain_mode=plain_mode,
                 stream_mode=stream_mode,
                 debate_mode=debate_mode,
@@ -205,6 +211,8 @@ class TaskManagementService:
                     'claude_team_agents_overrides': dict(row.get('claude_team_agents_overrides', {})),
                     'codex_multi_agents_overrides': dict(row.get('codex_multi_agents_overrides', {})),
                     'repair_mode': str(row.get('repair_mode') or 'balanced'),
+                    'memory_mode': str(row.get('memory_mode') or 'basic'),
+                    'phase_timeout_seconds': dict(row.get('phase_timeout_seconds', {})),
                     'plain_mode': bool(row.get('plain_mode', True)),
                     'stream_mode': bool(row.get('stream_mode', True)),
                     'debate_mode': bool(row.get('debate_mode', True)),
@@ -268,6 +276,24 @@ class TaskManagementService:
                 str(exc),
                 field='repair_mode',
             ) from exc
+
+    def _normalize_memory_mode(self, value, *, strict: bool = False) -> str:
+        try:
+            return normalize_memory_mode(value, strict=strict)
+        except ValueError as exc:
+            raise self._validation_error_cls(
+                str(exc),
+                field='memory_mode',
+            ) from exc
+
+    def _normalize_phase_timeout_seconds(self, value) -> dict[str, int]:
+        try:
+            return normalize_phase_timeout_seconds(value, strict=True)
+        except ValueError as exc:
+            field = 'phase_timeout_seconds'
+            if '[' in str(exc):
+                field = str(exc).split(']', 1)[0] + ']'
+            raise self._validation_error_cls(str(exc), field=field) from exc
 
     @staticmethod
     def _normalize_plain_mode(value) -> bool:

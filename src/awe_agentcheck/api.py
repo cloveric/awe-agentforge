@@ -40,6 +40,8 @@ class CreateTaskRequest(BaseModel):
     claude_team_agents_overrides: dict[str, bool] = Field(default_factory=dict)
     codex_multi_agents_overrides: dict[str, bool] = Field(default_factory=dict)
     repair_mode: str = Field(default='balanced', min_length=3, max_length=32)
+    memory_mode: str = Field(default='basic', min_length=2, max_length=16)
+    phase_timeout_seconds: dict[str, int] = Field(default_factory=dict)
     plain_mode: bool = Field(default=True)
     stream_mode: bool = Field(default=True)
     debate_mode: bool = Field(default=True)
@@ -114,6 +116,8 @@ class TaskResponse(BaseModel):
     claude_team_agents_overrides: dict[str, bool]
     codex_multi_agents_overrides: dict[str, bool]
     repair_mode: str
+    memory_mode: str
+    phase_timeout_seconds: dict[str, int]
     plain_mode: bool
     stream_mode: bool
     debate_mode: bool
@@ -193,7 +197,50 @@ class PolicyTemplateDefaultsResponse(BaseModel):
     plain_mode: int
     stream_mode: int
     repair_mode: str
+    memory_mode: str
+    phase_timeout_seconds: dict[str, int]
     evolution_level: int
+
+
+class MemoryEntryResponse(BaseModel):
+    memory_id: str
+    memory_type: str
+    scope: str
+    project_path: str | None
+    title: str
+    content: str
+    tags: list[str]
+    evidence_paths: list[str]
+    source_task_id: str | None
+    confidence: float
+    preferred_stages: list[str]
+    metadata: dict
+    created_at: str
+    updated_at: str
+    expires_at: str | None
+    pinned: bool
+    score: float | None = None
+
+
+class MemoryPinRequest(BaseModel):
+    memory_id: str = Field(min_length=1, max_length=128)
+    pinned: bool = Field(default=True)
+
+
+class MemoryPinResponse(BaseModel):
+    updated: bool
+    entry: MemoryEntryResponse | None = None
+
+
+class MemoryClearRequest(BaseModel):
+    project_path: str | None = Field(default=None, max_length=400)
+    memory_type: str | None = Field(default=None, max_length=32)
+    include_pinned: bool = Field(default=False)
+
+
+class MemoryClearResponse(BaseModel):
+    deleted: int
+    remaining: int
 
 
 class PolicyTemplateItemResponse(BaseModel):
@@ -365,6 +412,8 @@ def _to_task_response(task) -> TaskResponse:
         claude_team_agents_overrides=task.claude_team_agents_overrides,
         codex_multi_agents_overrides=task.codex_multi_agents_overrides,
         repair_mode=task.repair_mode,
+        memory_mode=task.memory_mode,
+        phase_timeout_seconds=task.phase_timeout_seconds,
         plain_mode=task.plain_mode,
         stream_mode=task.stream_mode,
         debate_mode=task.debate_mode,
@@ -636,6 +685,8 @@ def create_app(
                 claude_team_agents_overrides=payload.claude_team_agents_overrides,
                 codex_multi_agents_overrides=payload.codex_multi_agents_overrides,
                 repair_mode=payload.repair_mode,
+                memory_mode=payload.memory_mode,
+                phase_timeout_seconds=payload.phase_timeout_seconds,
                 plain_mode=payload.plain_mode,
                 stream_mode=payload.stream_mode,
                 debate_mode=payload.debate_mode,
@@ -705,6 +756,62 @@ def create_app(
     ) -> AnalyticsResponse:
         payload = service.get_analytics(limit=limit)
         return AnalyticsResponse(**payload)
+
+    @app.get('/api/memory', response_model=list[MemoryEntryResponse])
+    def get_memory_entries(
+        service: OrchestratorService = Depends(get_service),
+        project_path: str | None = Query(default=None),
+        memory_type: str | None = Query(default=None),
+        include_expired: bool = Query(default=False),
+        limit: int = Query(default=200, ge=1, le=2000),
+    ) -> list[MemoryEntryResponse]:
+        rows = service.list_memory(
+            project_path=project_path,
+            memory_type=memory_type,
+            include_expired=include_expired,
+            limit=limit,
+        )
+        return [MemoryEntryResponse(**row) for row in rows]
+
+    @app.get('/api/memory/query', response_model=list[MemoryEntryResponse])
+    def query_memory_entries(
+        service: OrchestratorService = Depends(get_service),
+        query: str = Query(min_length=1),
+        memory_mode: str = Query(default='basic'),
+        project_path: str | None = Query(default=None),
+        stage: str | None = Query(default=None),
+        limit: int = Query(default=8, ge=1, le=100),
+    ) -> list[MemoryEntryResponse]:
+        rows = service.query_memory(
+            query=query,
+            memory_mode=memory_mode,
+            project_path=project_path,
+            stage=stage,
+            limit=limit,
+        )
+        return [MemoryEntryResponse(**row) for row in rows]
+
+    @app.post('/api/memory/pin', response_model=MemoryPinResponse)
+    def set_memory_pin(
+        payload: MemoryPinRequest,
+        service: OrchestratorService = Depends(get_service),
+    ) -> MemoryPinResponse:
+        updated = service.set_memory_pin(memory_id=payload.memory_id, pinned=payload.pinned)
+        if updated is None:
+            return MemoryPinResponse(updated=False, entry=None)
+        return MemoryPinResponse(updated=True, entry=MemoryEntryResponse(**updated))
+
+    @app.post('/api/memory/clear', response_model=MemoryClearResponse)
+    def clear_memory_entries(
+        payload: MemoryClearRequest,
+        service: OrchestratorService = Depends(get_service),
+    ) -> MemoryClearResponse:
+        result = service.clear_memory(
+            project_path=payload.project_path,
+            memory_type=payload.memory_type,
+            include_pinned=payload.include_pinned,
+        )
+        return MemoryClearResponse(**result)
 
     @app.get('/api/tasks/{task_id}/github-summary', response_model=GitHubSummaryResponse)
     def get_github_summary(task_id: str, service: OrchestratorService = Depends(get_service)) -> GitHubSummaryResponse:

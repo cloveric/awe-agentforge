@@ -160,6 +160,59 @@ import {
       return out;
     }
 
+    function parsePhaseTimeoutSecondsFromForm() {
+      const raw = String((el.phaseTimeoutSeconds && el.phaseTimeoutSeconds.value) || '').trim();
+      if (!raw) return {};
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error('Phase Timeouts must be valid JSON object.');
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Phase Timeouts must be a JSON object.');
+      }
+      const alias = {
+        proposal: 'proposal',
+        precheck: 'proposal',
+        discussion: 'discussion',
+        author: 'discussion',
+        implementation: 'implementation',
+        impl: 'implementation',
+        review: 'review',
+        verification: 'command',
+        command: 'command',
+        lint_test: 'command',
+      };
+      const out = {};
+      for (const [rawKey, rawValue] of Object.entries(parsed)) {
+        const key = String(rawKey || '').trim().toLowerCase();
+        const mapped = alias[key];
+        if (!mapped) {
+          throw new Error(`Phase Timeouts has invalid key: ${rawKey}`);
+        }
+        const seconds = Number(rawValue);
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+          throw new Error(`Phase Timeouts has invalid value for ${mapped}: ${rawValue}`);
+        }
+        out[mapped] = Math.max(10, Math.min(60000, Math.floor(seconds)));
+      }
+      return out;
+    }
+
+    function writePhaseTimeoutSecondsToForm(value) {
+      if (!el.phaseTimeoutSeconds) return;
+      const source = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+      const keys = ['proposal', 'discussion', 'implementation', 'review', 'command'];
+      const normalized = {};
+      for (const key of keys) {
+        const raw = Number(source[key]);
+        if (!Number.isFinite(raw) || raw <= 0) continue;
+        normalized[key] = Math.max(10, Math.min(60000, Math.floor(raw)));
+      }
+      el.phaseTimeoutSeconds.value = Object.keys(normalized).length ? JSON.stringify(normalized) : '';
+    }
+
     function normalizeParticipantIdList(values) {
       const out = [];
       const seen = new Set();
@@ -595,6 +648,8 @@ import {
         claude_team_agents_overrides: {},
         codex_multi_agents_overrides: {},
         repair_mode: 'balanced',
+        memory_mode: 'basic',
+        phase_timeout_seconds: {},
         plain_mode: true,
         stream_mode: true,
         debate_mode: true,
@@ -853,6 +908,19 @@ import {
       const historyOnly = !!task._history_only;
       const project = normalizeProjectPath(task.workspace_path);
       const reviewerCount = (task.reviewer_participants || []).length;
+      const phaseTimeoutText = (() => {
+        const source = (task.phase_timeout_seconds && typeof task.phase_timeout_seconds === 'object')
+          ? task.phase_timeout_seconds
+          : {};
+        const keys = ['proposal', 'discussion', 'implementation', 'review', 'command'];
+        const parts = [];
+        for (const key of keys) {
+          const value = Number(source[key]);
+          if (!Number.isFinite(value) || value <= 0) continue;
+          parts.push(`${key}=${Math.floor(value)}s`);
+        }
+        return parts.length ? parts.join(', ') : 'n/a';
+      })();
       el.taskSnapshot.innerHTML = '';
 
       const boxes = [
@@ -868,6 +936,8 @@ import {
         { label: 'SelfLoop', value: String(task.self_loop_mode ?? 1) },
         { label: 'Evolution', value: String(task.evolution_level ?? 0) },
         { label: 'RepairMode', value: String(task.repair_mode || 'balanced') },
+        { label: 'MemoryMode', value: String(task.memory_mode || 'basic') },
+        { label: 'PhaseTimeouts', value: phaseTimeoutText },
         { label: 'PlainMode', value: String(task.plain_mode !== false ? 1 : 0) },
         { label: 'StreamMode', value: String(task.stream_mode !== false ? 1 : 0) },
         { label: 'DebateMode', value: String(task.debate_mode !== false ? 1 : 0) },
@@ -1144,6 +1214,8 @@ import {
       if (el.plainMode) el.plainMode.value = mapNum(defaults.plain_mode, 1);
       if (el.streamMode) el.streamMode.value = mapNum(defaults.stream_mode, 1);
       if (el.repairMode && defaults.repair_mode) el.repairMode.value = String(defaults.repair_mode);
+      if (el.memoryMode && defaults.memory_mode) el.memoryMode.value = String(defaults.memory_mode);
+      writePhaseTimeoutSecondsToForm(defaults.phase_timeout_seconds || {});
       if (el.evolutionLevel) el.evolutionLevel.value = mapNum(defaults.evolution_level, 0);
       syncCreateTaskPolicyControls('policyTemplate');
       if (el.createStatus) {
@@ -1570,6 +1642,13 @@ import {
       const evolveUntilRaw = String(document.getElementById('evolveUntil').value || '').trim();
       const sandboxPathRaw = String(document.getElementById('sandboxWorkspacePath').value || '').trim();
       const mergeTargetRaw = String(document.getElementById('mergeTargetPath').value || '').trim();
+      let phaseTimeoutSeconds = {};
+      try {
+        phaseTimeoutSeconds = parsePhaseTimeoutSecondsFromForm();
+      } catch (err) {
+        el.createStatus.textContent = String(err || 'Invalid phase timeout config.');
+        return;
+      }
       const payload = {
         title: document.getElementById('title').value,
         description: document.getElementById('description').value,
@@ -1587,6 +1666,8 @@ import {
         claude_team_agents_overrides: readParticipantAgentOverridesFromForm('claudeAgentsMode'),
         codex_multi_agents_overrides: readParticipantAgentOverridesFromForm('codexMultiAgentsMode'),
         repair_mode: String(document.getElementById('repairMode').value || 'balanced').trim().toLowerCase() || 'balanced',
+        memory_mode: String((el.memoryMode && el.memoryMode.value) || 'basic').trim().toLowerCase() || 'basic',
+        phase_timeout_seconds: phaseTimeoutSeconds,
         plain_mode: Number(document.getElementById('plainMode').value || 1) === 1,
         stream_mode: Number(document.getElementById('streamMode').value || 1) === 1,
         debate_mode: Number(document.getElementById('debateMode').value || 1) === 1,

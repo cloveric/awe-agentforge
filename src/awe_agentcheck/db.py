@@ -169,6 +169,8 @@ class SqlTaskRepository:
                 claude_team_agents_overrides=record.claude_team_agents_overrides,
                 codex_multi_agents_overrides=record.codex_multi_agents_overrides,
                 repair_mode=record.repair_mode,
+                memory_mode=record.memory_mode,
+                phase_timeout_seconds=record.phase_timeout_seconds or {},
                 plain_mode=record.plain_mode,
                 stream_mode=record.stream_mode,
                 debate_mode=record.debate_mode,
@@ -480,6 +482,12 @@ class SqlTaskRepository:
             'claude_team_agents_overrides': {str(k): bool(v) for k, v in dict(meta.get('claude_team_agents_overrides', {})).items()},
             'codex_multi_agents_overrides': {str(k): bool(v) for k, v in dict(meta.get('codex_multi_agents_overrides', {})).items()},
             'repair_mode': str(meta.get('repair_mode') or 'balanced'),
+            'memory_mode': str(meta.get('memory_mode') or 'basic'),
+            'phase_timeout_seconds': {
+                str(k).strip().lower(): int(v)
+                for k, v in dict(meta.get('phase_timeout_seconds', {})).items()
+                if str(k).strip()
+            },
             'plain_mode': bool(meta.get('plain_mode', True)),
             'stream_mode': bool(meta.get('stream_mode', True)),
             'debate_mode': bool(meta.get('debate_mode', True)),

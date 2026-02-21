@@ -18,6 +18,7 @@ def proposal_review_prompt(
     *,
     stage: str = 'proposal_review',
     environment_context: str | None = None,
+    memory_context: str | None = None,
 ) -> str:
     clipped = clip_text(discussion_output, max_chars=2500)
     language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
@@ -63,6 +64,7 @@ def proposal_review_prompt(
         base=base,
         environment_context=environment_context,
         strategy_hint=None,
+        memory_context=memory_context,
     )
 
 
@@ -76,6 +78,7 @@ def proposal_author_prompt(
     review_payload: list[dict],
     *,
     environment_context: str | None = None,
+    memory_context: str | None = None,
 ) -> str:
     clipped = clip_text(merged_context, max_chars=3200)
     language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
@@ -121,6 +124,7 @@ def proposal_author_prompt(
         base=base,
         environment_context=environment_context,
         strategy_hint=None,
+        memory_context=memory_context,
     )
 
 

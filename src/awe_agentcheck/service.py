@@ -78,7 +78,11 @@ from awe_agentcheck.service_layers import (
     EvidenceService,
     HistoryDeps,
     HistoryService,
+    MemoryDeps,
+    MemoryService,
     TaskManagementService,
+    normalize_memory_mode,
+    normalize_phase_timeout_seconds,
 )
 from awe_agentcheck.storage.artifacts import ArtifactStore
 from awe_agentcheck.task_options import (
@@ -127,6 +131,8 @@ class CreateTaskInput:
     claude_team_agents_overrides: dict[str, bool] | None = None
     codex_multi_agents_overrides: dict[str, bool] | None = None
     repair_mode: str = 'balanced'
+    memory_mode: str = 'basic'
+    phase_timeout_seconds: dict[str, int] | None = None
     plain_mode: bool = True
     stream_mode: bool = True
     debate_mode: bool = True
@@ -168,6 +174,8 @@ class TaskView:
     claude_team_agents_overrides: dict[str, bool]
     codex_multi_agents_overrides: dict[str, bool]
     repair_mode: str
+    memory_mode: str
+    phase_timeout_seconds: dict[str, int]
     plain_mode: bool
     stream_mode: bool
     debate_mode: bool
@@ -345,6 +353,13 @@ class OrchestratorService:
                 clip_snippet=self._clip_snippet,
             ),
         )
+        self.memory_service = MemoryService(
+            artifact_root=self.artifact_store.root,
+            deps=MemoryDeps(
+                list_events=self.repository.list_events,
+                read_artifact_json=self._read_task_artifact_json,
+            ),
+        )
         self.task_management_service = TaskManagementService(
             repository=self.repository,
             artifact_store=self.artifact_store,
@@ -370,6 +385,10 @@ class OrchestratorService:
 
     def create_task(self, payload: CreateTaskInput) -> TaskView:
         row = self.task_management_service.create_task(payload)
+        try:
+            self.memory_service.persist_task_preferences(row=row)
+        except Exception:
+            _log.exception('memory_preference_persist_failed task_id=%s', str(row.get('task_id') or ''))
         return self._to_view(row)
 
     def list_tasks(self, *, limit: int = 100) -> list[TaskView]:
@@ -448,6 +467,54 @@ class OrchestratorService:
 
     def get_analytics(self, *, limit: int = 300) -> dict:
         return self.analytics_service.get_analytics(limit=limit)
+
+    def list_memory(
+        self,
+        *,
+        project_path: str | None = None,
+        memory_type: str | None = None,
+        include_expired: bool = False,
+        limit: int = 200,
+    ) -> list[dict]:
+        return self.memory_service.list_entries(
+            project_path=project_path,
+            memory_type=memory_type,
+            include_expired=include_expired,
+            limit=limit,
+        )
+
+    def query_memory(
+        self,
+        *,
+        query: str,
+        memory_mode: str = 'basic',
+        project_path: str | None = None,
+        stage: str | None = None,
+        limit: int = 8,
+    ) -> list[dict]:
+        return self.memory_service.query_entries(
+            query=query,
+            memory_mode=normalize_memory_mode(memory_mode),
+            project_path=project_path,
+            stage=stage,
+            limit=limit,
+        )
+
+    def set_memory_pin(self, *, memory_id: str, pinned: bool) -> dict | None:
+        return self.memory_service.set_pinned(memory_id=memory_id, pinned=bool(pinned))
+
+    def clear_memory(
+        self,
+        *,
+        project_path: str | None = None,
+        memory_type: str | None = None,
+        include_pinned: bool = False,
+    ) -> dict[str, int]:
+        return self.memory_service.clear_entries(
+            project_path=project_path,
+            memory_type=memory_type,
+            include_pinned=include_pinned,
+        )
 
     def build_github_pr_summary(self, task_id: str) -> dict:
         return self.history_service.build_github_pr_summary(task_id)
@@ -725,6 +792,17 @@ class OrchestratorService:
     def _collect_task_artifacts(self, *, task_id: str) -> list[dict]:
         return self.evidence_service.collect_task_artifacts(task_id=task_id)
 
+    def _read_task_artifact_json(self, task_id: str, artifact_name: str) -> dict | None:
+        key = self._validate_artifact_task_id(task_id)
+        name = str(artifact_name or '').strip()
+        if not name:
+            return None
+        path = (self.artifact_store.root / 'threads' / key / 'artifacts' / f'{name}.json').resolve(strict=False)
+        threads_root = (self.artifact_store.root / 'threads').resolve(strict=False)
+        if not self._is_path_within(threads_root, path):
+            return None
+        return self._read_json_file(path)
+
     def _write_evidence_manifest(
         self,
         *,
@@ -764,6 +842,40 @@ class OrchestratorService:
             status=status,
             reason=reason,
         )
+
+    def _persist_memory_outcome(
+        self,
+        *,
+        task_id: str,
+        row: dict,
+        status: TaskStatus,
+        reason: str,
+    ) -> None:
+        try:
+            saved = self.memory_service.persist_task_outcome(
+                task_id=task_id,
+                row=row,
+                status=status.value,
+                reason=reason,
+            )
+        except Exception:
+            _log.exception('memory_outcome_persist_failed task_id=%s', task_id)
+            return
+        if not saved:
+            return
+        payload = {
+            'saved_count': len(saved),
+            'memory_ids': [str(item.get('memory_id') or '') for item in saved],
+            'memory_types': [str(item.get('memory_type') or '') for item in saved],
+        }
+        self.repository.append_event(
+            task_id,
+            event_type='memory_persisted',
+            payload=payload,
+            round_number=None,
+        )
+        self.artifact_store.append_event(task_id, {'type': EventType.MEMORY_PERSISTED.value, **payload})
+        self.artifact_store.update_state(task_id, {'memory_persisted_last': payload})
 
     @staticmethod
     def _run_git_command(*, root: Path, args: list[str]) -> tuple[bool, str]:
@@ -896,6 +1008,12 @@ class OrchestratorService:
             },
         )
         self.artifact_store.write_final_report(task_id, f'status=failed_system\\nreason={reason}')
+        self._persist_memory_outcome(
+            task_id=task_id,
+            row=row,
+            status=TaskStatus.FAILED_SYSTEM,
+            reason=reason,
+        )
         return self._to_view(row)
 
     def start_task(self, task_id: str) -> TaskView:
@@ -1101,6 +1219,66 @@ class OrchestratorService:
             )
             return self._to_view(updated)
 
+        memory_mode = normalize_memory_mode(row.get('memory_mode', 'basic'))
+        stage_memory_context: dict[str, str] = {}
+        memory_hits_by_stage: dict[str, list[dict]] = {}
+        try:
+            memory_pack = self.memory_service.build_stage_context(
+                row=row,
+                query_text='\n'.join(
+                    [
+                        str(row.get('title') or '').strip(),
+                        str(row.get('description') or '').strip(),
+                        str(row.get('last_gate_reason') or '').strip(),
+                    ]
+                ),
+                memory_mode=memory_mode,
+                stage_sequence=('proposal', 'discussion', 'implementation', 'review'),
+                limit_per_stage=3,
+            )
+            stage_memory_context = {
+                str(k): str(v)
+                for k, v in dict(memory_pack.get('contexts') or {}).items()
+                if str(k).strip() and str(v).strip()
+            }
+            memory_hits_by_stage = {
+                str(k): list(v)
+                for k, v in dict(memory_pack.get('hits') or {}).items()
+                if str(k).strip() and isinstance(v, list) and v
+            }
+            for stage_name, stage_hits in memory_hits_by_stage.items():
+                hit_payload = {
+                    'stage': stage_name,
+                    'memory_mode': memory_mode,
+                    'hits': [
+                        {
+                            'memory_id': str(item.get('memory_id') or ''),
+                            'memory_type': str(item.get('memory_type') or ''),
+                            'title': str(item.get('title') or ''),
+                            'score': float(item.get('score') or 0.0),
+                            'source_task_id': str(item.get('source_task_id') or ''),
+                        }
+                        for item in stage_hits[:3]
+                    ],
+                    'hit_count': len(stage_hits),
+                }
+                self.repository.append_event(
+                    task_id,
+                    event_type='memory_hit',
+                    payload=hit_payload,
+                    round_number=None,
+                )
+                self.artifact_store.append_event(task_id, {'type': EventType.MEMORY_HIT.value, **hit_payload})
+            self.artifact_store.update_state(
+                task_id,
+                {
+                    'memory_mode': memory_mode,
+                    'memory_context_stages': sorted(stage_memory_context.keys()),
+                },
+            )
+        except Exception:
+            _log.exception('memory_preload_failed task_id=%s', task_id)
+
         # All modes require proposal consensus before implementation.
         needs_consensus = str(row.get('last_gate_reason') or '') != 'author_approved'
         if needs_consensus:
@@ -1113,7 +1291,13 @@ class OrchestratorService:
             self.repository.append_event(task_id, event_type='task_running', payload={'status': 'running'}, round_number=None)
             self.artifact_store.update_state(task_id, {'status': 'running'})
             auto_approve = int(row.get('self_loop_mode', 0)) == 1
-            prepared = self._prepare_author_confirmation(task_id, row, auto_approve=auto_approve)
+            prepared = self._prepare_author_confirmation(
+                task_id,
+                row,
+                auto_approve=auto_approve,
+                memory_mode=memory_mode,
+                memory_context=stage_memory_context,
+            )
             if not auto_approve:
                 return prepared
             if prepared.status != TaskStatus.RUNNING:
@@ -1254,6 +1438,12 @@ class OrchestratorService:
                     claude_team_agents_overrides=dict(row.get('claude_team_agents_overrides', {})),
                     codex_multi_agents_overrides=dict(row.get('codex_multi_agents_overrides', {})),
                     repair_mode=normalize_repair_mode(row.get('repair_mode')),
+                    memory_mode=memory_mode,
+                    memory_context=stage_memory_context,
+                    phase_timeout_seconds=normalize_phase_timeout_seconds(
+                        row.get('phase_timeout_seconds'),
+                        strict=False,
+                    ),
                     plain_mode=normalize_plain_mode(row.get('plain_mode')),
                     stream_mode=normalize_bool_flag(row.get('stream_mode', True), default=True),
                     debate_mode=normalize_bool_flag(row.get('debate_mode', True), default=True),
@@ -1552,6 +1742,12 @@ class OrchestratorService:
                 status=final_status,
                 reason=str(final_reason or ''),
             )
+        self._persist_memory_outcome(
+            task_id=task_id,
+            row=updated,
+            status=final_status,
+            reason=str(final_reason or ''),
+        )
         return self._to_view(updated)
 
     def submit_author_decision(
@@ -1828,7 +2024,15 @@ class OrchestratorService:
         )
         return payload
 
-    def _prepare_author_confirmation(self, task_id: str, row: dict, *, auto_approve: bool = False) -> TaskView:
+    def _prepare_author_confirmation(
+        self,
+        task_id: str,
+        row: dict,
+        *,
+        auto_approve: bool = False,
+        memory_mode: str = 'basic',
+        memory_context: dict[str, str] | None = None,
+    ) -> TaskView:
         summary = (
             f"Task: {str(row.get('title') or '')}\n"
             "Generated proposal requires author approval before implementation."
@@ -1842,7 +2046,6 @@ class OrchestratorService:
         try:
             runner = getattr(self.workflow_engine, 'runner', None)
             timeout = int(getattr(self.workflow_engine, 'participant_timeout_seconds', 3600))
-            review_timeout = self._review_timeout_seconds(timeout)
             author = parse_participant_id(str(row['author_participant']))
             reviewers = [parse_participant_id(v) for v in row.get('reviewer_participants', [])]
             config = RunConfig(
@@ -1863,6 +2066,16 @@ class OrchestratorService:
                 claude_team_agents_overrides=dict(row.get('claude_team_agents_overrides', {})),
                 codex_multi_agents_overrides=dict(row.get('codex_multi_agents_overrides', {})),
                 repair_mode=normalize_repair_mode(row.get('repair_mode')),
+                memory_mode=normalize_memory_mode(memory_mode),
+                memory_context={
+                    str(k): str(v)
+                    for k, v in dict(memory_context or {}).items()
+                    if str(k).strip() and str(v).strip()
+                },
+                phase_timeout_seconds=normalize_phase_timeout_seconds(
+                    row.get('phase_timeout_seconds'),
+                    strict=False,
+                ),
                 plain_mode=normalize_plain_mode(row.get('plain_mode')),
                 stream_mode=normalize_bool_flag(row.get('stream_mode', True), default=True),
                 debate_mode=normalize_bool_flag(row.get('debate_mode', True), default=True),
@@ -1870,6 +2083,16 @@ class OrchestratorService:
                 max_rounds=int(row.get('max_rounds', 3)),
                 test_command=str(row.get('test_command', 'py -m pytest -q')),
                 lint_command=str(row.get('lint_command', 'py -m ruff check .')),
+            )
+            review_timeout = self._resolve_phase_timeout_seconds(
+                phase_timeout_seconds=config.phase_timeout_seconds,
+                phase='review',
+                fallback=self._review_timeout_seconds(timeout),
+            )
+            proposal_timeout = self._resolve_phase_timeout_seconds(
+                phase_timeout_seconds=config.phase_timeout_seconds,
+                phase='proposal',
+                fallback=timeout,
             )
             proposal_environment_context = build_environment_context(
                 cwd=Path(config.cwd),
@@ -1932,6 +2155,7 @@ class OrchestratorService:
                                     merged_context,
                                     stage=stage,
                                     environment_context=proposal_environment_context,
+                                    memory_context=(config.memory_context or {}).get('proposal'),
                                 ),
                                 cwd=config.cwd,
                                 timeout_seconds=review_timeout,
@@ -2235,7 +2459,7 @@ class OrchestratorService:
                             'round': round_no,
                             'provider': author.provider,
                             'participant': author.participant_id,
-                            'timeout_seconds': timeout,
+                            'timeout_seconds': proposal_timeout,
                             'attempt': attempt,
                         }
                         self.repository.append_event(
@@ -2252,6 +2476,7 @@ class OrchestratorService:
                                 merged_context,
                                 pre_reviews,
                                 environment_context=proposal_environment_context,
+                                memory_context=(config.memory_context or {}).get('discussion'),
                             )
                             if reviewer_first_mode
                             else WorkflowEngine._discussion_prompt(
@@ -2259,6 +2484,7 @@ class OrchestratorService:
                                 round_no,
                                 None,
                                 environment_context=proposal_environment_context,
+                                memory_context=(config.memory_context or {}).get('discussion'),
                             )
                         )
                         try:
@@ -2266,7 +2492,7 @@ class OrchestratorService:
                                 participant=author,
                                 prompt=discussion_prompt,
                                 cwd=config.cwd,
-                                timeout_seconds=timeout,
+                                timeout_seconds=proposal_timeout,
                                 model=resolve_model_for_participant(
                                     participant_id=author.participant_id,
                                     provider=author.provider,
@@ -2993,17 +3219,31 @@ class OrchestratorService:
         *,
         stage: str = 'proposal_review',
         environment_context: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         return proposal_review_prompt(
             config,
             discussion_output,
             stage=stage,
             environment_context=environment_context,
+            memory_context=memory_context,
         )
 
     @staticmethod
     def _review_timeout_seconds(participant_timeout_seconds: int) -> int:
         return review_timeout_seconds(participant_timeout_seconds)
+
+    @staticmethod
+    def _resolve_phase_timeout_seconds(
+        *,
+        phase_timeout_seconds: dict[str, int] | None,
+        phase: str,
+        fallback: int,
+    ) -> int:
+        phase_key = str(phase or '').strip().lower()
+        mapping = normalize_phase_timeout_seconds(phase_timeout_seconds, strict=False)
+        resolved = int(mapping.get(phase_key, int(fallback)))
+        return max(10, resolved)
 
     @staticmethod
     def _proposal_author_prompt(
@@ -3012,12 +3252,14 @@ class OrchestratorService:
         review_payload: list[dict],
         *,
         environment_context: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         return proposal_author_prompt(
             config,
             merged_context,
             review_payload,
             environment_context=environment_context,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -3106,6 +3348,11 @@ class OrchestratorService:
             claude_team_agents_overrides={str(k): bool(v) for k, v in dict(row.get('claude_team_agents_overrides', {})).items()},
             codex_multi_agents_overrides={str(k): bool(v) for k, v in dict(row.get('codex_multi_agents_overrides', {})).items()},
             repair_mode=normalize_repair_mode(row.get('repair_mode')),
+            memory_mode=normalize_memory_mode(row.get('memory_mode', 'basic')),
+            phase_timeout_seconds=normalize_phase_timeout_seconds(
+                row.get('phase_timeout_seconds'),
+                strict=False,
+            ),
             plain_mode=normalize_plain_mode(row.get('plain_mode', True)),
             stream_mode=normalize_bool_flag(row.get('stream_mode', True), default=True),
             debate_mode=normalize_bool_flag(row.get('debate_mode', True), default=True),

@@ -47,6 +47,8 @@ class TaskCreateRecord:
     max_rounds: int
     test_command: str
     lint_command: str
+    memory_mode: str = 'basic'
+    phase_timeout_seconds: dict[str, int] | None = None
 
 
 class TaskRepository(Protocol):
@@ -134,6 +136,12 @@ class InMemoryTaskRepository:
             'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (record.claude_team_agents_overrides or {}).items() if str(k).strip()},
             'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (record.codex_multi_agents_overrides or {}).items() if str(k).strip()},
             'repair_mode': str(record.repair_mode or 'balanced').strip().lower() or 'balanced',
+            'memory_mode': str(record.memory_mode or 'basic').strip().lower() or 'basic',
+            'phase_timeout_seconds': {
+                str(k).strip().lower(): int(v)
+                for k, v in dict(record.phase_timeout_seconds or {}).items()
+                if str(k).strip()
+            },
             'plain_mode': bool(record.plain_mode),
             'stream_mode': bool(record.stream_mode),
             'debate_mode': bool(record.debate_mode),
@@ -288,6 +296,8 @@ def encode_reviewer_meta(
         claude_team_agents=False,
         codex_multi_agents=False,
         repair_mode='balanced',
+        memory_mode='basic',
+        phase_timeout_seconds={},
         plain_mode=True,
         stream_mode=True,
         debate_mode=True,
@@ -330,6 +340,8 @@ def encode_task_meta(
     project_path: str,
     self_loop_mode: int,
     workspace_fingerprint: dict[str, object] | None = None,
+    memory_mode: str = 'basic',
+    phase_timeout_seconds: dict[str, int] | None = None,
 ) -> str:
     payload = {
         'participants': [str(v) for v in reviewer_participants],
@@ -345,6 +357,12 @@ def encode_task_meta(
         'claude_team_agents_overrides': {str(k).strip(): bool(v) for k, v in (claude_team_agents_overrides or {}).items() if str(k).strip()},
         'codex_multi_agents_overrides': {str(k).strip(): bool(v) for k, v in (codex_multi_agents_overrides or {}).items() if str(k).strip()},
         'repair_mode': str(repair_mode or 'balanced').strip().lower() or 'balanced',
+        'memory_mode': str(memory_mode or 'basic').strip().lower() or 'basic',
+        'phase_timeout_seconds': {
+            str(k).strip().lower(): int(v)
+            for k, v in dict(phase_timeout_seconds or {}).items()
+            if str(k).strip() and isinstance(v, int)
+        },
         'plain_mode': bool(plain_mode),
         'stream_mode': bool(stream_mode),
         'debate_mode': bool(debate_mode),
@@ -389,6 +407,8 @@ def decode_task_meta(raw: str) -> dict:
         'claude_team_agents_overrides': {},
         'codex_multi_agents_overrides': {},
         'repair_mode': 'balanced',
+        'memory_mode': 'basic',
+        'phase_timeout_seconds': {},
         'plain_mode': True,
         'stream_mode': True,
         'debate_mode': True,
@@ -486,6 +506,22 @@ def decode_task_meta(raw: str) -> dict:
         repair_mode = str(parsed.get('repair_mode') or 'balanced').strip().lower() or 'balanced'
         if repair_mode not in {'minimal', 'balanced', 'structural'}:
             repair_mode = 'balanced'
+        memory_mode = str(parsed.get('memory_mode') or 'basic').strip().lower() or 'basic'
+        if memory_mode not in {'off', 'basic', 'strict'}:
+            memory_mode = 'basic'
+        phase_timeout_seconds_raw = parsed.get('phase_timeout_seconds', {})
+        if not isinstance(phase_timeout_seconds_raw, dict):
+            phase_timeout_seconds_raw = {}
+        phase_timeout_seconds: dict[str, int] = {}
+        for key, value in phase_timeout_seconds_raw.items():
+            phase = str(key or '').strip().lower()
+            if phase not in {'proposal', 'discussion', 'implementation', 'review', 'command'}:
+                continue
+            try:
+                seconds = int(value)
+            except (TypeError, ValueError):
+                continue
+            phase_timeout_seconds[phase] = max(10, min(60_000, seconds))
         plain_mode = _coerce_meta_bool(parsed.get('plain_mode', True), default=True)
         stream_mode = _coerce_meta_bool(parsed.get('stream_mode', True), default=True)
         debate_mode = _coerce_meta_bool(parsed.get('debate_mode', True), default=True)
@@ -527,6 +563,8 @@ def decode_task_meta(raw: str) -> dict:
         out['claude_team_agents_overrides'] = claude_team_agents_overrides
         out['codex_multi_agents_overrides'] = codex_multi_agents_overrides
         out['repair_mode'] = repair_mode
+        out['memory_mode'] = memory_mode
+        out['phase_timeout_seconds'] = phase_timeout_seconds
         out['plain_mode'] = plain_mode
         out['stream_mode'] = stream_mode
         out['debate_mode'] = debate_mode

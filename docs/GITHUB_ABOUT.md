@@ -12,6 +12,9 @@ AWE-AgentForge orchestrates multiple coding CLIs in one observable workflow:
 - record-only task creation contract (`TaskCreateRecord` -> `create_task_record`) to avoid long-parameter drift
 - package-split adapter runtime architecture (`src/awe_agentcheck/adapters/`) with strategy/factory dispatch
 - workflow split into focused modules (`workflow_architecture` / `workflow_prompting` / `workflow_runtime` / `workflow_text`)
+- durable memory system (`.agents/memory/entries.json`) with stage pre-recall + post-outcome persistence
+- runtime control surface for `memory_mode` and per-phase timeout budgets (`phase_timeout_seconds`)
+- memory APIs (`/api/memory`, `/api/memory/query`, `/api/memory/pin`, `/api/memory/clear`) and matching CLI/Web controls
 - structured reviewer output (JSON + fallback controls)
 - structured adapter runtime-error results (no silent empty runs)
 - architecture audit (`off|warn|hard`)
@@ -43,6 +46,9 @@ AWE-AgentForge 把多智能体协作工程化为一条可观测流水线：
 - 任务创建统一为记录对象契约（`TaskCreateRecord` -> `create_task_record`），避免长参数链漂移
 - 适配器运行时架构已拆包（`src/awe_agentcheck/adapters/`），通过策略/工厂分发 provider 行为
 - workflow 进一步拆分为专用模块（`workflow_architecture` / `workflow_prompting` / `workflow_runtime` / `workflow_text`）
+- 增加持久化记忆系统（`.agents/memory/entries.json`），支持阶段前召回与结果后沉淀
+- 增加运行时控制面：`memory_mode` 与分阶段超时预算（`phase_timeout_seconds`）
+- 增加记忆 API（`/api/memory`、`/api/memory/query`、`/api/memory/pin`、`/api/memory/clear`）并同步到 CLI/Web 控制
 - 结构化审阅输出（JSON + 兼容兜底）
 - 结构化适配层运行时错误返回（避免“空跑不清楚”）
 - 架构审计（`off|warn|hard`）

@@ -93,6 +93,8 @@ def test_api_create_start_and_get_task_roundtrip(tmp_path: Path):
     assert body['stream_mode'] is True
     assert body['debate_mode'] is True
     assert body['repair_mode'] == 'balanced'
+    assert body['memory_mode'] == 'basic'
+    assert body['phase_timeout_seconds'] == {}
     assert body['auto_merge'] is True
     assert body['sandbox_workspace_path']
 
@@ -203,6 +205,8 @@ def test_api_policy_templates_endpoint_returns_profile_and_templates(tmp_path: P
         if item['id'] == 'deep-discovery-first'
     )
     assert deep_defaults['evolution_level'] == 2
+    assert deep_defaults['memory_mode'] == 'strict'
+    assert isinstance(deep_defaults['phase_timeout_seconds'], dict)
 
 
 def test_api_analytics_endpoint_returns_failure_and_drift_views(tmp_path: Path):
@@ -1174,3 +1178,72 @@ def test_api_author_decision_revise_requeues_waiting_task(tmp_path: Path):
     body = revised.json()
     assert body['status'] == 'queued'
     assert body['last_gate_reason'] == 'author_feedback_requested'
+
+
+def test_api_memory_endpoints_roundtrip(tmp_path: Path):
+    client = build_client(tmp_path)
+    created = client.post(
+        '/api/tasks',
+        json={
+            'title': 'Task Memory',
+            'description': 'memory endpoint smoke',
+            'author_participant': 'claude#author-A',
+            'reviewer_participants': ['codex#review-B'],
+            'workspace_path': str(tmp_path),
+            'sandbox_mode': False,
+            'self_loop_mode': 0,
+            'memory_mode': 'strict',
+            'phase_timeout_seconds': {'proposal': 120, 'review': 180},
+            'auto_start': False,
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body['memory_mode'] == 'strict'
+    assert body['phase_timeout_seconds']['proposal'] == 120
+
+    project_path = str(body['project_path'] or body['workspace_path'])
+    listed = client.get('/api/memory', params={'project_path': project_path, 'limit': 50})
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert isinstance(rows, list)
+    assert rows
+
+    query = client.get(
+        '/api/memory/query',
+        params={
+            'query': 'memory strict review',
+            'memory_mode': 'basic',
+            'project_path': project_path,
+            'stage': 'review',
+            'limit': 10,
+        },
+    )
+    assert query.status_code == 200
+    query_rows = query.json()
+    assert isinstance(query_rows, list)
+
+    target = rows[0]
+    pin_resp = client.post(
+        '/api/memory/pin',
+        json={'memory_id': target['memory_id'], 'pinned': True},
+    )
+    assert pin_resp.status_code == 200
+    pin_body = pin_resp.json()
+    assert pin_body['updated'] is True
+    assert pin_body['entry']['pinned'] is True
+
+    clear_unpinned = client.post(
+        '/api/memory/clear',
+        json={'project_path': project_path, 'include_pinned': False},
+    )
+    assert clear_unpinned.status_code == 200
+    remaining_after_unpinned = int(clear_unpinned.json()['remaining'])
+    assert remaining_after_unpinned >= 1
+
+    clear_all = client.post(
+        '/api/memory/clear',
+        json={'project_path': project_path, 'include_pinned': True},
+    )
+    assert clear_all.status_code == 200
+    assert int(clear_all.json()['remaining']) == 0

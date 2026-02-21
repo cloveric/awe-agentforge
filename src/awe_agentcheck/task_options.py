@@ -8,6 +8,7 @@ from awe_agentcheck.participants import get_supported_providers, parse_participa
 
 SUPPORTED_CONVERSATION_LANGUAGES = frozenset({'en', 'zh'})
 SUPPORTED_REPAIR_MODES = frozenset({'minimal', 'balanced', 'structural'})
+SUPPORTED_MEMORY_MODES = frozenset({'off', 'basic', 'strict'})
 
 
 def supported_providers() -> set[str]:
@@ -61,6 +62,73 @@ def normalize_repair_mode(value, *, strict: bool = False) -> str:
             raise ValueError(f'invalid repair_mode: {text}')
         return 'balanced'
     return text
+
+
+def normalize_memory_mode(value, *, strict: bool = False) -> str:
+    text = str(value or '').strip().lower()
+    aliases = {
+        '': 'basic',
+        'off': 'off',
+        '0': 'off',
+        'none': 'off',
+        'basic': 'basic',
+        '1': 'basic',
+        'default': 'basic',
+        'strict': 'strict',
+        '2': 'strict',
+        'hard': 'strict',
+    }
+    normalized = aliases.get(text, text)
+    if normalized not in SUPPORTED_MEMORY_MODES:
+        if strict:
+            raise ValueError(f'invalid memory_mode: {text}')
+        return 'basic'
+    return normalized
+
+
+def normalize_phase_timeout_seconds(
+    value: dict[str, int] | None,
+    *,
+    strict: bool = True,
+    minimum: int = 10,
+    maximum: int = 60_000,
+) -> dict[str, int]:
+    if not value:
+        return {}
+    if not isinstance(value, dict):
+        if strict:
+            raise ValueError('phase_timeout_seconds must be an object')
+        return {}
+
+    aliases = {
+        'proposal': 'proposal',
+        'precheck': 'proposal',
+        'discussion': 'discussion',
+        'author': 'discussion',
+        'implementation': 'implementation',
+        'impl': 'implementation',
+        'review': 'review',
+        'verification': 'command',
+        'command': 'command',
+        'lint_test': 'command',
+    }
+
+    out: dict[str, int] = {}
+    for raw_key, raw_value in value.items():
+        key = str(raw_key or '').strip().lower()
+        mapped = aliases.get(key)
+        if not mapped:
+            if strict:
+                raise ValueError(f'invalid phase_timeout_seconds key: {raw_key}')
+            continue
+        try:
+            parsed = int(raw_value)
+        except (TypeError, ValueError):
+            if strict:
+                raise ValueError(f'invalid phase_timeout_seconds[{mapped}]: {raw_value}')
+            continue
+        out[mapped] = max(minimum, min(maximum, parsed))
+    return out
 
 
 def normalize_plain_mode(value) -> bool:

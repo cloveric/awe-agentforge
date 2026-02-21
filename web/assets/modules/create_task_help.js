@@ -27,8 +27,8 @@ export const CREATE_TASK_HELP_ITEMS = [
   },
   {
   field: 'Policy Templates (What each one does)',
-  en: 'deep-discovery-first (default): audit-first + broader discovery, self_loop=1, auto_merge=1, rounds=3, evolution=2. balanced-default: daily stable baseline, self_loop=0, auto_merge=1, rounds=1, evolution=0. safe-review: conservative and risk-first, self_loop=0, auto_merge=0, rounds=2, evolution=0. rapid-fix: fastest small patch path, self_loop=1, auto_merge=1, rounds=1, evolution=0. deep-evolve: deep structural refactor mode, self_loop=1, auto_merge=0, rounds=3, evolution=2. frontier-evolve: aggressive proactive mode, self_loop=1, auto_merge=1, rounds=4, evolution=3.',
-  zh: 'deep-discovery-first（默认）：发现优先审计风格，self_loop=1、auto_merge=1、rounds=3、evolution=2。balanced-default：日常稳态基线，self_loop=0、auto_merge=1、rounds=1、evolution=0。safe-review：保守风控优先，self_loop=0、auto_merge=0、rounds=2、evolution=0。rapid-fix：最快小修路径，self_loop=1、auto_merge=1、rounds=1、evolution=0。deep-evolve：深度结构演进模式，self_loop=1、auto_merge=0、rounds=3、evolution=2。frontier-evolve：激进主动模式，self_loop=1、auto_merge=1、rounds=4、evolution=3。',
+  en: 'Each template sets loop/merge/evolution defaults, and now also sets memory_mode + phase_timeout_seconds baseline. deep-discovery-first and safe-review default to stricter memory recall; others default to basic.',
+  zh: '每个模板除了 loop/merge/evolution 默认值外，也会下发 memory_mode 与 phase_timeout_seconds 基线。deep-discovery-first 与 safe-review 默认更严格的记忆召回，其余模板默认 basic。',
   },
   {
   field: 'Claude/Codex/Gemini Model',
@@ -54,6 +54,16 @@ export const CREATE_TASK_HELP_ITEMS = [
   field: 'Repair Mode',
   en: 'minimal=smallest patch, balanced=root-cause focused, structural=allow deeper refactor.',
   zh: 'minimal=最小修补，balanced=聚焦根因，structural=允许更深重构。',
+  },
+  {
+  field: 'Memory Mode',
+  en: 'off=disable memory recall, basic=lightweight recall, strict=stronger recall filtering and confidence threshold.',
+  zh: 'off=关闭记忆召回，basic=轻量召回，strict=更严格的召回过滤与置信阈值。',
+  },
+  {
+  field: 'Phase Timeouts (JSON)',
+  en: 'Optional per-phase timeout override. JSON object keys: proposal/discussion/implementation/review/command. Example: {"proposal":1800,"implementation":3600}.',
+  zh: '可选的阶段超时覆盖。JSON 对象键：proposal/discussion/implementation/review/command。示例：{"proposal":1800,"implementation":3600}。',
   },
   {
   field: 'Max Rounds',
@@ -127,8 +137,8 @@ export const CREATE_TASK_HELP_ITEMS = [
   },
   {
   field: 'Policy Note',
-  en: 'When Sandbox Mode = 0, Auto Merge is forced to 0. When Evolve Until is set, Max Rounds is disabled.',
-  zh: '策略说明：Sandbox Mode=0 时 Auto Merge 会被强制为 0；设置 Evolve Until 后 Max Rounds 会禁用。',
+  en: 'When Sandbox Mode = 0, Auto Merge is forced to 0. When Evolve Until is set, Max Rounds is disabled. Policy can also set Memory Mode and Phase Timeouts.',
+  zh: '策略说明：Sandbox Mode=0 时 Auto Merge 会被强制为 0；设置 Evolve Until 后 Max Rounds 会禁用。策略也可同时下发 Memory Mode 与 Phase Timeouts。',
   },
 ];
 

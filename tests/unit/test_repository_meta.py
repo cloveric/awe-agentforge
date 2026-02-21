@@ -76,3 +76,25 @@ def test_decode_task_meta_parses_workspace_fingerprint_map() -> None:
     assert fingerprint['schema'] == 'workspace_fingerprint.v1'
     assert fingerprint['workspace_path'] == 'c:/repo'
     assert fingerprint['sandbox_mode'] is False
+
+
+def test_decode_task_meta_parses_memory_mode_and_phase_timeouts() -> None:
+    raw = json.dumps(
+        {
+            'participants': ['codex#review-A'],
+            'memory_mode': 'strict',
+            'phase_timeout_seconds': {
+                'proposal': 120,
+                'discussion': '180',
+                'command': 5,
+            },
+        }
+    )
+
+    parsed = decode_task_meta(raw)
+
+    assert parsed['memory_mode'] == 'strict'
+    assert parsed['phase_timeout_seconds']['proposal'] == 120
+    assert parsed['phase_timeout_seconds']['discussion'] == 180
+    # min clamp
+    assert parsed['phase_timeout_seconds']['command'] == 10

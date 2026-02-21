@@ -8,7 +8,15 @@ import re
 import pytest
 
 from awe_agentcheck.domain.models import TaskStatus
-from awe_agentcheck.service_layers import AnalyticsService, EvidenceDeps, EvidenceService, HistoryDeps, HistoryService
+from awe_agentcheck.service_layers import (
+    AnalyticsService,
+    EvidenceDeps,
+    EvidenceService,
+    HistoryDeps,
+    HistoryService,
+    MemoryDeps,
+    MemoryService,
+)
 from awe_agentcheck.storage.artifacts import ArtifactStore
 
 
@@ -335,3 +343,90 @@ def test_evidence_service_collects_manifest_and_regression(tmp_path: Path, monke
     )
     assert merged is not None
     assert bool(merged['merged']) is True
+
+
+def test_memory_service_persists_queries_and_clears(tmp_path: Path):
+    events_by_task = {
+        'task-1': [
+            {
+                'type': 'review',
+                'payload': {
+                    'output': 'Issue in src/awe_agentcheck/service.py and tests/unit/test_service.py',
+                },
+            },
+            {
+                'type': 'gate_failed',
+                'payload': {'reason': 'review_blocker'},
+            },
+        ]
+    }
+
+    def _list_events(task_id: str) -> list[dict]:
+        return list(events_by_task.get(task_id, []))
+
+    def _read_artifact_json(task_id: str, name: str) -> dict | None:
+        _ = (task_id, name)
+        return None
+
+    service = MemoryService(
+        artifact_root=tmp_path / '.agents',
+        deps=MemoryDeps(
+            list_events=_list_events,
+            read_artifact_json=_read_artifact_json,
+        ),
+    )
+
+    row = {
+        'task_id': 'task-1',
+        'title': 'Audit service',
+        'description': 'find critical issues',
+        'project_path': str(tmp_path / 'repo'),
+        'workspace_path': str(tmp_path / 'repo'),
+        'repair_mode': 'balanced',
+        'evolution_level': 1,
+        'self_loop_mode': 1,
+        'debate_mode': True,
+        'auto_merge': True,
+        'max_rounds': 2,
+        'memory_mode': 'basic',
+        'phase_timeout_seconds': {'review': 180},
+    }
+
+    pref = service.persist_task_preferences(row=row)
+    assert pref is not None
+    assert pref['memory_type'] == 'preference'
+
+    outcomes = service.persist_task_outcome(
+        task_id='task-1',
+        row=row,
+        status='failed_gate',
+        reason='review_blocker',
+    )
+    assert outcomes
+    assert any(item['memory_type'] == 'failure' for item in outcomes)
+
+    contexts = service.build_stage_context(
+        row=row,
+        query_text='audit service reviewer blocker',
+        memory_mode='basic',
+    )
+    assert contexts['mode'] == 'basic'
+    assert isinstance(contexts['contexts'], dict)
+
+    queried = service.query_entries(
+        query='review blocker service.py',
+        memory_mode='basic',
+        project_path=row['project_path'],
+        stage='review',
+        limit=5,
+    )
+    assert queried
+    first_id = str(queried[0]['memory_id'])
+    pinned = service.set_pinned(memory_id=first_id, pinned=True)
+    assert pinned is not None
+    assert pinned['pinned'] is True
+
+    clear_res = service.clear_entries(project_path=row['project_path'], include_pinned=False)
+    assert clear_res['remaining'] >= 1
+    clear_all = service.clear_entries(project_path=row['project_path'], include_pinned=True)
+    assert clear_all['remaining'] == 0

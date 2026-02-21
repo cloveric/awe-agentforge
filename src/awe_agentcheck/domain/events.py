@@ -33,6 +33,8 @@ class EventType(str, Enum):
     IMPLEMENTATION = 'implementation'
     IMPLEMENTATION_STARTED = 'implementation_started'
     MANUAL_ROUND_PROMOTED = 'manual_round_promoted'
+    MEMORY_HIT = 'memory_hit'
+    MEMORY_PERSISTED = 'memory_persisted'
     PARTICIPANT_STREAM = 'participant_stream'
     PRECOMPLETION_CHECKLIST = 'precompletion_checklist'
     PRECOMPLETION_GUARD_FAILED = 'precompletion_guard_failed'

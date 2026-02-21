@@ -61,6 +61,13 @@ def build_parser() -> argparse.ArgumentParser:
         help='Participant override in participant=0|1 format (repeatable)',
     )
     run.add_argument('--repair-mode', default='balanced', choices=['minimal', 'balanced', 'structural'], help='Repair policy: minimal, balanced, structural')
+    run.add_argument('--memory-mode', default='basic', choices=['off', 'basic', 'strict'], help='Memory recall mode: off, basic, strict')
+    run.add_argument(
+        '--phase-timeout',
+        action='append',
+        default=[],
+        help='Per-phase timeout in phase=seconds format (repeatable). phase: proposal|discussion|implementation|review|command',
+    )
     run.add_argument('--plain-mode', action=argparse.BooleanOptionalAction, default=True, help='Enable beginner-friendly plain output formatting (default: on)')
     run.add_argument('--stream-mode', action=argparse.BooleanOptionalAction, default=True, help='Enable streaming conversation events (default: on)')
     run.add_argument('--debate-mode', action=argparse.BooleanOptionalAction, default=True, help='Enable pre-implementation reviewer/author debate (default: on)')
@@ -215,6 +222,41 @@ def _parse_participant_agent_overrides(values: list[str] | None, *, flag_name: s
     return out
 
 
+def _parse_phase_timeouts(values: list[str] | None) -> dict[str, int]:
+    aliases = {
+        'proposal': 'proposal',
+        'precheck': 'proposal',
+        'discussion': 'discussion',
+        'author': 'discussion',
+        'implementation': 'implementation',
+        'impl': 'implementation',
+        'review': 'review',
+        'verification': 'command',
+        'command': 'command',
+        'lint_test': 'command',
+    }
+    out: dict[str, int] = {}
+    for raw in values or []:
+        text = str(raw or '').strip()
+        if not text:
+            continue
+        if '=' not in text:
+            raise ValueError(f'invalid --phase-timeout value: {text} (expected phase=seconds)')
+        phase_raw, seconds_raw = text.split('=', 1)
+        phase_key = str(phase_raw or '').strip().lower()
+        mapped = aliases.get(phase_key)
+        if not mapped:
+            raise ValueError(f'invalid --phase-timeout phase: {phase_raw}')
+        try:
+            seconds = int(seconds_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'invalid --phase-timeout seconds for {mapped}: {seconds_raw}') from exc
+        if seconds <= 0:
+            raise ValueError(f'invalid --phase-timeout seconds for {mapped}: {seconds_raw}')
+        out[mapped] = max(10, min(60000, seconds))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -283,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.codex_multi_agent_override,
                     flag_name='--codex-multi-agent-override',
                 )
+                phase_timeout_seconds = _parse_phase_timeouts(args.phase_timeout)
             except ValueError as exc:
                 parser.error(str(exc))
                 return 2
@@ -303,6 +346,8 @@ def main(argv: list[str] | None = None) -> int:
                     'claude_team_agents_overrides': claude_team_agents_overrides,
                     'codex_multi_agents_overrides': codex_multi_agents_overrides,
                     'repair_mode': str(args.repair_mode).strip().lower() or 'balanced',
+                    'memory_mode': str(args.memory_mode).strip().lower() or 'basic',
+                    'phase_timeout_seconds': phase_timeout_seconds,
                     'plain_mode': bool(args.plain_mode),
                     'stream_mode': bool(args.stream_mode),
                     'debate_mode': bool(args.debate_mode),

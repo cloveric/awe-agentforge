@@ -231,9 +231,21 @@
                 <option value="structural">structural | allow deeper refactor</option>
               </select>
             </div>
+            <div style="flex:0 0 220px;">
+              <label for="memoryMode">Memory Mode</label>
+              <select id="memoryMode">
+                <option value="off">off | disable recall</option>
+                <option value="basic" selected>basic | lightweight recall</option>
+                <option value="strict">strict | stronger recall filter</option>
+              </select>
+            </div>
             <div style="flex:0 0 180px;">
               <label for="maxRounds">Max Rounds (fallback)</label>
               <input id="maxRounds" type="number" min="1" max="20" value="3" />
+            </div>
+            <div style="flex:1; min-width:260px;">
+              <label for="phaseTimeoutSeconds">Phase Timeouts (JSON, optional)</label>
+              <input id="phaseTimeoutSeconds" value="" placeholder='{"proposal":1800,"discussion":1800,"implementation":3600,"review":1800,"command":600}' />
             </div>
             <div style="flex:1; min-width:220px;">
               <label for="evolveUntil">Evolve Until (optional)</label>

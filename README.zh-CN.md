@@ -51,7 +51,7 @@
 
 | 日期 | 当日总结 |
 |---|---|
-| 2026-02-21 | 完成 service.py 大幅拆分（proposal_helpers / risk_assessment / git_operations / event_analysis），修复 Dashboard 头像渲染运行时错误，统一 runtime 归一化实现，修正 Docker 运行时依赖，并通过完整校验（ruff/mypy/pytest/bandit，覆盖率 90.28%）。 |
+| 2026-02-21 | 一次性落地 Memory + Runtime 控制：持久化记忆库、阶段召回钩子、分阶段超时预算、API/CLI/Web 控制项（`memory_mode`、`phase_timeout_seconds`），并通过完整校验（ruff/mypy/pytest/bandit/pytest-cov）。 |
 | 2026-02-20 | 完成 adapter 策略/工厂化、service layer 包化拆分、prompt 模板化与 LangGraph 按轮推进、Dashboard 模块化，以及 CI/治理/安全基线加固。 |
 | 2026-02-19 | 完成 reviewer-first 与手动共识流程稳定化、preflight/precompletion/resume 护栏、benchmark + analytics 闭环，以及项目历史/PR 摘要集成。 |
 
@@ -198,6 +198,15 @@ queued → running → waiting_manual → (approve) → queued → running → p
 
 > [!TIP]
 > **推荐的安全默认策略**：`sandbox_mode=1` + `self_loop_mode=0` + `auto_merge=1` — 沙盒执行 + 人工签核 + 通过后自动融合。
+
+### 运行时控制（新增）
+
+| 参数 | 可选值 | 默认值 | 作用 |
+|:---|:---:|:---:|:---|
+| `memory_mode` | `off` / `basic` / `strict` | **`basic`** | 控制 proposal/discussion/implementation/review 阶段的记忆召回与持久化强度 |
+| `phase_timeout_seconds` | JSON 对象 | **`{}`** | 可选的分阶段超时覆盖，支持 `proposal`、`discussion`、`implementation`、`review`、`command` |
+
+CLI 对应参数：`--memory-mode` 与可重复的 `--phase-timeout phase=seconds`。
 
 <br/>
 

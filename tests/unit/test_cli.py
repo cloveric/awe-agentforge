@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import awe_agentcheck.cli as cli_module
 from awe_agentcheck.cli import (
+    _parse_phase_timeouts,
     _parse_participant_agent_overrides,
     _parse_provider_model_params,
     _parse_provider_models,
@@ -52,6 +53,12 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
             'claude#author-A=1',
             '--codex-multi-agent-override',
             'codex#review-B=0',
+            '--memory-mode',
+            'strict',
+            '--phase-timeout',
+            'proposal=120',
+            '--phase-timeout',
+            'review=180',
             '--no-plain-mode',
             '--merge-target-path',
             'C:/Users/hangw/awe-agentcheck',
@@ -73,6 +80,8 @@ def test_cli_parser_run_subcommand_accepts_author_and_reviewers():
     assert args.codex_multi_agents == 1
     assert args.claude_team_agent_override == ['claude#author-A=1']
     assert args.codex_multi_agent_override == ['codex#review-B=0']
+    assert args.memory_mode == 'strict'
+    assert args.phase_timeout == ['proposal=120', 'review=180']
     assert args.plain_mode is False
     assert args.stream_mode is True
     assert args.debate_mode is True
@@ -316,6 +325,19 @@ def test_parse_provider_models_and_params_validation_errors():
     with pytest.raises(ValueError):
         _parse_participant_agent_overrides(['claude#author-A=maybe'], flag_name='--flag')
 
+    with pytest.raises(ValueError):
+        _parse_phase_timeouts(['bad'])
+    with pytest.raises(ValueError):
+        _parse_phase_timeouts(['unknown=10'])
+    with pytest.raises(ValueError):
+        _parse_phase_timeouts(['proposal=bad'])
+    with pytest.raises(ValueError):
+        _parse_phase_timeouts(['review=0'])
+    assert _parse_phase_timeouts(['impl=120', 'verification=30']) == {
+        'implementation': 120,
+        'command': 30,
+    }
+
 
 class _FakeResponse:
     def __init__(self, status_code=200, payload=None, text='ok'):
@@ -419,6 +441,8 @@ def test_cli_main_run_posts_task_payload(monkeypatch):
     assert payload['provider_models']['codex'] == 'gpt-5.3-codex'
     assert payload['provider_model_params']['codex'].startswith('-c')
     assert payload['self_loop_mode'] == 1
+    assert payload['memory_mode'] == 'basic'
+    assert payload['phase_timeout_seconds'] == {}
 
 
 def test_cli_main_http_error_returns_non_zero(monkeypatch, capsys):

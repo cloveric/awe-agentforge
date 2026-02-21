@@ -9,11 +9,15 @@ def inject_prompt_extras(
     base: str,
     environment_context: str | None,
     strategy_hint: str | None,
+    memory_context: str | None = None,
 ) -> str:
     text = str(base or '')
     env = str(environment_context or '').strip()
     if env:
         text = f'{text}\n{env}'
+    memory = str(memory_context or '').strip()
+    if memory:
+        text = f'{text}\n{memory}'
     hint = str(strategy_hint or '').strip()
     if hint:
         text = f'{text}\nStrategy shift hint: {hint}'

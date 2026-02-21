@@ -150,6 +150,64 @@ def test_workflow_passes_on_first_round(tmp_path: Path):
     assert any('Execution context:' in prompt for prompt in runner.prompts)
 
 
+def test_workflow_applies_phase_timeouts_and_memory_context_per_stage(tmp_path: Path):
+    runner = FakeRunner([
+        _ok_result(),  # debate reviewer
+        _ok_result(),  # discussion
+        _ok_result(),  # implementation
+        _ok_result(),  # final review
+    ])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(
+        runner=runner,
+        command_executor=executor,
+        participant_timeout_seconds=3600,
+        command_timeout_seconds=300,
+    )
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-timeouts-memory',
+            title='Timeout and memory',
+            description='verify phase controls',
+            author=parse_participant_id('codex#author-A'),
+            reviewers=[parse_participant_id('claude#review-B')],
+            evolution_level=2,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+            debate_mode=True,
+            memory_mode='strict',
+            memory_context={
+                'proposal': 'MEMORY-PROPOSAL',
+                'discussion': 'MEMORY-DISCUSSION',
+                'implementation': 'MEMORY-IMPLEMENTATION',
+                'review': 'MEMORY-REVIEW',
+            },
+            phase_timeout_seconds={
+                'proposal': 555,
+                'discussion': 111,
+                'implementation': 222,
+                'review': 333,
+                'command': 444,
+            },
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    assert runner.timeouts[:4] == [333, 111, 222, 333]
+    assert executor.timeouts == [444, 444]
+    assert len(runner.prompts) >= 4
+    assert 'MEMORY-PROPOSAL' in runner.prompts[0]
+    assert 'MEMORY-DISCUSSION' in runner.prompts[1]
+    assert 'MEMORY-IMPLEMENTATION' in runner.prompts[2]
+    assert 'MEMORY-REVIEW' in runner.prompts[3]
+
+
 def test_workflow_blocks_when_author_discussion_runtime_fails(tmp_path: Path):
     runner = FakeRunner([
         _error_result('command_not_found provider=codex command=codex exec'),

@@ -35,6 +35,37 @@ def test_normalize_repair_mode_and_boolean_flags():
     assert task_options.normalize_bool_flag('true', default=False) is True
 
 
+def test_normalize_memory_mode_and_phase_timeout_seconds():
+    assert task_options.normalize_memory_mode(None) == 'basic'
+    assert task_options.normalize_memory_mode('0') == 'off'
+    assert task_options.normalize_memory_mode('strict') == 'strict'
+    assert task_options.normalize_memory_mode('invalid') == 'basic'
+    with pytest.raises(ValueError):
+        task_options.normalize_memory_mode('invalid', strict=True)
+
+    parsed = task_options.normalize_phase_timeout_seconds(
+        {
+            'proposal': 120,
+            'impl': 180,
+            'verification': 90,
+        }
+    )
+    assert parsed['proposal'] == 120
+    assert parsed['implementation'] == 180
+    assert parsed['command'] == 90
+
+    # clamp to minimum
+    clamped = task_options.normalize_phase_timeout_seconds({'review': 1})
+    assert clamped['review'] == 10
+
+    with pytest.raises(ValueError):
+        task_options.normalize_phase_timeout_seconds({'unknown': 10})
+    with pytest.raises(ValueError):
+        task_options.normalize_phase_timeout_seconds({'proposal': 'bad'})
+
+    assert task_options.normalize_phase_timeout_seconds({'unknown': 10}, strict=False) == {}
+
+
 def test_normalize_provider_models_and_params():
     out = task_options.normalize_provider_models({'Codex': 'gpt-5.3-codex', 'claude': 'claude-opus-4-6'})
     assert out == {'codex': 'gpt-5.3-codex', 'claude': 'claude-opus-4-6'}

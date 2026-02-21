@@ -1,5 +1,29 @@
 # Session Handoff (2026-02-12)
 
+## Update (2026-02-21, memory/runtime controls integrated closeout)
+
+1. Landed durable memory layer:
+   - `src/awe_agentcheck/service_layers/memory.py`
+   - storage path: `.agents/memory/entries.json`
+   - supports query/rank, stage-context build, preference/outcome persistence, pin/clear.
+2. Landed orchestration/runtime integration:
+   - `RunConfig` + task metadata now carry `memory_mode` and `phase_timeout_seconds`.
+   - workflow applies per-phase timeout budgets (`proposal/discussion/implementation/review/command`).
+   - prompt extras now support stage memory context injection.
+   - new events: `memory_hit`, `memory_persisted`.
+3. Landed API + CLI + Web surfaces:
+   - API: `/api/memory`, `/api/memory/query`, `/api/memory/pin`, `/api/memory/clear`.
+   - CLI: `run --memory-mode ... --phase-timeout phase=seconds`.
+   - Web Create Task: Memory Mode + Phase Timeouts controls; task snapshot now displays both.
+4. Policy templates expanded with runtime defaults:
+   - each template now includes `memory_mode` and `phase_timeout_seconds` defaults.
+5. Verification completed:
+   - `py -m ruff check .`
+   - `py -m mypy src`
+   - `py -m bandit -q -r src -lll`
+   - `py -m pytest -q`
+   - `py -m pytest --cov=src --cov-fail-under=85 -q` (89.78%)
+
 ## Update (2026-02-21, full completion closeout for remaining 1-15 items)
 
 1. Remaining staged items are now fully closed:

@@ -35,6 +35,10 @@ from awe_agentcheck.workflow_runtime import (
     resolve_model_for_participant as runtime_resolve_model_for_participant,
     resolve_model_params_for_participant as runtime_resolve_model_params_for_participant,
 )
+from awe_agentcheck.task_options import (
+    normalize_memory_mode as normalize_memory_mode_task,
+    normalize_phase_timeout_seconds as normalize_phase_timeout_seconds_task,
+)
 from awe_agentcheck.workflow_text import clip_text, text_signature
 try:
     from langgraph.graph import END, StateGraph
@@ -170,6 +174,9 @@ class RunConfig:
     claude_team_agents_overrides: dict[str, bool] | None = None
     codex_multi_agents_overrides: dict[str, bool] | None = None
     repair_mode: str = 'balanced'
+    memory_mode: str = 'basic'
+    memory_context: dict[str, str] | None = None
+    phase_timeout_seconds: dict[str, int] | None = None
     plain_mode: bool = True
     stream_mode: bool = False
     debate_mode: bool = False
@@ -282,7 +289,32 @@ class WorkflowEngine:
         strategy_hint: str | None = str(initial_strategy_hint or '').strip() or None
         stream_mode = bool(config.stream_mode)
         debate_mode = bool(config.debate_mode) and bool(config.reviewers)
-        review_timeout_seconds = self._review_timeout_seconds(self.participant_timeout_seconds)
+        memory_mode = normalize_memory_mode_task(config.memory_mode, strict=False)
+        phase_timeouts = self._resolve_phase_timeout_seconds(config.phase_timeout_seconds)
+        discussion_timeout_seconds = int(phase_timeouts.get('discussion', self.participant_timeout_seconds))
+        implementation_timeout_seconds = int(phase_timeouts.get('implementation', self.participant_timeout_seconds))
+        review_timeout_seconds = int(phase_timeouts.get('review', self._review_timeout_seconds(self.participant_timeout_seconds)))
+        command_timeout_seconds = int(phase_timeouts.get('command', self.command_timeout_seconds))
+        proposal_memory_context = self._memory_context_for_stage(
+            config=config,
+            memory_mode=memory_mode,
+            stage='proposal',
+        )
+        discussion_memory_context = self._memory_context_for_stage(
+            config=config,
+            memory_mode=memory_mode,
+            stage='discussion',
+        )
+        implementation_memory_context = self._memory_context_for_stage(
+            config=config,
+            memory_mode=memory_mode,
+            stage='implementation',
+        )
+        review_memory_context = self._memory_context_for_stage(
+            config=config,
+            memory_mode=memory_mode,
+            stage='review',
+        )
         deadline_mode = deadline is not None
         round_no = max(0, int(round_offset))
         while True:
@@ -302,6 +334,7 @@ class WorkflowEngine:
                 previous_gate_reason,
                 environment_context=environment_context,
                 strategy_hint=strategy_hint,
+                memory_context=proposal_memory_context,
             )
             if debate_mode:
                 debate_review_total = 0
@@ -335,6 +368,7 @@ class WorkflowEngine:
                             reviewer.participant_id,
                             environment_context=environment_context,
                             strategy_hint=strategy_hint,
+                            memory_context=proposal_memory_context,
                         )
                         runtime_profile = self._participant_runtime_profile(
                             participant=reviewer,
@@ -462,7 +496,7 @@ class WorkflowEngine:
                         'round': round_no,
                         'participant': config.author.participant_id,
                         'provider': config.author.provider,
-                        'timeout_seconds': self.participant_timeout_seconds,
+                        'timeout_seconds': discussion_timeout_seconds,
                     }
                 )
                 discussion_prompt = (
@@ -472,6 +506,7 @@ class WorkflowEngine:
                         implementation_context,
                         environment_context=environment_context,
                         strategy_hint=strategy_hint,
+                        memory_context=discussion_memory_context,
                     )
                     if debate_mode
                     else self._discussion_prompt(
@@ -480,6 +515,7 @@ class WorkflowEngine:
                         previous_gate_reason,
                         environment_context=environment_context,
                         strategy_hint=strategy_hint,
+                        memory_context=discussion_memory_context,
                     )
                 )
                 discussion_profile = self._participant_runtime_profile(
@@ -510,7 +546,7 @@ class WorkflowEngine:
                     participant=config.author,
                     prompt=discussion_prompt,
                     cwd=config.cwd,
-                    timeout_seconds=self.participant_timeout_seconds,
+                    timeout_seconds=discussion_timeout_seconds,
                     model=discussion_profile['model'],
                     model_params=discussion_profile['model_params'],
                     claude_team_agents=bool(discussion_profile['claude_team_agents']),
@@ -563,7 +599,7 @@ class WorkflowEngine:
                         'round': round_no,
                         'participant': config.author.participant_id,
                         'provider': config.author.provider,
-                        'timeout_seconds': self.participant_timeout_seconds,
+                        'timeout_seconds': implementation_timeout_seconds,
                     }
                 )
                 implementation_prompt = self._implementation_prompt(
@@ -572,6 +608,7 @@ class WorkflowEngine:
                     implementation_context,
                     environment_context=environment_context,
                     strategy_hint=strategy_hint,
+                    memory_context=implementation_memory_context,
                 )
                 implementation_profile = self._participant_runtime_profile(
                     participant=config.author,
@@ -601,7 +638,7 @@ class WorkflowEngine:
                     participant=config.author,
                     prompt=implementation_prompt,
                     cwd=config.cwd,
-                    timeout_seconds=self.participant_timeout_seconds,
+                    timeout_seconds=implementation_timeout_seconds,
                     model=implementation_profile['model'],
                     model_params=implementation_profile['model_params'],
                     claude_team_agents=bool(implementation_profile['claude_team_agents']),
@@ -663,6 +700,7 @@ class WorkflowEngine:
                             implementation.output,
                             environment_context=environment_context,
                             strategy_hint=strategy_hint,
+                            memory_context=review_memory_context,
                         )
                         review_profile = self._participant_runtime_profile(
                             participant=reviewer,
@@ -784,18 +822,18 @@ class WorkflowEngine:
                         'round': round_no,
                         'test_command': config.test_command,
                         'lint_command': config.lint_command,
-                        'timeout_seconds': self.command_timeout_seconds,
+                        'timeout_seconds': command_timeout_seconds,
                     }
                 )
                 test_result = self.command_executor.run(
                     config.test_command,
                     cwd=config.cwd,
-                    timeout_seconds=self.command_timeout_seconds,
+                    timeout_seconds=command_timeout_seconds,
                 )
                 lint_result = self.command_executor.run(
                     config.lint_command,
                     cwd=config.cwd,
-                    timeout_seconds=self.command_timeout_seconds,
+                    timeout_seconds=command_timeout_seconds,
                 )
             emit(
                 {
@@ -1283,6 +1321,43 @@ class WorkflowEngine:
             'strategy_shift_count': 0,
         }
 
+    def _resolve_phase_timeout_seconds(self, value: dict[str, int] | None) -> dict[str, int]:
+        configured = normalize_phase_timeout_seconds_task(value, strict=False)
+        discussion_default = max(10, int(self.participant_timeout_seconds))
+        defaults = {
+            'proposal': discussion_default,
+            'discussion': discussion_default,
+            'implementation': discussion_default,
+            'review': max(10, int(self._review_timeout_seconds(discussion_default))),
+            'command': max(10, int(self.command_timeout_seconds)),
+        }
+        out: dict[str, int] = {}
+        for phase, fallback in defaults.items():
+            try:
+                parsed = int(configured.get(phase, fallback))
+            except (TypeError, ValueError):
+                parsed = int(fallback)
+            out[phase] = max(10, parsed)
+        return out
+
+    @staticmethod
+    def _memory_context_for_stage(
+        *,
+        config: RunConfig,
+        memory_mode: str,
+        stage: str,
+    ) -> str | None:
+        mode = normalize_memory_mode_task(memory_mode, strict=False)
+        if mode == 'off':
+            return None
+        mapping = config.memory_context if isinstance(config.memory_context, dict) else {}
+        stage_key = str(stage or '').strip().lower()
+        direct = str(mapping.get(stage_key) or '').strip()
+        if direct:
+            return direct
+        fallback = str(mapping.get('all') or '').strip()
+        return fallback or None
+
     def _participant_runtime_profile(
         self,
         *,
@@ -1711,6 +1786,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         level = max(0, min(3, int(config.evolution_level)))
         repair_mode = runtime_normalize_repair_mode(config.repair_mode)
@@ -1760,6 +1836,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -1770,6 +1847,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         level = max(0, min(3, int(config.evolution_level)))
         repair_mode = runtime_normalize_repair_mode(config.repair_mode)
@@ -1793,6 +1871,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -1803,6 +1882,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         clipped = clip_text(reviewer_context, max_chars=3200)
         level = max(0, min(3, int(config.evolution_level)))
@@ -1825,6 +1905,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -1835,6 +1916,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         clipped = clip_text(discussion_output, max_chars=3000)
         level = max(0, min(3, int(config.evolution_level)))
@@ -1873,6 +1955,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -1884,6 +1967,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         clipped = clip_text(discussion_context, max_chars=3200)
         language_instruction = WorkflowEngine._conversation_language_instruction(config.conversation_language)
@@ -1910,6 +1994,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -1922,6 +2007,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         clipped_context = clip_text(discussion_context, max_chars=2600)
         clipped_feedback = clip_text(reviewer_feedback, max_chars=1400)
@@ -1941,6 +2027,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod
@@ -2037,6 +2124,7 @@ class WorkflowEngine:
         *,
         environment_context: str | None = None,
         strategy_hint: str | None = None,
+        memory_context: str | None = None,
     ) -> str:
         clipped = clip_text(implementation_output, max_chars=3000)
         level = max(0, min(3, int(config.evolution_level)))
@@ -2082,6 +2170,7 @@ class WorkflowEngine:
             base=base,
             environment_context=environment_context,
             strategy_hint=strategy_hint,
+            memory_context=memory_context,
         )
 
     @staticmethod

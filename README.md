@@ -51,7 +51,7 @@
 
 | Date | Daily Summary |
 |---|---|
-| 2026-02-21 | Service decomposition (proposal_helpers / risk_assessment / git_operations / event_analysis), dashboard avatar runtime fix, runtime normalization unification, Docker runtime dependency correction, and full verification pass (ruff/mypy/pytest/bandit, coverage 90.28%). |
+| 2026-02-21 | Landed integrated memory system + runtime controls: durable memory store, stage recall hooks, per-phase timeout budgets, API/CLI/Web controls (`memory_mode`, `phase_timeout_seconds`), and full verification pass (ruff/mypy/pytest/bandit/pytest-cov). |
 | 2026-02-20 | Adapter strategy/factory split, service-layer package split, prompt/template + LangGraph round-flow upgrades, dashboard modularization, and CI/governance/security baseline hardening. |
 | 2026-02-19 | Reviewer-first/manual-consensus stabilization, preflight/precompletion/resume guardrails, benchmark + analytics loops, and project history/PR summary integrations. |
 
@@ -198,6 +198,15 @@ queued → running → waiting_manual → (approve) → queued → running → p
 
 > [!TIP]
 > **Recommended defaults for safety**: `sandbox_mode=1` + `self_loop_mode=0` + `auto_merge=1` — sandbox execution with human sign-off and automatic artifact fusion on pass.
+
+### Runtime Controls (New)
+
+| Control | Values | Default | What It Does |
+|:---|:---:|:---:|:---|
+| `memory_mode` | `off` / `basic` / `strict` | **`basic`** | Controls memory recall/persistence aggressiveness for proposal/discussion/implementation/review prompts |
+| `phase_timeout_seconds` | JSON map | **`{}`** | Optional per-phase timeout override for `proposal`, `discussion`, `implementation`, `review`, `command` |
+
+CLI mirrors these controls via `--memory-mode` and repeatable `--phase-timeout phase=seconds`.
 
 <br/>
 
