@@ -12,9 +12,8 @@ COPY web /app/web
 COPY scripts /app/scripts
 COPY .env.example /app/.env.example
 
-RUN pip install --upgrade pip && pip install -e .[dev]
+RUN pip install --upgrade pip && pip install -e .
 
 EXPOSE 8000
 
 CMD ["python", "-m", "uvicorn", "awe_agentcheck.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

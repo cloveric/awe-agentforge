@@ -1278,7 +1278,7 @@ import {
         selectedRole: state.selectedRole,
         showStreamDetails: state.showStreamDetails,
         previousSignature: state.lastDialogueSignature,
-        avatarHtml,
+        avatarHtml: avatarRenderer.avatarHtml,
         parseEventDate,
       });
     }

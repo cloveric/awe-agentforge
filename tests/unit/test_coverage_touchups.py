@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import awe_agentcheck.workflow as workflow
 from awe_agentcheck.participants import parse_participant_id
 from awe_agentcheck.workflow import RunConfig, RunResult, WorkflowEngine
 from awe_agentcheck.workflow_architecture import run_architecture_audit

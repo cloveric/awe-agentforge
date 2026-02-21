@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import types
 
-import pytest
 
 import awe_agentcheck.workflow as workflow
 from awe_agentcheck.participants import parse_participant_id

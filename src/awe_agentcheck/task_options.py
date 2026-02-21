@@ -83,93 +83,121 @@ def normalize_bool_flag(value, *, default: bool) -> bool:
     return bool(value)
 
 
-def normalize_provider_models(value: dict[str, str] | None) -> dict[str, str]:
+def _normalize_provider_mapping(
+    value: dict[str, str] | None,
+    *,
+    field: str,
+    strict: bool,
+) -> dict[str, str]:
     if not value:
         return {}
     if not isinstance(value, dict):
-        raise ValueError('provider_models must be an object')
-
-    out: dict[str, str] = {}
-    allowed = supported_providers()
-    for raw_provider, raw_model in value.items():
-        provider = str(raw_provider or '').strip().lower()
-        model = str(raw_model or '').strip()
-        if provider not in allowed:
-            raise ValueError(f'invalid provider_models key: {provider}')
-        if not model:
-            raise ValueError(f'provider_models[{provider}] cannot be empty')
-        out[provider] = model
-    return out
-
-
-def normalize_provider_model_params(value: dict[str, str] | None) -> dict[str, str]:
-    if not value:
+        if strict:
+            raise ValueError(f'{field} must be an object')
         return {}
-    if not isinstance(value, dict):
-        raise ValueError('provider_model_params must be an object')
 
     out: dict[str, str] = {}
     allowed = supported_providers()
-    for raw_provider, raw_params in value.items():
+    for raw_provider, raw_value in value.items():
         provider = str(raw_provider or '').strip().lower()
-        params = str(raw_params or '').strip()
+        item = str(raw_value or '').strip()
+        if not provider:
+            if strict:
+                raise ValueError(f'{field} key cannot be empty')
+            continue
         if provider not in allowed:
-            raise ValueError(f'invalid provider_model_params key: {provider}')
-        if not params:
-            raise ValueError(f'provider_model_params[{provider}] cannot be empty')
-        out[provider] = params
+            if strict:
+                raise ValueError(f'invalid {field} key: {provider}')
+            continue
+        if not item:
+            if strict:
+                raise ValueError(f'{field}[{provider}] cannot be empty')
+            continue
+        out[provider] = item
     return out
+
+
+def normalize_provider_models(value: dict[str, str] | None, *, strict: bool = True) -> dict[str, str]:
+    return _normalize_provider_mapping(value, field='provider_models', strict=strict)
+
+
+def normalize_provider_model_params(value: dict[str, str] | None, *, strict: bool = True) -> dict[str, str]:
+    return _normalize_provider_mapping(value, field='provider_model_params', strict=strict)
 
 
 def normalize_participant_models(
     value: dict[str, str] | None,
     *,
-    known_participants: set[str],
+    known_participants: set[str] | None = None,
+    strict: bool = True,
+    include_lower_alias: bool = False,
 ) -> dict[str, str]:
     if not value:
         return {}
     if not isinstance(value, dict):
-        raise ValueError('participant_models must be an object')
+        if strict:
+            raise ValueError('participant_models must be an object')
+        return {}
 
-    known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+    known = {str(v or '').strip() for v in (known_participants or set()) if str(v or '').strip()}
     known_lower = {v.lower() for v in known}
     out: dict[str, str] = {}
     for raw_participant, raw_model in value.items():
         participant = str(raw_participant or '').strip()
         model = str(raw_model or '').strip()
         if not participant:
-            raise ValueError('participant_models key cannot be empty')
-        if participant.lower() not in known_lower:
-            raise ValueError(f'participant_models key is not in task participants: {participant}')
+            if strict:
+                raise ValueError('participant_models key cannot be empty')
+            continue
+        if known_lower and participant.lower() not in known_lower:
+            if strict:
+                raise ValueError(f'participant_models key is not in task participants: {participant}')
+            continue
         if not model:
-            raise ValueError(f'participant_models[{participant}] cannot be empty')
+            if strict:
+                raise ValueError(f'participant_models[{participant}] cannot be empty')
+            continue
         out[participant] = model
+        if include_lower_alias:
+            out.setdefault(participant.lower(), model)
     return out
 
 
 def normalize_participant_model_params(
     value: dict[str, str] | None,
     *,
-    known_participants: set[str],
+    known_participants: set[str] | None = None,
+    strict: bool = True,
+    include_lower_alias: bool = False,
 ) -> dict[str, str]:
     if not value:
         return {}
     if not isinstance(value, dict):
-        raise ValueError('participant_model_params must be an object')
+        if strict:
+            raise ValueError('participant_model_params must be an object')
+        return {}
 
-    known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+    known = {str(v or '').strip() for v in (known_participants or set()) if str(v or '').strip()}
     known_lower = {v.lower() for v in known}
     out: dict[str, str] = {}
     for raw_participant, raw_params in value.items():
         participant = str(raw_participant or '').strip()
         params = str(raw_params or '').strip()
         if not participant:
-            raise ValueError('participant_model_params key cannot be empty')
-        if participant.lower() not in known_lower:
-            raise ValueError(f'participant_model_params key is not in task participants: {participant}')
+            if strict:
+                raise ValueError('participant_model_params key cannot be empty')
+            continue
+        if known_lower and participant.lower() not in known_lower:
+            if strict:
+                raise ValueError(f'participant_model_params key is not in task participants: {participant}')
+            continue
         if not params:
-            raise ValueError(f'participant_model_params[{participant}] cannot be empty')
+            if strict:
+                raise ValueError(f'participant_model_params[{participant}] cannot be empty')
+            continue
         out[participant] = params
+        if include_lower_alias:
+            out.setdefault(participant.lower(), params)
     return out
 
 
@@ -187,34 +215,57 @@ def coerce_bool_override_value(value, *, field: str) -> bool:
 def normalize_participant_agent_overrides(
     value: dict[str, bool] | None,
     *,
-    known_participants: set[str],
-    required_provider: str,
+    known_participants: set[str] | None = None,
+    required_provider: str | None = None,
     field: str,
+    strict: bool = True,
+    include_lower_alias: bool = False,
 ) -> dict[str, bool]:
     if not value:
         return {}
     if not isinstance(value, dict):
-        raise ValueError(f'{field} must be an object')
+        if strict:
+            raise ValueError(f'{field} must be an object')
+        return {}
 
-    known = {str(v or '').strip() for v in known_participants if str(v or '').strip()}
+    known = {str(v or '').strip() for v in (known_participants or set()) if str(v or '').strip()}
     known_map = {v.lower(): v for v in known}
     provider_required = str(required_provider or '').strip().lower()
     out: dict[str, bool] = {}
     for raw_participant, raw_enabled in value.items():
         participant = str(raw_participant or '').strip()
         if not participant:
-            raise ValueError(f'{field} key cannot be empty')
-        canonical = known_map.get(participant.lower())
-        if not canonical:
-            raise ValueError(f'{field} key is not in task participants: {participant}')
-        parsed = parse_participant_id(canonical)
-        if parsed.provider != provider_required:
-            raise ValueError(f'{field}[{canonical}] must target provider={provider_required}')
-        enabled = coerce_bool_override_value(
-            raw_enabled,
-            field=f'{field}[{canonical}]',
-        )
+            if strict:
+                raise ValueError(f'{field} key cannot be empty')
+            continue
+        canonical = known_map.get(participant.lower()) if known_map else participant
+        if known_map and not canonical:
+            if strict:
+                raise ValueError(f'{field} key is not in task participants: {participant}')
+            continue
+        canonical = canonical or participant
+        if strict and provider_required:
+            parsed = parse_participant_id(canonical)
+            if parsed.provider != provider_required:
+                raise ValueError(f'{field}[{canonical}] must target provider={provider_required}')
+            enabled = coerce_bool_override_value(
+                raw_enabled,
+                field=f'{field}[{canonical}]',
+            )
+        elif strict:
+            enabled = coerce_bool_override_value(
+                raw_enabled,
+                field=f'{field}[{canonical}]',
+            )
+        else:
+            if isinstance(raw_enabled, bool):
+                enabled = raw_enabled
+            else:
+                text = str(raw_enabled or '').strip().lower()
+                enabled = text in {'1', 'true', 'yes', 'on'}
         out[canonical] = enabled
+        if include_lower_alias:
+            out[canonical.lower()] = enabled
     return out
 
 

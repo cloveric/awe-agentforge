@@ -49,6 +49,18 @@ def test_normalize_provider_models_and_params():
     with pytest.raises(ValueError):
         task_options.normalize_provider_model_params({'codex': ''})
 
+    lenient_models = task_options.normalize_provider_models(
+        {'Codex': 'gpt-5.3-codex', 'unknown': 'x', '': 'x'},
+        strict=False,
+    )
+    assert lenient_models == {'codex': 'gpt-5.3-codex'}
+
+    lenient_params = task_options.normalize_provider_model_params(
+        {'claude': '--temperature 0.2', 'unknown': 'x', 'codex': ''},
+        strict=False,
+    )
+    assert lenient_params == {'claude': '--temperature 0.2'}
+
 
 def test_normalize_participant_models_and_params():
     known = {'codex#author-A', 'claude#review-B'}
@@ -71,6 +83,21 @@ def test_normalize_participant_models_and_params():
         task_options.normalize_participant_models({'gemini#review-C': 'x'}, known_participants=known)
     with pytest.raises(ValueError):
         task_options.normalize_participant_model_params({'claude#review-B': ''}, known_participants=known)
+
+    lenient_models = task_options.normalize_participant_models(
+        {'Codex#Author-A': 'gpt-5.3-codex', '': 'x', 'x': ''},
+        strict=False,
+        include_lower_alias=True,
+    )
+    assert lenient_models['Codex#Author-A'] == 'gpt-5.3-codex'
+    assert lenient_models['codex#author-a'] == 'gpt-5.3-codex'
+
+    lenient_params = task_options.normalize_participant_model_params(
+        {'Codex#Author-A': '-c model_reasoning_effort=xhigh', '': '-c x'},
+        strict=False,
+        include_lower_alias=True,
+    )
+    assert lenient_params['codex#author-a'].endswith('xhigh')
 
 
 def test_participant_agent_overrides_and_resolution():
@@ -99,6 +126,16 @@ def test_participant_agent_overrides_and_resolution():
         )
     with pytest.raises(ValueError):
         task_options.coerce_bool_override_value('maybe', field='x')
+
+    lenient = task_options.normalize_participant_agent_overrides(
+        {'Codex#Author-A': 'on', 'claude#review-B': 'off', '': True},
+        strict=False,
+        field='participant_agent_overrides',
+        include_lower_alias=True,
+    )
+    assert lenient['Codex#Author-A'] is True
+    assert lenient['claude#review-B'] is False
+    assert lenient['codex#author-a'] is True
 
     runtime = task_options.normalize_participant_agent_overrides_runtime({'Codex#Author-A': 1, '': False})
     assert runtime['Codex#Author-A'] is True

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from awe_agentcheck.workflow_architecture import (
     architecture_audit_mode,
