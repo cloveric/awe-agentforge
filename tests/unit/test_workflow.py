@@ -1159,6 +1159,30 @@ def test_workflow_prompts_include_plain_mode_guidance_by_default(tmp_path: Path)
     assert 'small' in prompt.lower() or 'beginner' in prompt.lower()
 
 
+def test_discussion_after_reviewer_prompt_keeps_reviewer_constraints_and_repair_policy_level_2(tmp_path: Path):
+    cfg = RunConfig(
+        task_id='t-reviewer-first-level2',
+        title='Reviewer-first follow-up',
+        description='keep reviewer constraints visible',
+        author=parse_participant_id('codex#author-A'),
+        reviewers=[parse_participant_id('codex#review-B')],
+        evolution_level=2,
+        evolve_until=None,
+        cwd=tmp_path,
+        max_rounds=1,
+        test_command='py -m pytest -q',
+        lint_command='py -m ruff check .',
+        repair_mode='balanced',
+    )
+    reviewer_context = 'security: n/a\ncorrectness: check auth flow in src/awe_agentcheck/workflow.py'
+    prompt = WorkflowEngine._discussion_after_reviewer_prompt(cfg, 1, reviewer_context)
+    assert 'Reviewer-first mode: reviewers have provided pre-implementation findings.' in prompt
+    assert 'Reviewer is primary in this phase: do not invent unrelated change themes.' in prompt
+    assert 'Repair policy: balanced fix (default).' in prompt
+    assert 'RepairMode: balanced' in prompt
+    assert reviewer_context in prompt
+
+
 def test_workflow_debate_mode_adds_reviewer_author_exchange(tmp_path: Path):
     runner = FakeRunner([
         _ok_result(),  # debate review

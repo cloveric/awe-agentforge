@@ -67,7 +67,8 @@ def test_integration_create_start_roundtrip_pass(tmp_path: Path):
     assert any(str(item.get('type')) == 'gate_passed' for item in events)
 
 
-def test_integration_architecture_audit_can_fail_gate_at_level_3(tmp_path: Path):
+def test_integration_architecture_audit_can_fail_gate_at_level_3(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv('AWE_ARCH_AUDIT_MODE', 'hard')
     workspace = tmp_path / 'repo-arch-fail'
     workspace.mkdir(parents=True, exist_ok=True)
     _seed_workspace(workspace)
