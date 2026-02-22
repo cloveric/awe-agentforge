@@ -1641,6 +1641,104 @@ def test_workflow_evolution_level_2_defaults_to_architecture_hard_fail(tmp_path:
     assert str(last.get('reason') or '') == 'architecture_threshold_exceeded'
 
 
+def test_workflow_architecture_delta_scope_ignores_baseline_debt(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv('AWE_ARCH_AUDIT_MODE', raising=False)
+    huge = tmp_path / 'oversized.py'
+    huge.write_text('\n'.join(['x = 1'] * 1305), encoding='utf-8')
+    runner = FakeRunner([
+        _ok_result(),  # discussion
+        _ok_result(),  # implementation
+        _ok_result(),  # review
+    ])
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-arch-delta-baseline',
+            title='Architecture delta baseline',
+            description='allow baseline debt when unchanged',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=2,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+            architecture_audit_scope='delta',
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'passed'
+    assert result.gate_reason == 'passed'
+    audit = [e for e in sink.events if e.get('type') == 'architecture_audit'][-1]
+    assert str(audit.get('scope') or '') == 'delta'
+    assert bool(audit.get('passed')) is True
+    assert str(audit.get('reason') or '') == 'architecture_threshold_baseline_unchanged'
+    assert int(audit.get('regression_violation_count') or 0) == 0
+
+
+def test_workflow_architecture_delta_scope_fails_on_regression(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv('AWE_ARCH_AUDIT_MODE', raising=False)
+    huge = tmp_path / 'oversized.py'
+    huge.write_text('\n'.join(['x = 1'] * 1305), encoding='utf-8')
+
+    class GrowingRunner(FakeRunner):
+        def __init__(self, target: Path):
+            super().__init__([
+                _ok_result(),  # discussion
+                _ok_result(),  # implementation
+                _ok_result(),  # review
+            ])
+            self._target = target
+
+        def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+            result = super().run(
+                participant=participant,
+                prompt=prompt,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                **kwargs,
+            )
+            if self.calls == 2:
+                self._target.write_text('\n'.join(['x = 1'] * 1600), encoding='utf-8')
+            return result
+
+    runner = GrowingRunner(huge)
+    executor = FakeCommandExecutor(tests_ok=True, lint_ok=True)
+    sink = EventSink()
+    engine = WorkflowEngine(runner=runner, command_executor=executor)
+
+    result = engine.run(
+        RunConfig(
+            task_id='t-arch-delta-regression',
+            title='Architecture delta regression',
+            description='fail when architecture debt gets worse',
+            author=parse_participant_id('claude#author-A'),
+            reviewers=[parse_participant_id('codex#review-B')],
+            evolution_level=2,
+            evolve_until=None,
+            cwd=tmp_path,
+            max_rounds=1,
+            test_command='py -m pytest -q',
+            lint_command='py -m ruff check .',
+            architecture_audit_scope='delta',
+        ),
+        on_event=sink,
+    )
+
+    assert result.status == 'failed_gate'
+    assert result.gate_reason == 'architecture_threshold_exceeded'
+    audit = [e for e in sink.events if e.get('type') == 'architecture_audit'][-1]
+    assert str(audit.get('scope') or '') == 'delta'
+    assert bool(audit.get('passed')) is False
+    assert int(audit.get('regression_violation_count') or 0) >= 1
+    assert list(audit.get('enforced_violations') or [])
+
+
 def test_workflow_architecture_thresholds_support_env_override(tmp_path: Path, monkeypatch):
     monkeypatch.setenv('AWE_ARCH_AUDIT_MODE', 'hard')
     monkeypatch.setenv('AWE_ARCH_PYTHON_FILE_LINES_MAX', '20')

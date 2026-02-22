@@ -215,6 +215,7 @@ class RunConfig:
     stream_mode: bool = False
     debate_mode: bool = False
     proposal_issue_contract: dict[str, object] | None = None
+    architecture_audit_scope: str = 'all'
 
 @dataclass(frozen=True)
 class RunResult:
@@ -353,6 +354,24 @@ class WorkflowEngine:
             stage='review',
         )
         deadline_mode = deadline is not None
+        architecture_scope = self._normalize_architecture_audit_scope(
+            getattr(config, 'architecture_audit_scope', 'all')
+        )
+        architecture_baseline_violations: list[dict[str, object]] = []
+        if architecture_scope == 'delta' and int(config.evolution_level) >= 1:
+            try:
+                baseline_audit = run_architecture_audit(
+                    cwd=Path(config.cwd),
+                    evolution_level=int(config.evolution_level),
+                )
+            except Exception:
+                baseline_audit = None
+            if baseline_audit is not None and bool(baseline_audit.enabled):
+                architecture_baseline_violations = [
+                    dict(item)
+                    for item in list(baseline_audit.violations or [])
+                    if isinstance(item, dict)
+                ]
         round_no = max(0, int(round_offset))
         while True:
             round_no += 1
@@ -1044,33 +1063,66 @@ class WorkflowEngine:
                 cwd=Path(config.cwd),
                 evolution_level=int(config.evolution_level),
             )
+            effective_architecture = architecture_audit
+            enforced_violations: list[dict[str, object]] = list(architecture_audit.violations)
+            regression_violations: list[dict[str, object]] = list(architecture_audit.violations)
+            if (
+                architecture_scope == 'delta'
+                and bool(architecture_audit.enabled)
+                and str(architecture_audit.mode or '') == 'hard'
+                and not bool(architecture_audit.passed)
+            ):
+                regression_violations = self._architecture_regression_violations(
+                    current=list(architecture_audit.violations),
+                    baseline=list(architecture_baseline_violations),
+                )
+                if regression_violations:
+                    enforced_violations = list(regression_violations)
+                    effective_architecture = replace(
+                        architecture_audit,
+                        passed=False,
+                        reason='architecture_threshold_exceeded',
+                        violations=list(regression_violations),
+                    )
+                else:
+                    enforced_violations = []
+                    effective_architecture = replace(
+                        architecture_audit,
+                        passed=True,
+                        reason='architecture_threshold_baseline_unchanged',
+                    )
             emit(
                 {
                     'type': EventType.ARCHITECTURE_AUDIT.value,
                     'round': round_no,
-                    'enabled': architecture_audit.enabled,
-                    'passed': architecture_audit.passed,
-                    'mode': architecture_audit.mode,
-                    'severity': 'error' if architecture_audit.mode == 'hard' and not architecture_audit.passed else 'warning',
-                    'reason': architecture_audit.reason,
-                    'thresholds': dict(architecture_audit.thresholds),
+                    'enabled': effective_architecture.enabled,
+                    'passed': effective_architecture.passed,
+                    'mode': effective_architecture.mode,
+                    'scope': architecture_scope,
+                    'severity': 'error' if effective_architecture.mode == 'hard' and not effective_architecture.passed else 'warning',
+                    'reason': effective_architecture.reason,
+                    'thresholds': dict(effective_architecture.thresholds),
                     'violations': list(architecture_audit.violations),
-                    'scanned_files': architecture_audit.scanned_files,
+                    'enforced_violations': list(enforced_violations),
+                    'regression_violations': list(regression_violations),
+                    'baseline_violation_count': int(len(architecture_baseline_violations)),
+                    'regression_violation_count': int(len(regression_violations)),
+                    'scanned_files': effective_architecture.scanned_files,
                 }
             )
-            if architecture_audit.enabled and architecture_audit.mode == 'hard' and not architecture_audit.passed:
-                _log.warning('architecture_audit_failed round=%d reason=%s', round_no, architecture_audit.reason)
+            if effective_architecture.enabled and effective_architecture.mode == 'hard' and not effective_architecture.passed:
+                _log.warning('architecture_audit_failed round=%d reason=%s', round_no, effective_architecture.reason)
                 emit(
                     {
                         'type': EventType.GATE_FAILED.value,
                         'round': round_no,
-                        'reason': architecture_audit.reason,
+                        'reason': effective_architecture.reason,
                         'stage': 'architecture_audit',
                     }
                 )
                 progress = self._assess_loop_progress(
                     loop_tracker=loop_tracker,
-                    gate_reason=architecture_audit.reason,
+                    gate_reason=effective_architecture.reason,
                     implementation_output=str(implementation.output or ''),
                     review_outputs=review_outputs,
                     tests_ok=bool(test_result.ok),
@@ -1087,14 +1139,14 @@ class WorkflowEngine:
                             'shift_count': int(progress.get('shift_count') or 0),
                         }
                     )
-                previous_gate_reason = architecture_audit.reason
+                previous_gate_reason = effective_architecture.reason
                 terminal_reason = str(progress.get('terminal_reason') or '').strip()
                 if terminal_reason:
                     return RunResult(status='failed_gate', rounds=round_no, gate_reason=terminal_reason)
                 if force_single_round:
-                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=architecture_audit.reason)
+                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=effective_architecture.reason)
                 if not deadline_mode and round_no >= config.max_rounds:
-                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=architecture_audit.reason)
+                    return RunResult(status='failed_gate', rounds=round_no, gate_reason=effective_architecture.reason)
                 continue
 
             gate = evaluate_medium_gate(
@@ -1724,6 +1776,92 @@ class WorkflowEngine:
             'unless task explicitly requests policy/config edits.'
         )
         return '\n'.join(lines)
+
+    @staticmethod
+    def _normalize_architecture_audit_scope(value: str | None) -> str:
+        text = str(value or '').strip().lower()
+        if text in {'all', 'delta'}:
+            return text
+        return 'all'
+
+    @staticmethod
+    def _architecture_violation_key(violation: dict[str, object]) -> tuple[str, str]:
+        kind = str(violation.get('kind') or '').strip().lower()
+        path = str(violation.get('path') or '').replace('\\', '/').strip().lower()
+        return kind, path
+
+    @staticmethod
+    def _architecture_violation_metric(violation: dict[str, object]) -> tuple[str, int]:
+        def _as_int(value: object) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        if 'responsibility_hits' in violation:
+            return 'responsibility_hits', _as_int(violation.get('responsibility_hits'))
+        if 'prompt_builder_hits' in violation:
+            return 'prompt_builder_hits', _as_int(violation.get('prompt_builder_hits'))
+        if 'runtime_raise_hits' in violation:
+            return 'runtime_raise_hits', _as_int(violation.get('runtime_raise_hits'))
+        if 'lines' in violation:
+            return 'lines', _as_int(violation.get('lines'))
+        if 'missing_shell_variants' in violation:
+            return 'missing_shell_variants', len(
+                [str(v).strip().lower() for v in list(violation.get('missing_shell_variants') or []) if str(v).strip()]
+            )
+        return 'none', 0
+
+    @classmethod
+    def _architecture_regression_violations(
+        cls,
+        *,
+        current: list[dict[str, object]],
+        baseline: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        baseline_by_key: dict[tuple[str, str], dict[str, object]] = {}
+        for item in list(baseline or []):
+            if not isinstance(item, dict):
+                continue
+            key = cls._architecture_violation_key(item)
+            existing = baseline_by_key.get(key)
+            if existing is None:
+                baseline_by_key[key] = item
+                continue
+            _, existing_metric = cls._architecture_violation_metric(existing)
+            _, new_metric = cls._architecture_violation_metric(item)
+            if new_metric > existing_metric:
+                baseline_by_key[key] = item
+
+        regressions: list[dict[str, object]] = []
+        for item in list(current or []):
+            if not isinstance(item, dict):
+                continue
+            key = cls._architecture_violation_key(item)
+            baseline_item = baseline_by_key.get(key)
+            if baseline_item is None:
+                regressions.append(item)
+                continue
+            kind = key[0]
+            if kind == 'script_cross_platform_gap':
+                current_missing = {
+                    str(v).strip().lower()
+                    for v in list(item.get('missing_shell_variants') or [])
+                    if str(v).strip()
+                }
+                baseline_missing = {
+                    str(v).strip().lower()
+                    for v in list(baseline_item.get('missing_shell_variants') or [])
+                    if str(v).strip()
+                }
+                if not current_missing.issubset(baseline_missing):
+                    regressions.append(item)
+                continue
+            _, current_metric = cls._architecture_violation_metric(item)
+            _, baseline_metric = cls._architecture_violation_metric(baseline_item)
+            if current_metric > baseline_metric:
+                regressions.append(item)
+        return regressions
 
     def _assess_loop_progress(
         self,

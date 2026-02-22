@@ -351,7 +351,18 @@ class ProposalRunnerRetryThenPass:
         self.calls.append(pid)
         if pid.startswith('codex#author'):
             return AdapterResult(
-                output='Author revised proposal after reviewer blocker feedback.',
+                output=json.dumps(
+                    {
+                        'issue_responses': [
+                            {
+                                'issue_id': 'ISSUE-001',
+                                'status': 'accept',
+                            }
+                        ],
+                        'plan': 'Author revised proposal after reviewer blocker feedback.',
+                    },
+                    ensure_ascii=True,
+                ),
                 verdict='unknown',
                 next_action=None,
                 returncode=0,
@@ -584,6 +595,143 @@ class ProposalRunnerReviewContractViolation:
 class ProposalReviewContractViolationWorkflowEngine:
     def __init__(self):
         self.runner = ProposalRunnerReviewContractViolation()
+        self.participant_timeout_seconds = 60
+
+
+class ProposalRunnerCarryForwardRequiredIssues:
+    def __init__(self):
+        self.calls: list[str] = []
+        self.review_calls = 0
+        self.author_calls = 0
+
+    def run(self, *, participant, prompt, cwd, timeout_seconds=900, **kwargs):
+        pid = str(participant.participant_id)
+        self.calls.append(pid)
+        if pid.startswith('codex#author'):
+            self.author_calls += 1
+            if self.author_calls < 3:
+                return AdapterResult(
+                    output=json.dumps(
+                        {
+                            'issue_responses': [
+                                {
+                                    'issue_id': 'ISSUE-001',
+                                    'status': 'accept',
+                                }
+                            ],
+                            'plan': 'address only first issue for now',
+                        },
+                        ensure_ascii=True,
+                    ),
+                    verdict='unknown',
+                    next_action=None,
+                    returncode=0,
+                    duration_seconds=0.1,
+                )
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'issue_responses': [
+                            {
+                                'issue_id': 'ISSUE-001',
+                                'status': 'accept',
+                            },
+                            {
+                                'issue_id': 'ISSUE-002',
+                                'status': 'accept',
+                            },
+                        ],
+                        'plan': 'address both required issues',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='unknown',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: precheck.' in str(prompt):
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'verdict': 'NO_BLOCKER',
+                        'next_action': 'pass',
+                        'issue': 'scope ready',
+                        'impact': 'none',
+                        'next': 'continue',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='no_blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        if 'Stage: proposal review.' in str(prompt):
+            self.review_calls += 1
+            if self.review_calls == 1:
+                return AdapterResult(
+                    output=json.dumps(
+                        {
+                            'verdict': 'UNKNOWN',
+                            'next_action': 'retry',
+                            'issue': 'need explicit closure for both issues',
+                            'impact': 'cannot confirm safety',
+                            'next': 'respond to all issue_ids',
+                            'issues': [
+                                {
+                                    'issue_id': 'ISSUE-001',
+                                    'summary': 'close auth guard checks',
+                                    'severity': 'unknown',
+                                    'required_action': 'prove auth guard behavior',
+                                    'evidence_paths': ['src/awe_agentcheck/api.py'],
+                                    'required_response': True,
+                                },
+                                {
+                                    'issue_id': 'ISSUE-002',
+                                    'summary': 'close db lock retry checks',
+                                    'severity': 'unknown',
+                                    'required_action': 'prove db lock retry coverage',
+                                    'evidence_paths': ['src/awe_agentcheck/db.py'],
+                                    'required_response': True,
+                                },
+                            ],
+                        },
+                        ensure_ascii=True,
+                    ),
+                    verdict='unknown',
+                    next_action=None,
+                    returncode=0,
+                    duration_seconds=0.1,
+                )
+            return AdapterResult(
+                output=json.dumps(
+                    {
+                        'verdict': 'NO_BLOCKER',
+                        'next_action': 'pass',
+                        'issue': 'issues addressed',
+                        'impact': 'safe',
+                        'next': 'continue',
+                    },
+                    ensure_ascii=True,
+                ),
+                verdict='no_blocker',
+                next_action=None,
+                returncode=0,
+                duration_seconds=0.1,
+            )
+        return AdapterResult(
+            output='VERDICT: NO_BLOCKER\nPrecheck scope established.',
+            verdict='no_blocker',
+            next_action=None,
+            returncode=0,
+            duration_seconds=0.1,
+        )
+
+
+class ProposalCarryForwardRequiredIssuesWorkflowEngine:
+    def __init__(self):
+        self.runner = ProposalRunnerCarryForwardRequiredIssues()
         self.participant_timeout_seconds = 60
 
 
@@ -2312,12 +2460,13 @@ def test_service_manual_mode_requires_actionable_proposal_review_before_executio
     )
 
     started = svc.start_task(created.task_id)
-    assert started.status.value == 'failed_gate'
+    assert started.status.value == 'waiting_manual'
     assert started.last_gate_reason == 'proposal_review_unavailable'
     assert engine.runner.calls[0] == 'claude#review-B'
 
     events = svc.list_events(created.task_id)
     assert any(e['type'] == 'proposal_review_unavailable' for e in events)
+    assert any(e['type'] == 'proposal_consensus_stalled' for e in events)
     assert not any(e['type'] == 'task_started' for e in events)
 
 
@@ -2352,6 +2501,39 @@ def test_service_manual_mode_keeps_retrying_same_round_until_proposal_consensus(
     assert int(reached[-1].get('payload', {}).get('attempt', 0)) >= 2
 
 
+def test_service_proposal_discussion_enforces_issue_ids_from_previous_reviewer_pass(tmp_path: Path):
+    engine = ProposalCarryForwardRequiredIssuesWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=0,
+            title='Carry forward reviewer issue IDs',
+            description='author must respond to all prior proposal_review issues',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'author_confirmation_required'
+
+    events = svc.list_events(created.task_id)
+    incomplete_events = [e for e in events if e['type'] == 'proposal_discussion_incomplete']
+    assert incomplete_events
+    missing_issue_ids = list(incomplete_events[-1].get('payload', {}).get('missing_issue_ids') or [])
+    assert 'ISSUE-002' in missing_issue_ids
+    assert any(e['type'] == 'proposal_consensus_reached' for e in events)
+    assert int(engine.runner.review_calls) == 2
+    assert int(engine.runner.author_calls) >= 3
+
+
 def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_round(tmp_path: Path):
     engine = ProposalAlwaysBlockerWorkflowEngine()
     svc = OrchestratorService(
@@ -2382,6 +2564,44 @@ def test_service_manual_mode_marks_pending_when_proposal_consensus_stalls_in_rou
     assert str(payload.get('stall_kind')) == 'in_round'
     assert int(payload.get('attempt') or 0) >= 3
     assert int(payload.get('retry_limit') or 0) == 3
+    assert any(e['type'] == 'author_confirmation_required' for e in events)
+
+    stall_artifact = (
+        tmp_path
+        / '.agents'
+        / 'threads'
+        / created.task_id
+        / 'artifacts'
+        / 'consensus_stall.json'
+    )
+    assert stall_artifact.exists()
+
+
+def test_service_self_loop_mode_keeps_waiting_manual_when_proposal_consensus_stalls_in_round(tmp_path: Path):
+    engine = ProposalAlwaysBlockerWorkflowEngine()
+    svc = OrchestratorService(
+        repository=InMemoryTaskRepository(),
+        artifact_store=ArtifactStore(tmp_path / '.agents'),
+        workflow_engine=engine,
+    )
+    created = svc.create_task(
+        CreateTaskInput(
+            sandbox_mode=False,
+            self_loop_mode=1,
+            title='Self-loop stall should not require manual approval',
+            description='reviewer keeps blocking in proposal stage',
+            author_participant='codex#author-A',
+            reviewer_participants=['claude#review-B'],
+            max_rounds=1,
+        )
+    )
+
+    started = svc.start_task(created.task_id)
+    assert started.status.value == 'waiting_manual'
+    assert started.last_gate_reason == 'proposal_consensus_stalled_in_round'
+
+    events = svc.list_events(created.task_id)
+    assert any(e['type'] == 'proposal_consensus_stalled' for e in events)
     assert any(e['type'] == 'author_confirmation_required' for e in events)
 
     stall_artifact = (
